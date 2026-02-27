@@ -1,29 +1,32 @@
 import os
 import requests
 import streamlit as st
-from typing import Optional, Literal, Dict, List, Union
 from dotenv import load_dotenv
 
 load_dotenv()
 
 class GatewayAgent:
     def __init__(self):
-        # משיכה בטוחה של המפתח כדי למנוע KeyError
-        self.api_key = st.secrets.get("FMP_API_KEY") or os.getenv("FMP_API_KEY")
+        # משיכה נקייה של המפתח
+        raw_key = st.secrets.get("FMP_API_KEY") or os.getenv("FMP_API_KEY")
+        self.api_key = raw_key.strip().replace('"', '').replace("'", "") if raw_key else None
         self.base_url = "https://financialmodelingprep.com/api/v3"
         
         if not self.api_key:
-            st.error("❌ API Key is missing in Secrets!")
+            st.error("❌ API Key is missing!")
 
     def fetch_statement(self, ticker: str, statement_type: str, period: str = 'annual'):
         url = f"{self.base_url}/{statement_type}/{ticker}"
-        params = {"apikey": self.api_key, "limit": 10}
+        params = {"apikey": self.api_key, "limit": 5}
         if period == 'quarter':
             params["period"] = "quarter"
         
         try:
-            response = requests.get(url, params=params)
-            return response.json() if response.status_code == 200 else []
+            response = requests.get(url, params=params, timeout=10)
+            if response.status_code == 200:
+                data = response.json()
+                return data if isinstance(data, list) else []
+            return []
         except:
             return []
 
