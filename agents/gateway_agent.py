@@ -7,40 +7,32 @@ load_dotenv()
 
 class GatewayAgent:
     def __init__(self):
-        # משיכה מאובטחת וניקוי רווחים מהמפתח
         raw_key = st.secrets.get("FMP_API_KEY", "")
         self.api_key = "".join(raw_key.split()).strip('"').strip("'")
-        # שימוש בכתובת הבסיס המעודכנת ביותר
         self.base_url = "https://financialmodelingprep.com/api/v3"
 
     def fetch_data(self, path, ticker, is_quarterly=False):
         if not self.api_key:
             return []
         
-        # בניית ה-URL בצורה המפורשת ביותר למנויים חדשים
+        # ניסיון ראשון: הפורמט הסטנדרטי המעודכן
         url = f"{self.base_url}/{path}/{ticker}"
-        params = {
-            "apikey": self.api_key,
-            "limit": 10
-        }
+        params = {"apikey": self.api_key, "limit": 12}
         if is_quarterly:
             params["period"] = "quarter"
         
         try:
-            # הוספת Headers שמדמים דפדפן מודרני כדי למנוע חסימות Legacy
-            headers = {
-                "Content-Type": "application/json",
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-            }
-            response = requests.get(url, params=params, headers=headers, timeout=15)
+            response = requests.get(url, params=params, timeout=15)
+            data = response.json()
             
-            if response.status_code == 200:
+            # אם קיבלנו שגיאת Legacy, ננסה את הנתיב ה-Stable החדש (financial-statements/...)
+            if isinstance(data, dict) and "Legacy Endpoint" in data.get("Error Message", ""):
+                stable_path = f"financial-statements/{path}"
+                url = f"{self.base_url}/{stable_path}/{ticker}"
+                response = requests.get(url, params=params, timeout=15)
                 data = response.json()
-                # אם קיבלנו הודעת שגיאה בתוך ה-JSON (כמו Legacy Error)
-                if isinstance(data, dict) and "Error Message" in data:
-                    return []
-                return data if isinstance(data, list) else []
-            return []
+            
+            return data if isinstance(data, list) else []
         except:
             return []
 
