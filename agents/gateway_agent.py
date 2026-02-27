@@ -7,23 +7,37 @@ load_dotenv()
 
 class GatewayAgent:
     def __init__(self):
-        # ניקוי המפתח מכל שארית של גרשיים או רווחים
-        self.api_key = st.secrets.get("FMP_API_KEY", "").strip().strip('"').strip("'")
+        # ניקוי מוחלט של כל רווח או תו בלתי נראה
+        raw_key = st.secrets.get("FMP_API_KEY", "")
+        self.api_key = "".join(raw_key.split()).strip('"').strip("'")
+        # שימוש ב-v3 כבסיס
         self.base_url = "https://financialmodelingprep.com/api/v3"
 
-    def fetch_data(self, endpoint, ticker, is_quarterly=False):
+    def fetch_data(self, path, ticker, is_quarterly=False):
         if not self.api_key:
             return []
-        url = f"{self.base_url}/{endpoint}/{ticker}"
-        params = {"apikey": self.api_key, "limit": 10}
+        
+        # בניית ה-URL בצורה המפורשת ביותר
+        url = f"{self.base_url}/{path}/{ticker}"
+        params = {
+            "apikey": self.api_key,
+            "limit": 10
+        }
         if is_quarterly:
             params["period"] = "quarter"
         
         try:
-            # הוספת Headers מינימליים למניעת חסימות
-            response = requests.get(url, params=params, timeout=15)
+            # הוספת Headers כדי שהבקשה תיראה "טרייה"
+            headers = {"Upgrade-Insecure-Requests": "1"}
+            response = requests.get(url, params=params, headers=headers, timeout=15)
+            
             if response.status_code == 200:
-                return response.json()
+                data = response.json()
+                # אם קיבלנו הודעת שגיאה בתוך ה-JSON (כמו Legacy Error)
+                if isinstance(data, dict) and "Error Message" in data:
+                    st.sidebar.warning(f"API Warning on {path}")
+                    return []
+                return data if isinstance(data, list) else []
             return []
         except:
             return []
