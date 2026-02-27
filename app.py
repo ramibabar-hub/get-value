@@ -10,14 +10,14 @@ from agents.core_agent import DataNormalizer
 st.set_page_config(page_title="getValue | Financial Analysis", layout="wide", initial_sidebar_state="expanded")
 
 # CSS לשדרוג ה-UX
-st.markdown(\"\"\"
+st.markdown("""
     <style>
     .main { background-color: #f8f9fa; }
     .welcome-text { font-size: 24px; font-weight: 500; color: #1c2b46; margin-bottom: 10px; }
     .logo-text { font-family: 'Inter', sans-serif; font-weight: 700; color: #007bff; font-size: 32px; text-align: center; }
     .stButton>button { width: 100%; border-radius: 5px; height: 3em; background-color: #007bff; color: white; font-weight: bold; }
     </style>
-    \"\"\", unsafe_allow_html=True)
+    """, unsafe_allow_html=True)
 
 # סרגל צידי
 with st.sidebar:
@@ -27,19 +27,16 @@ with st.sidebar:
     st.divider()
     
     # כלי אבחון (Debug Mode)
-    debug_mode = st.checkbox("Enable API Diagnostic Mode")
-    if debug_mode:
-        st.write("---")
-        st.write("🔍 **API Diagnostic:**")
-        api_key = st.secrets.get("FMP_API_KEY", "").strip().strip('"').strip("'")
-        if st.button("Test Connection"):
-            test_url = f"https://financialmodelingprep.com/api/v3/income-statement/AAPL?apikey={api_key}&limit=1"
-            try:
-                res = requests.get(test_url, timeout=10)
-                st.code(f"Status: {res.status_code}")
-                st.json(res.json())
-            except Exception as e:
-                st.error(f"Error: {e}")
+    st.write("🔍 **API Diagnostic:**")
+    api_key = st.secrets.get("FMP_API_KEY", "").strip().strip('"').strip("'")
+    if st.button("Test API Connection"):
+        test_url = f"https://financialmodelingprep.com/api/v3/income-statement/AAPL?apikey={api_key}&limit=1"
+        try:
+            res = requests.get(test_url, timeout=10)
+            st.code(f"Status: {res.status_code}")
+            st.json(res.json())
+        except Exception as e:
+            st.error(f"Error: {e}")
 
 # גוף האתר
 st.markdown(f"<div class='welcome-text'>Hi Rami, Let's get Value</div>", unsafe_allow_html=True)
@@ -57,13 +54,11 @@ if analyze_btn:
         gateway = GatewayAgent()
         raw = gateway.fetch_all(ticker)
         
-        # בדיקה אם הנתונים הגיעו
         has_data = any(len(v) > 0 for v in raw.values())
         
         if not has_data:
             st.error(f"❌ No data received for {ticker}.")
-            st.warning("The API Key might still be restricted by FMP or the subscription isn't active yet.")
-            st.info("Check 'API Diagnostic Mode' in the sidebar for details.")
+            st.warning("Please check the Diagnostic tool in the sidebar.")
             st.stop()
             
         norm = DataNormalizer(raw, ticker)
