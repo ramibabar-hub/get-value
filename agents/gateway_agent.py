@@ -7,42 +7,33 @@ load_dotenv()
 
 class GatewayAgent:
     def __init__(self):
-        raw_key = st.secrets.get("FMP_API_KEY", "")
-        self.api_key = "".join(raw_key.split()).replace('"', '').replace("'", "")
+        # ניקוי המפתח מכל שארית של גרשיים או רווחים
+        self.api_key = st.secrets.get("FMP_API_KEY", "").strip().strip('"').strip("'")
         self.base_url = "https://financialmodelingprep.com/api/v3"
 
-    def fetch_statement(self, ticker, statement_type, period='annual'):
+    def fetch_data(self, endpoint, ticker, is_quarterly=False):
         if not self.api_key:
             return []
-            
-        # שימוש בנתיבים החדשים ביותר כדי להימנע משגיאת Legacy
-        # בגרסאות החדשות, חלק מהדוחות דורשים סיומת שונה
-        url = f"{self.base_url}/{statement_type}/{ticker}"
-        
-        params = {"apikey": self.api_key, "limit": 5}
-        if period == 'quarter':
+        url = f"{self.base_url}/{endpoint}/{ticker}"
+        params = {"apikey": self.api_key, "limit": 10}
+        if is_quarterly:
             params["period"] = "quarter"
         
-        headers = {"User-Agent": "Mozilla/5.0"}
-        
         try:
-            response = requests.get(url, params=params, headers=headers, timeout=15)
-            if response.status_code != 200:
-                # הדפסת הודעת אבחון רק אם יש שגיאה
-                st.sidebar.error(f"Error {response.status_code} on {statement_type}")
-                return []
-            data = response.json()
-            return data if isinstance(data, list) else []
-        except Exception:
+            # הוספת Headers מינימליים למניעת חסימות
+            response = requests.get(url, params=params, timeout=15)
+            if response.status_code == 200:
+                return response.json()
+            return []
+        except:
             return []
 
     def fetch_all(self, ticker):
-        # הגדרת הנתיבים המדויקים למנויים חדשים
         return {
-            "annual_income_statement": self.fetch_statement(ticker, "income-statement", "annual"),
-            "quarterly_income_statement": self.fetch_statement(ticker, "income-statement", "quarter"),
-            "annual_balance_sheet": self.fetch_statement(ticker, "balance-sheet-statement", "annual"),
-            "quarterly_balance_sheet": self.fetch_statement(ticker, "balance-sheet-statement", "quarter"),
-            "annual_cash_flow": self.fetch_statement(ticker, "cash-flow-statement", "annual"),
-            "quarterly_cash_flow": self.fetch_statement(ticker, "cash-flow-statement", "quarter"),
+            "annual_income_statement": self.fetch_data("income-statement", ticker),
+            "quarterly_income_statement": self.fetch_data("income-statement", ticker, True),
+            "annual_balance_sheet": self.fetch_data("balance-sheet-statement", ticker),
+            "quarterly_balance_sheet": self.fetch_data("balance-sheet-statement", ticker, True),
+            "annual_cash_flow": self.fetch_data("cash-flow-statement", ticker),
+            "quarterly_cash_flow": self.fetch_data("cash-flow-statement", ticker, True),
         }
