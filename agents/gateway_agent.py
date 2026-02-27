@@ -4,7 +4,6 @@ import streamlit as st
 from typing import Optional, Literal, Dict, List, Union
 from dotenv import load_dotenv
 
-# הגדרת טיפוסים
 StatementType = Literal["income-statement", "balance-sheet-statement", "cash-flow-statement"]
 
 load_dotenv()
@@ -15,17 +14,23 @@ class GatewayAgent:
         self.api_key = api_key
         self.base_url = "https://financialmodelingprep.com/api/v3"
         if not self.api_key:
-            raise ValueError("API Key is missing!")
+            st.error("Missing API Key! Please set FMP_API_KEY in Secrets.")
 
     def fetch_statement(self, ticker: str, statement: str, period: str = 'annual'):
         url = f"{self.base_url}/{statement}/{ticker}"
-        params = {"apikey": self.api_key, "limit": 5}
-        if period == 'quarter': params["period"] = "quarter"
+        params = {"apikey": self.api_key, "limit": 10}
+        if period == 'quarter': 
+            params["period"] = "quarter"
         
-        response = requests.get(url, params=params)
-        if response.status_code != 200:
+        try:
+            response = requests.get(url, params=params)
+            if response.status_code != 200:
+                return []
+            data = response.json()
+            # FMP מחזיר לפעמים רשימה ריקה אם הטיקר לא נמצא
+            return data if isinstance(data, list) else []
+        except Exception:
             return []
-        return response.json()
 
     def fetch_all(self, ticker: str):
         return {
