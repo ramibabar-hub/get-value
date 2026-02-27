@@ -8,16 +8,27 @@ from agents.core_agent import DataNormalizer
 st.set_page_config(page_title="Get Value", layout="wide")
 st.title("📊 Get Value — Financial Viewer")
 
-ticker = st.text_input("Enter Ticker (e.g. NVDA)", "NVDA").upper()
+# Debug: בדיקה אם המפתח נקלט
+if "FMP_API_KEY" not in st.secrets:
+    st.error("❌ API Key not found in Secrets! Please add FMP_API_KEY to Settings -> Secrets.")
+else:
+    st.sidebar.success("✅ API Key loaded from Secrets")
+
+ticker = st.text_input("Enter Ticker", "NVDA").upper()
 view_type = st.selectbox("Select View", ["Annual", "Quarterly"])
 
 if st.button("Analyze", type="primary"):
-    with st.spinner(f"Analyzing {ticker}..."):
-        try:
-            raw = GatewayAgent().fetch_all(ticker)
-            norm = DataNormalizer(raw, ticker)
-        except Exception as e:
-            st.error(f"Error: {e}"); st.stop()
+    with st.spinner(f"Fetching data for {ticker}..."):
+        gateway = GatewayAgent()
+        raw = gateway.fetch_all(ticker)
+        
+        # בדיקה אם הנתונים הגיעו
+        if not raw["annual_income_statement"]:
+            st.error(f"❌ No data received for {ticker}. This usually means the API Key is invalid or restricted.")
+            st.info("Tip: Double check your API Key in Streamlit Secrets.")
+            st.stop()
+            
+        norm = DataNormalizer(raw, ticker)
         
         def fmt(v):
             if v is None: return "—"
@@ -39,23 +50,4 @@ if st.button("Analyze", type="primary"):
         display_section("💸 Cash Flow", norm.get_cash_flow(p), hdrs)
         display_section("⚖️ Balance Sheet", norm.get_balance_sheet(p), hdrs)
         display_section("💳 Debt Analysis", norm.get_debt_table(p), hdrs)
-
         st.success("Analysis Complete!")
-
-        # Excel Export with tabs
-        import xlsxwriter
-        buf = io.BytesIO()
-        wb = xlsxwriter.Workbook(buf, {"in_memory": True})
-        def add_sheet(name, rows, hdrs):
-            ws = wb.add_worksheet(name)
-            for c, h in enumerate(hdrs): ws.write(0, c, h)
-            for r_idx, row in enumerate(rows, 1):
-                ws.write(r_idx, 0, row["label"])
-                for c_idx, h in enumerate(hdrs[1:], 1): ws.write(r_idx, c_idx, fmt(row.get(h)))
-        
-        add_sheet("Income Statement", norm.get_income_statement(p), hdrs)
-        add_sheet("Cash Flow", norm.get_cash_flow(p), hdrs)
-        add_sheet("Balance Sheet", norm.get_balance_sheet(p), hdrs)
-        add_sheet("Debt", norm.get_debt_table(p), hdrs)
-        wb.close()
-        st.download_button("📥 Download Excel Report", buf.getvalue(), f"{ticker}_report.xlsx")
