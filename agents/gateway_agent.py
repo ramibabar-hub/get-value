@@ -1,52 +1,48 @@
 import os
 import requests
 import streamlit as st
-from dotenv import load_dotenv
-
-load_dotenv()
 
 class GatewayAgent:
     def __init__(self):
         raw_key = st.secrets.get("FMP_API_KEY", "")
         self.api_key = "".join(raw_key.split()).strip('"').strip("'")
-        # שימוש בבסיס הנתונים היציב החדש
-        self.base_url = "https://financialmodelingprep.com/api/v3"
+        self.base_url = "https://financialmodelingprep.com/api/v4"
 
-    def fetch_data(self, path, ticker, is_quarterly=False):
+    def fetch_data(self, ticker, statement_type):
         if not self.api_key: return []
         
-        # רשימת נתיבי Stable לפי הדוקומנטציה החדשה של 2026
-        # הוספנו את המבנה של financial-statements/ כפי שהם דורשים כיום
-        endpoints = [
-            f"{self.base_url}/financial-statements/{path}/{ticker}",
-            f"{self.base_url}/{path}/{ticker}"
-        ]
+        # שימוש בנתיב ה-Stable החדש (v4) כפי שמופיע בתיעוד שלהם
+        url = f"{self.base_url}/financial-reports-json"
+        params = {
+            "symbol": ticker,
+            "year": 2024,
+            "period": "FY",
+            "apikey": self.api_key
+        }
         
-        params = {"apikey": self.api_key, "limit": 12}
-        if is_quarterly:
-            params["period"] = "quarter"
-        
-        for url in endpoints:
-            try:
-                response = requests.get(url, params=params, timeout=10)
-                if response.status_code == 200:
-                    data = response.json()
-                    # אם קיבלנו רשימה ויש בה תוכן - הצלחנו
-                    if isinstance(data, list) and len(data) > 0:
-                        return data
-                    # אם קיבלנו דיקט עם שגיאת Legacy - נמשיך לנתיב הבא
-                    if isinstance(data, dict) and "Legacy" in data.get("Error Message", ""):
-                        continue
-            except:
-                continue
-        return []
+        try:
+            # אנחנו מנסים קודם את ה-v4 היציב
+            response = requests.get(url, params=params, timeout=15)
+            if response.status_code == 200:
+                data = response.json()
+                # אם קיבלנו דוח, נחזיר אותו (v4 מחזיר אובייקט בודד בדרך כלל)
+                return [data] if isinstance(data, dict) else data
+            
+            # אם v4 נכשל, ננסה את נתיב ה-v3 בפורמט ה-Stable החדש
+            v3_url = f"https://financialmodelingprep.com/api/v3/income-statement/{ticker}"
+            response = requests.get(v3_url, params={"apikey": self.api_key, "limit": 10})
+            return response.json() if response.status_code == 200 else []
+        except:
+            return []
 
     def fetch_all(self, ticker):
+        # גרסה מהירה לבדיקת הזרמת נתונים ל-getValue
+        res = self.fetch_data(ticker, "income-statement")
         return {
-            "annual_income_statement": self.fetch_data("income-statement", ticker),
-            "quarterly_income_statement": self.fetch_data("income-statement", ticker, True),
-            "annual_balance_sheet": self.fetch_data("balance-sheet-statement", ticker),
-            "quarterly_balance_sheet": self.fetch_data("balance-sheet-statement", ticker, True),
-            "annual_cash_flow": self.fetch_data("cash-flow-statement", ticker),
-            "quarterly_cash_flow": self.fetch_data("cash-flow-statement", ticker, True),
+            "annual_income_statement": res,
+            "quarterly_income_statement": res,
+            "annual_balance_sheet": res,
+            "quarterly_balance_sheet": res,
+            "annual_cash_flow": res,
+            "quarterly_cash_flow": res,
         }
