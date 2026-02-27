@@ -21,47 +21,67 @@ class DataNormalizer:
         return quarterly_list[0].get(key, 0) or 0
 
     def get_column_headers(self, period_type='annual'):
+        # לוקחים את הרשימה הרלוונטית כדי לחלץ כותרות
         is_list = self.annual_is if period_type == 'annual' else self.quarterly_is
+        
+        # אם אין נתונים ב-IS, ננסה ב-BS
+        if not is_list:
+            is_list = self.annual_bs if period_type == 'annual' else self.quarterly_bs
+
         if period_type == 'annual':
-            headers = ["Item"] + [str(d.get('calendarYear', '')) for d in is_list[:5]] + ["TTM"]
+            dates = [str(d.get('calendarYear', '')) for d in is_list[:5]]
         else:
-            headers = ["Item"] + [f"{d.get('calendarYear')} {d.get('period')}" for d in is_list[:5]] + ["TTM"]
-        return headers
+            dates = [f"{d.get('calendarYear', '')} {d.get('period', '')}" for d in is_list[:5]]
+        
+        # הבטחה שתמיד יהיו כותרות כדי למנוע טבלה ריקה
+        if not dates:
+            dates = ["N/A 1", "N/A 2", "N/A 3", "N/A 4", "N/A 5"]
+            
+        return ["Item"] + dates + ["TTM"]
 
     def build_table(self, mapping, period_type='annual'):
         headers = self.get_column_headers(period_type)
         rows = []
+        
         is_list = self.annual_is if period_type == 'annual' else self.quarterly_is
         bs_list = self.annual_bs if period_type == 'annual' else self.quarterly_bs
         cf_list = self.annual_cf if period_type == 'annual' else self.quarterly_cf
 
         for label, key, calc_fn in mapping:
             row = {"label": label}
-            # Initialize columns with 0
+            # אתחול עמודות ב-0
             for h in headers[1:]:
                 row[h] = 0
 
             if calc_fn:
                 calc_vals = calc_fn(period_type)
-                # calc_vals expects [val1, val2, val3, val4, val5, ttm]
+                # calc_vals should be [v1, v2, v3, v4, v5, ttm]
                 for i, h in enumerate(headers[1:]):
                     if i < len(calc_vals):
                         row[h] = calc_vals[i]
             else:
-                vals, ttm_val, found_list = [], 0, None
+                found_list = None
+                ttm_val = 0
+                
+                # חיפוש היכן המפתח (Key) נמצא
                 if is_list and len(is_list) > 0 and key in is_list[0]:
-                    found_list, ttm_val = is_list, self._get_ttm_value(self.quarterly_is, key)
+                    found_list = is_list
+                    ttm_val = self._get_ttm_value(self.quarterly_is, key)
                 elif bs_list and len(bs_list) > 0 and key in bs_list[0]:
-                    found_list, ttm_val = bs_list, self._get_latest_value(self.quarterly_bs, key)
+                    found_list = bs_list
+                    ttm_val = self._get_latest_value(self.quarterly_bs, key)
                 elif cf_list and len(cf_list) > 0 and key in cf_list[0]:
-                    found_list, ttm_val = cf_list, self._get_ttm_value(self.quarterly_cf, key)
+                    found_list = cf_list
+                    ttm_val = self._get_ttm_value(self.quarterly_cf, key)
                 
                 if found_list:
-                    data_to_use = found_list[:5]
-                    for i, d in enumerate(data_to_use):
+                    for i, d in enumerate(found_list[:5]):
                         if i + 1 < len(headers):
-                            row[headers[i+1]] = d.get(key, 0) or 0
+                            col_name = headers[i+1]
+                            row[col_name] = d.get(key, 0) or 0
+                
                 row["TTM"] = ttm_val
+            
             rows.append(row)
         return rows
 
@@ -81,10 +101,9 @@ class DataNormalizer:
     def get_cash_flow(self, period_type='annual'):
         def calc_fcf(p):
             cf = self.annual_cf if p=='annual' else self.quarterly_cf
-            data = cf[:5]
-            fcf = [(d.get('operatingCashFlow', 0) or 0) + (d.get('capitalExpenditure', 0) or 0) for d in data]
-            ttm_fcf = self._get_ttm_value(self.quarterly_cf, 'operatingCashFlow') + self._get_ttm_value(self.quarterly_cf, 'capitalExpenditure')
-            return fcf + [ttm_fcf]
+            fcf = [(d.get('operatingCashFlow', 0) or 0) + (d.get('capitalExpenditure', 0) or 0) for d in cf[:5]]
+            ttm = self._get_ttm_value(self.quarterly_cf, 'operatingCashFlow') + self._get_ttm_value(self.quarterly_cf, 'capitalExpenditure')
+            return fcf + [ttm]
 
         mapping = [
             ("Cash flow from operations", "operatingCashFlow", None),
