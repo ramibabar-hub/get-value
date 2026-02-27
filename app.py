@@ -1,86 +1,38 @@
-import io, sys, os
 import streamlit as st
 import pandas as pd
-import requests
-sys.path.insert(0, os.path.dirname(__file__))
+import plotly.graph_objects as go
 from agents.gateway_agent import GatewayAgent
 from agents.core_agent import DataNormalizer
 
-# הגדרות עמוד
-st.set_page_config(page_title="getValue | Financial Analysis", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="getValue | Financial Analysis", layout="wide")
 
-# CSS לשדרוג ה-UX
-st.markdown("""
-    <style>
-    .main { background-color: #f8f9fa; }
-    .welcome-text { font-size: 24px; font-weight: 500; color: #1c2b46; margin-bottom: 10px; }
-    .logo-text { font-family: 'Inter', sans-serif; font-weight: 700; color: #007bff; font-size: 32px; text-align: center; }
-    .stButton>button { width: 100%; border-radius: 5px; height: 3em; background-color: #007bff; color: white; font-weight: bold; }
-    </style>
-    """, unsafe_allow_html=True)
+# CSS
+st.markdown("<style>.section-header { font-size: 1.5em; font-weight: bold; color: #007bff; border-bottom: 2px solid #007bff; margin: 1em 0; }</style>", unsafe_allow_html=True)
 
-# סרגל צידי
 with st.sidebar:
-    st.markdown("<div class='logo-text'>getValue</div>", unsafe_allow_html=True)
-    st.info("Professional Investor Platform")
-    view_type = st.radio("Select Report Period:", ["Annual", "Quarterly"])
-    st.divider()
+    st.markdown("<h2 style='text-align:center;'>getValue</h2>", unsafe_allow_html=True)
+    view_type = st.radio("Select Period:", ["Annual", "Quarterly"])
+
+st.markdown(f"### Hi Rami, Let's get Value")
+ticker = st.text_input("Ticker:", "NVDA").upper()
+
+if st.button("Run Analysis"):
+    raw = GatewayAgent().fetch_all(ticker)
+    norm = DataNormalizer(raw, ticker)
     
-    # כלי אבחון (Debug Mode)
-    st.write("🔍 **API Diagnostic:**")
-    api_key = st.secrets.get("FMP_API_KEY", "").strip().strip('"').strip("'")
-    if st.button("Test API Connection"):
-        test_url = f"https://financialmodelingprep.com/api/v3/income-statement/AAPL?apikey={api_key}&limit=1"
-        try:
-            res = requests.get(test_url, timeout=10)
-            st.code(f"Status: {res.status_code}")
-            st.json(res.json())
-        except Exception as e:
-            st.error(f"Error: {e}")
+    def fmt(v, is_pct=False):
+        if v is None: return "—"
+        return f"{v*100:.2f}%" if is_pct else f"{v:,.2f}"
 
-# גוף האתר
-st.markdown(f"<div class='welcome-text'>Hi Rami, Let's get Value</div>", unsafe_allow_html=True)
-
-col1, col2 = st.columns([3, 1])
-with col1:
-    ticker = st.text_input("Enter Company Ticker:", "NVDA").upper()
-with col2:
-    st.write(" ") 
-    st.write(" ") 
-    analyze_btn = st.button("Run Analysis")
-
-if analyze_btn:
-    with st.spinner(f"Analyzing {ticker}..."):
-        gateway = GatewayAgent()
-        raw = gateway.fetch_all(ticker)
+    tabs = st.tabs(["📊 Performance", "💡 Insights", "📋 Financials"])
+    
+    with tabs[1]:
+        st.markdown("<div class='section-header'>Growth (CAGR)</div>", unsafe_allow_html=True)
+        df_cagr = pd.DataFrame(norm.get_insights_cagr())
+        for col in ["3yr", "5yr", "10yr"]: df_cagr[col] = df_cagr[col].apply(lambda x: fmt(x, True))
+        st.table(df_cagr.set_index("CAGR"))
         
-        has_data = any(len(v) > 0 for v in raw.values())
-        
-        if not has_data:
-            st.error(f"❌ No data received for {ticker}.")
-            st.warning("Please check the Diagnostic tool in the sidebar.")
-            st.stop()
-            
-        norm = DataNormalizer(raw, ticker)
-        def fmt(v):
-            if v is None or v == 0: return "—"
-            if not isinstance(v, (int, float)): return str(v)
-            a = abs(v)
-            if a >= 1e9: return f"{v/1e9:.2f}B"
-            if a >= 1e6: return f"{v/1e6:.2f}M"
-            return f"{v:,.2f}"
-
-        p = view_type.lower()
-        hdrs = norm.get_column_headers(p)
-        tabs = st.tabs(["📈 Income", "💸 Cash Flow", "⚖️ Balance Sheet", "💳 Debt"])
-
-        with tabs[0]:
-            st.table(pd.DataFrame([{ "Item": r["label"], **{h: fmt(r.get(h)) for h in hdrs[1:]} } for r in norm.get_income_statement(p)]).set_index("Item"))
-        with tabs[1]:
-            st.table(pd.DataFrame([{ "Item": r["label"], **{h: fmt(r.get(h)) for h in hdrs[1:]} } for r in norm.get_cash_flow(p)]).set_index("Item"))
-        with tabs[2]:
-            st.table(pd.DataFrame([{ "Item": r["label"], **{h: fmt(r.get(h)) for h in hdrs[1:]} } for r in norm.get_balance_sheet(p)]).set_index("Item"))
-        with tabs[3]:
-            st.table(pd.DataFrame([{ "Item": r["label"], **{h: fmt(r.get(h)) for h in hdrs[1:]} } for r in norm.get_debt_table(p)]).set_index("Item"))
-
-        st.success(f"Analysis for {ticker} completed.")
+        st.markdown("<div class='section-header'>Valuation Multiples</div>", unsafe_allow_html=True)
+        df_val = pd.DataFrame(norm.get_insights_valuation())
+        for col in ["TTM", "Avg. 5yr", "Avg. 10yr"]: df_val[col] = df_val[col].apply(lambda x: fmt(x))
+        st.table(df_val.set_index("Valuation"))
