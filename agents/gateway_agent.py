@@ -9,33 +9,36 @@ class GatewayAgent:
     def __init__(self):
         raw_key = st.secrets.get("FMP_API_KEY", "")
         self.api_key = "".join(raw_key.split()).strip('"').strip("'")
-        # שימוש בבסיס הנתונים היציב החדש
-        self.base_url = "https://financialmodelingprep.com/api/v3"
+        self.base_url = "https://financialmodelingprep.com/api"
 
     def fetch_data(self, path, ticker, is_quarterly=False):
         if not self.api_key: return []
         
-        # ניסיון פנייה לנתיב ה-Stable החדש (למנויים אחרי אוגוסט 2025)
-        # במקרים מסוימים הנתיב דורש סיומת שונה או מבנה של financial-statement
-        url = f"{self.base_url}/{path}/{ticker}"
+        # בניית רשימת נתיבי Stable לפי הדוקומנטציה החדשה של 2026
+        # 1. הנתיב החדש והיציב: v3/financial-statement/income-statement/
+        # 2. נתיב v4 המקביל
+        endpoints = [
+            f"{self.base_url}/v3/financial-statement/{path}/{ticker}",
+            f"{self.base_url}/v3/{path}/{ticker}"
+        ]
         
         params = {"apikey": self.api_key, "limit": 12}
-        if is_quarterly:
-            params["period"] = "quarter"
+        if is_quarterly: params["period"] = "quarter"
         
-        try:
-            response = requests.get(url, params=params, timeout=15)
-            data = response.json()
-            
-            # אם קיבלנו שגיאת Legacy, ננסה את הנתיב החלופי שהם מגדירים כ-Stable
-            if isinstance(data, dict) and "Legacy" in data.get("Error Message", ""):
-                alt_url = f"https://financialmodelingprep.com/api/v3/financial-statements/{path}/{ticker}"
-                response = requests.get(alt_url, params=params, timeout=15)
-                data = response.json()
-            
-            return data if isinstance(data, list) else []
-        except:
-            return []
+        for url in endpoints:
+            try:
+                response = requests.get(url, params=params, timeout=10)
+                if response.status_code == 200:
+                    data = response.json()
+                    # אם קיבלנו רשימה ויש בה תוכן - הצלחנו
+                    if isinstance(data, list) and len(data) > 0:
+                        return data
+                    # אם קיבלנו הודעת Legacy - נמשיך לכתובת הבאה
+                    if isinstance(data, dict) and "Legacy" in data.get("Error Message", ""):
+                        continue
+            except:
+                continue
+        return []
 
     def fetch_all(self, ticker):
         return {
