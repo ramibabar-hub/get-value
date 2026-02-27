@@ -1,5 +1,7 @@
-from typing import Optional
-import os
+from typing import Optional, Literal, Dict, List, Union
+
+# הגדרת הטיפוס שחסר למערכת
+StatementType = Literal["income-statement", "balance-sheet-statement", "cash-flow-statement"]import os
 import requests
 import streamlit as st
 from dotenv import load_dotenv
