@@ -1,5 +1,4 @@
 import pandas as pd
-import numpy as np
 
 class DataNormalizer:
     def __init__(self, raw_data, ticker):
@@ -8,46 +7,45 @@ class DataNormalizer:
         self.is_l = raw_data.get('annual_income_statement', [])
         self.bs_l = raw_data.get('annual_balance_sheet', [])
         self.cf_l = raw_data.get('annual_cash_flow', [])
-        self.ratios = raw_data.get('annual_ratios', [])
-        self.metrics = raw_data.get('annual_key_metrics', [])
-        self.ev = raw_data.get('annual_enterprise_values', [])
-
-    def _safe_get(self, data_list, key, index=0):
-        try:
-            val = data_list[index].get(key)
-            return val if val is not None else None
-        except: return None
-
-    def _calc_avg(self, data_list, key, years):
-        vals = [d.get(key) for d in data_list[:years] if d.get(key) is not None]
-        return sum(vals)/len(vals) if vals else None
 
     def _calc_cagr(self, data_list, key, years):
         try:
-            v_now = data_list[0].get(key)
-            v_past = data_list[years].get(key)
+            v_now = data_list[0].get(key, 0)
+            v_past = data_list[years].get(key, 0)
             if v_now > 0 and v_past > 0:
                 return (v_now / v_past)**(1/years) - 1
         except: pass
         return None
 
     def get_insights_cagr(self):
-        keys = [("Revenues","revenue"), ("Operating income","operatingIncome"), ("EBITDA","ebitda"), ("EPS","eps")]
+        keys = [("Revenues","revenue"), ("Operating income","operatingIncome"), ("EBITDA","ebitda"), 
+                ("EPS","eps"), ("Adj. FCF","freeCashFlow"), ("Shares outs.","weightedAverageShsOut")]
         return [{"CAGR": n, "3yr": self._calc_cagr(self.is_l, k, 3), "5yr": self._calc_cagr(self.is_l, k, 5), "10yr": self._calc_cagr(self.is_l, k, 10)} for n, k in keys]
 
+    def get_template_data(self, rows, label):
+        return [{label: r, "TTM": None, "Avg. 5yr": None, "Avg. 10yr": None} for r in rows]
+
     def get_insights_valuation(self):
-        # מבנה קבוע לפי הבקשה שלך
-        rows = ["EV / EBITDA", "EV / Adj. FCF", "P/E", "P/S", "P/B", "P/FCF", "PEG", "Earnings Yield"]
-        # כאן תיווסף הלוגיקה לשליפת הנתונים מה-Ratios/Metrics
-        return [{"Valuation": r, "TTM": None, "Avg. 5yr": None, "Avg. 10yr": None} for r in rows]
+        return self.get_template_data(["EV / EBITDA", "EV / Adj. FCF", "P/E", "P/S", "P/B", "P/FCF", "PEG", "Earnings Yield"], "Valuation")
 
     def get_insights_profitability(self):
-        rows = ["Gross profit", "EBIT", "EBITDA", "Net Income", "FCF"]
-        return [{"Profitability": r, "TTM": None, "Avg. 5yr": None, "Avg. 10yr": None} for r in rows]
+        return self.get_template_data(["Gross profit", "EBIT", "EBITDA", "Net Income", "FCF"], "Profitability")
 
     def get_insights_returns(self):
-        rows = ["ROIC", "FCF ROC", "ROE", "ROA", "ROCE", "ROIC/WACC"]
-        return [{"Returns": r, "TTM": None, "Avg. 5yr": None, "Avg. 10yr": None} for r in rows]
+        return self.get_template_data(["ROIC", "FCF ROC", "ROE", "ROA", "ROCE", "ROIC/WACC"], "Returns")
+
+    def get_insights_liquidity(self):
+        return self.get_template_data(["Current Ratio", "Cash to Debt", "Net Working Capital (NWC)"], "Liquidity")
+
+    def get_insights_dividends(self):
+        return self.get_template_data(["Yield", "Payout", "DPS"], "Dividends")
+
+    def get_insights_efficiency(self):
+        rows = ["Receivable turnover", "Average receivables collection day", "Inventory turnover", 
+                "Average days inventory in stock", "Payables turnover", "Average days payables outstanding",
+                "Operating cycle", "Cash cycle", "Working capital turnover", "Fixed asset turnover", 
+                "Asset turnover", "SBC/ FCF", "Revenue/ Employee"]
+        return self.get_template_data(rows, "Efficiency")
     
     def get_column_headers(self, p):
         is_list = self.is_l if p == 'annual' else self.raw_data.get('quarterly_income_statement', [])
