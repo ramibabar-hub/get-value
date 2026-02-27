@@ -9,36 +9,33 @@ class GatewayAgent:
     def __init__(self):
         raw_key = st.secrets.get("FMP_API_KEY", "")
         self.api_key = "".join(raw_key.split()).strip('"').strip("'")
-        self.base_url_v3 = "https://financialmodelingprep.com/api/v3"
-        self.base_url_v4 = "https://financialmodelingprep.com/api/v4"
+        self.base_url = "https://financialmodelingprep.com/api/v3"
 
     def fetch_data(self, path, ticker, is_quarterly=False):
         if not self.api_key: return []
         
+        # בניית רשימת נתיבים אפשריים לפי הדוקומנטציה החדשה (Stable)
+        # 1. הנתיב החדש: financial-statement/type
+        # 2. הנתיב הישיר המעודכן
+        endpoints = [
+            f"{self.base_url}/financial-statement/{path}/{ticker}",
+            f"{self.base_url}/{path}/{ticker}"
+        ]
+        
         params = {"apikey": self.api_key, "limit": 12}
         if is_quarterly: params["period"] = "quarter"
         
-        # רשימת נתיבים לניסיון לפי סדר העדכניות (Stable Documentation)
-        endpoints = [
-            f"{self.base_url_v3}/{path}/{ticker}",               # Standard v3
-            f"{self.base_url_v3}/financial-reports-json",         # New Structured
-            f"{self.base_url_v4}/financial-reports-json"          # v4 Stable
-        ]
-
         for url in endpoints:
             try:
-                # במידה ומדובר בנתיב financial-reports-json, הפרמטרים שונים
-                current_params = params.copy()
-                if "financial-reports-json" in url:
-                    current_params = {"symbol": ticker, "year": 2024, "period": "FY", "apikey": self.api_key}
-
-                response = requests.get(url, params=current_params, timeout=10)
+                response = requests.get(url, params=params, timeout=10)
                 if response.status_code == 200:
                     data = response.json()
-                    # אם זו לא הודעת שגיאה וזו רשימה עם תוכן - מצאנו!
+                    # אם קיבלנו רשימה ואין בה הודעת שגיאה - הצלחנו
                     if isinstance(data, list) and len(data) > 0:
-                        if "Error Message" not in str(data):
-                            return data
+                        return data
+                    # אם קיבלנו דיקט עם שגיאת Legacy - נמשיך לנתיב הבא
+                    if isinstance(data, dict) and "Legacy" in data.get("Error Message", ""):
+                        continue
             except:
                 continue
         return []
