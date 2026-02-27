@@ -7,7 +7,7 @@ st.set_page_config(page_title="getValue | Financial Analysis", layout="wide")
 
 st.markdown("""
     <style>
-    .section-header { font-size: 1.1em; font-weight: bold; color: #ffffff; background-color: #1c2b46; padding: 6px 15px; border-radius: 4px; margin-top: 20px; }
+    .section-header { font-size: 1.1em; font-weight: bold; color: #ffffff; background-color: #1c2b46; padding: 6px 15px; border-radius: 4px; margin-top: 25px; }
     .stTable { font-size: 0.85em; }
     </style>
     """, unsafe_allow_html=True)
@@ -34,13 +34,16 @@ if st.button("Run Analysis"):
     p = view_type.lower()
     hdrs = norm.get_column_headers(p)
     
-    # טאב ה-Financials מופיע ראשון כעת
     tab_fin, tab_ins = st.tabs(["📋 Financials", "💡 Insights"])
 
     with tab_fin:
-        for title, method in [("Income Statement", norm.get_income_statement), 
-                              ("Balance Sheet", norm.get_balance_sheet), 
-                              ("Cash Flow", norm.get_cash_flow)]:
+        tables = [
+            ("Income Statement", norm.get_income_statement),
+            ("Cashflow", norm.get_cash_flow),
+            ("Balance Sheet", norm.get_balance_sheet),
+            ("Debt", norm.get_debt_table)
+        ]
+        for title, method in tables:
             st.markdown(f"<div class='section-header'>{title}</div>", unsafe_allow_html=True)
             data = method(p)
             df = pd.DataFrame([{ "Item": r["label"], **{h: fmt(r.get(h)) for h in hdrs[1:]} } for r in data])

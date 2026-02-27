@@ -7,36 +7,45 @@ class DataNormalizer:
         self.is_l = raw_data.get('annual_income_statement', [])
         self.bs_l = raw_data.get('annual_balance_sheet', [])
         self.cf_l = raw_data.get('annual_cash_flow', [])
+        self.q_is = raw_data.get('quarterly_income_statement', [])
+        self.q_bs = raw_data.get('quarterly_balance_sheet', [])
+        self.q_cf = raw_data.get('quarterly_cash_flow', [])
 
     def _get_ttm_value(self, q_list, key):
-        return sum(q.get(key, 0) or 0 for q in q_list[:4]) if q_list else 0
+        if not q_list: return 0
+        return sum(q.get(key, 0) or 0 for q in q_list[:4])
 
     def get_column_headers(self, p_type='annual'):
-        source = self.is_l if p_type == 'annual' else self.raw_data.get('quarterly_income_statement', [])
+        source = self.is_l if p_type == 'annual' else self.q_is
         if not source: return ["Item", "TTM"]
-        # יצירת רשימת השנים/רבעונים
         dates = [str(d.get('calendarYear', '')) if p_type=='annual' else f"{d.get('calendarYear')} {d.get('period')}" for d in source[:10]]
-        # החזרת TTM כעמודה הראשונה אחרי Item
         return ["Item", "TTM"] + dates
 
     def build_table(self, mapping, p_type='annual'):
         headers = self.get_column_headers(p_type)
         rows = []
-        is_l = self.is_l if p_type == 'annual' else self.raw_data.get('quarterly_income_statement', [])
-        bs_l = self.bs_l if p_type == 'annual' else self.raw_data.get('quarterly_balance_sheet', [])
-        cf_l = self.cf_l if p_type == 'annual' else self.raw_data.get('quarterly_cash_flow', [])
-
+        # בחירת מקור הנתונים לפי תקופה
+        is_src = self.is_l if p_type == 'annual' else self.q_is
+        bs_src = self.bs_l if p_type == 'annual' else self.q_bs
+        cf_src = self.cf_l if p_type == 'annual' else self.q_cf
+        
         for label, key in mapping:
             row = {"label": label}
-            found = is_l if is_l and key in is_l[0] else bs_l if bs_l and key in bs_l[0] else cf_l if cf_l and key in cf_l[0] else None
+            # חיפוש המפתח בדוחות השונים
+            found = None
+            if is_src and key in is_src[0]: found = is_src
+            elif bs_src and key in bs_src[0]: found = bs_src
+            elif cf_src and key in cf_src[0]: found = cf_src
+            
             if found:
-                # חישוב TTM (יופיע בעמודה השנייה בטבלה)
-                if found == bs_l:
-                    row["TTM"] = found[0].get(key, 0) # במאזן TTM הוא הדוח האחרון
+                # חישוב TTM (במאזן לוקחים דוח אחרון, ברווח והפסד/תזרים סוכמים 4 רבעונים)
+                if found in [bs_src, self.bs_l, self.q_bs]:
+                    row["TTM"] = self.q_bs[0].get(key, 0) if self.q_bs else found[0].get(key, 0)
                 else:
-                    row["TTM"] = self._get_ttm_value(found, key)
+                    q_source = self.q_is if found in [is_src, self.is_l] else self.q_cf
+                    row["TTM"] = self._get_ttm_value(q_source, key)
                 
-                # מילוי שאר השנים (החל מהעמודה השלישית)
+                # מילוי עמודות היסטוריות
                 for i, d in enumerate(found[:10]):
                     if i+2 < len(headers):
                         row[headers[i+2]] = d.get(key, 0)
@@ -44,15 +53,39 @@ class DataNormalizer:
         return rows
 
     def get_income_statement(self, p):
-        return self.build_table([("Revenues","revenue"),("Gross Profit","grossProfit"),("Operating Income","operatingIncome"),("EBITDA","ebitda"),("Net Income","netIncome"),("EPS","eps")], p)
-
-    def get_balance_sheet(self, p):
-        return self.build_table([("Cash & Equiv.","cashAndCashEquivalents"),("Total Assets","totalAssets"),("Total Debt","totalDebt"),("Total Equity","totalStockholdersEquity")], p)
+        return self.build_table([
+            ("Revenues","revenue"), ("Gross profit","grossProfit"), ("Operating income","operatingIncome"),
+            ("EBITDA","ebitda"), ("Interest Expense","interestExpense"), ("Income Tax","incomeTaxExpense"),
+            ("Net Income","netIncome"), ("EPS","eps")
+        ], p)
 
     def get_cash_flow(self, p):
-        return self.build_table([("Operating Cash Flow","operatingCashFlow"),("CapEx","capitalExpenditure"),("Free Cash Flow","freeCashFlow")], p)
+        # חישוב Adj. FCF יבוצע בעתיד, כרגע מוצג כסעיף קבוע
+        return self.build_table([
+            ("Cash flow from operations","operatingCashFlow"), ("Capital expenditures","capitalExpenditure"),
+            ("Free Cash flow","freeCashFlow"), ("Stock based compensation","stockBasedCompensation"),
+            ("Adj. FCF","freeCashFlow"), ("Depreciation & Amortization","depreciationAndAmortization"),
+            ("Change in Working Capital (inc) / dec","changeInWorkingCapital"), ("Dvidend paid","dividendsPaid"),
+            ("Repurchase of Common Stock","weightedAverageShsOut") # דורש מיפוי ייעודי
+        ], p)
 
-    # מבנה ה-Insight הקשיח
+    def get_balance_sheet(self, p):
+        return self.build_table([
+            ("Cash and Cash Equivalents","cashAndCashEquivalents"), ("Current Assets","totalCurrentAssets"),
+            ("Total Assets","totalAssets"), ("Total Current Liabilities","totalCurrentLiabilities"),
+            ("Debt","totalDebt"), ("Equity value","totalStockholdersEquity"), ("Shares Outstandnig","weightedAverageShsOut"),
+            ("Minority Interest","minorityInterest"), ("Preferred Stock","preferredStock"),
+            ("Avg. Equity","totalStockholdersEquity"), ("Avg. Assets","totalAssets")
+        ], p)
+
+    def get_debt_table(self, p):
+        return self.build_table([
+            ("Current Portion of Long-Term Debt","shortTermDebt"), ("Current Portion of Capital Lease Obligations","capitalLeaseObligations"),
+            ("Long-Term Debt","longTermDebt"), ("Capital Leases","capitalLeaseObligations"),
+            ("Total Debt","totalDebt"), ("Cash and Cash Equivalents","cashAndCashEquivalents"), ("Net Debt","netDebt")
+        ], p)
+
+    # מיפוי Insight (נשאר קבוע כפי שביקשת)
     def get_insights_cagr(self): return [{"CAGR": n, "3yr": None, "5yr": None, "10yr": None} for n in ["Revenues", "Operating income", "EBITDA", "EPS", "Adj. FCF", "Shares outs."]]
     def get_template_data(self, rows, label): return [{label: r, "TTM": None, "Avg. 5yr": None, "Avg. 10yr": None} for r in rows]
     def get_insights_valuation(self): return self.get_template_data(["EV / EBITDA", "EV / Adj. FCF", "P/E", "P/S", "P/B", "P/FCF", "PEG", "Earnings Yield"], "Valuation")
