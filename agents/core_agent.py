@@ -21,12 +21,11 @@ class DataNormalizer:
         return quarterly_list[0].get(key, 0) or 0
 
     def get_column_headers(self, period_type='annual'):
+        is_list = self.annual_is if period_type == 'annual' else self.quarterly_is
         if period_type == 'annual':
-            data = self.annual_is[:5]
-            headers = ["Item"] + [str(d.get('calendarYear', '')) for d in data] + ["TTM"]
+            headers = ["Item"] + [str(d.get('calendarYear', '')) for d in is_list[:5]] + ["TTM"]
         else:
-            data = self.quarterly_is[:5]
-            headers = ["Item"] + [f"{d.get('calendarYear')} {d.get('period')}" for d in data] + ["TTM"]
+            headers = ["Item"] + [f"{d.get('calendarYear')} {d.get('period')}" for d in is_list[:5]] + ["TTM"]
         return headers
 
     def build_table(self, mapping, period_type='annual'):
@@ -38,21 +37,30 @@ class DataNormalizer:
 
         for label, key, calc_fn in mapping:
             row = {"label": label}
+            # Initialize columns with 0
+            for h in headers[1:]:
+                row[h] = 0
+
             if calc_fn:
                 calc_vals = calc_fn(period_type)
+                # calc_vals expects [val1, val2, val3, val4, val5, ttm]
                 for i, h in enumerate(headers[1:]):
-                    row[h] = calc_vals[i] if i < len(calc_vals) else 0
+                    if i < len(calc_vals):
+                        row[h] = calc_vals[i]
             else:
                 vals, ttm_val, found_list = [], 0, None
-                if is_list and key in is_list[0]:
+                if is_list and len(is_list) > 0 and key in is_list[0]:
                     found_list, ttm_val = is_list, self._get_ttm_value(self.quarterly_is, key)
-                elif bs_list and key in bs_list[0]:
+                elif bs_list and len(bs_list) > 0 and key in bs_list[0]:
                     found_list, ttm_val = bs_list, self._get_latest_value(self.quarterly_bs, key)
-                elif cf_list and key in cf_list[0]:
+                elif cf_list and len(cf_list) > 0 and key in cf_list[0]:
                     found_list, ttm_val = cf_list, self._get_ttm_value(self.quarterly_cf, key)
                 
-                vals = [d.get(key, 0) or 0 for d in found_list[:5]] if found_list else [0]*5
-                for i, v in enumerate(vals): row[headers[i+1]] = v
+                if found_list:
+                    data_to_use = found_list[:5]
+                    for i, d in enumerate(data_to_use):
+                        if i + 1 < len(headers):
+                            row[headers[i+1]] = d.get(key, 0) or 0
                 row["TTM"] = ttm_val
             rows.append(row)
         return rows
@@ -73,9 +81,8 @@ class DataNormalizer:
     def get_cash_flow(self, period_type='annual'):
         def calc_fcf(p):
             cf = self.annual_cf if p=='annual' else self.quarterly_cf
-            ops = [d.get('operatingCashFlow', 0) or 0 for d in cf[:5]]
-            capex = [d.get('capitalExpenditure', 0) or 0 for d in cf[:5]]
-            fcf = [o + c for o, c in zip(ops, capex)]
+            data = cf[:5]
+            fcf = [(d.get('operatingCashFlow', 0) or 0) + (d.get('capitalExpenditure', 0) or 0) for d in data]
             ttm_fcf = self._get_ttm_value(self.quarterly_cf, 'operatingCashFlow') + self._get_ttm_value(self.quarterly_cf, 'capitalExpenditure')
             return fcf + [ttm_fcf]
 
