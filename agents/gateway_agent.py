@@ -7,8 +7,9 @@ load_dotenv()
 
 class GatewayAgent:
     def __init__(self):
-        # משיכה ישירה ומאובטחת
-        self.api_key = st.secrets.get("FMP_API_KEY", "").strip().replace('"', '').replace("'", "")
+        # ניקוי מוחלט של המפתח מכל תו מיותר
+        raw_key = st.secrets.get("FMP_API_KEY", "")
+        self.api_key = "".join(raw_key.split()).replace('"', '').replace("'", "")
         self.base_url = "https://financialmodelingprep.com/api/v3"
 
     def fetch_statement(self, ticker, statement_type, period='annual'):
@@ -20,16 +21,21 @@ class GatewayAgent:
         if period == 'quarter':
             params["period"] = "quarter"
         
+        # הוספת כותרות שמדמות דפדפן רגיל
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        }
+        
         try:
-            response = requests.get(url, params=params, timeout=15)
-            # אם השרת מחזיר שגיאת הרשאה, נדפיס אותה למסך לצורך אבחון
+            response = requests.get(url, params=params, headers=headers, timeout=15)
             if response.status_code == 403:
-                st.error("🔑 ה-API Key נדחה ע\"י השרת (403 Forbidden). וודא שהמנוי פעיל.")
+                # הדפסת הודעת אבחון מפורטת מהשרת
+                st.error(f"🔑 שגיאת הרשאה 403. תגובת השרת: {response.text}")
                 return []
             data = response.json()
             return data if isinstance(data, list) else []
         except Exception as e:
-            st.error(f"⚠️ שגיאת תקשורת: {e}")
+            st.error(f"⚠️ שגיאה: {e}")
             return []
 
     def fetch_all(self, ticker):
