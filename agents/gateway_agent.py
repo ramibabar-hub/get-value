@@ -1,30 +1,19 @@
-"""
-GatewayAgent — Fetches financial statements from FMP API.
-
-Endpoints used:
-  /income-statement/{ticker}
-  /balance-sheet-statement/{ticker}
-  /cash-flow-statement/{ticker}
-
-Each endpoint supports:
-  period=quarter  (omit for annual)
-  limit=N
-"""
-
 import os
-import sys
-from typing import Optional
-
 import requests
+import streamlit as st
 from dotenv import load_dotenv
 
-# Allow running from project root or agents/
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from report_schema import StatementType
-
+# טעינת המפתח (עובד גם מקומית וגם בענן)
 load_dotenv()
+api_key = st.secrets.get("FMP_API_KEY") or os.getenv("FMP_API_KEY")
 
-FMP_BASE_URL = "https://financialmodelingprep.com/stable"
+class GatewayAgent:
+    def __init__(self):
+        self.api_key = api_key
+        self.base_url = "https://financialmodelingprep.com/api/v3"
+        
+        if not self.api_key:
+            raise ValueError("API Key is missing! Please set FMP_API_KEY in Secrets or .env")
 
 
 class GatewayAgent:

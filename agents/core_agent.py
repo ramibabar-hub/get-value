@@ -1,157 +1,112 @@
-"""
-DataNormalizer — Transforms raw FMP data into structured tables.
-
-Layout:
-    Rows    = Financial line items  (Revenue, Net Income, CapEx, ...)
-    Columns = Time periods          (TTM, FY2024, FY2023, ... or Q3 2024, Q2 2024, ...)
-
-TTM Rule (consistent across both views):
-    FLOW  items (Income Stmt / Cash Flow) → sum of last 4 quarters
-    STOCK items (Balance Sheet)           → most recent quarter value
-"""
-
-import math
-import os
-import sys
-from typing import Optional
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from report_schema import SCHEMA, ITEMS_BY_KEY, StatementType, ItemType
-
+import pandas as pd
+import numpy as np
 
 class DataNormalizer:
-    def __init__(self, raw_data: dict, ticker: str):
+    def __init__(self, raw_data, ticker):
         self.raw_data = raw_data
-        self.ticker = ticker.upper()
-        self._ttm_cache: Optional[dict] = None  # computed once, reused
+        self.ticker = ticker
+        self.annual_is = raw_data.get('annual_income_statement', [])
+        self.quarterly_is = raw_data.get('quarterly_income_statement', [])
+        self.annual_bs = raw_data.get('annual_balance_sheet', [])
+        self.quarterly_bs = raw_data.get('quarterly_balance_sheet', [])
+        self.annual_cf = raw_data.get('annual_cash_flow', [])
+        self.quarterly_cf = raw_data.get('quarterly_cash_flow', [])
 
-    # ── Helpers ───────────────────────────────────────────────────────────────
+    def _get_ttm_value(self, quarterly_list, key):
+        if not quarterly_list: return 0
+        return sum(q.get(key, 0) or 0 for q in quarterly_list[:4])
 
-    def _safe(self, record: dict, key: str) -> Optional[float]:
-        val = record.get(key)
-        if val is None:
-            return None
-        try:
-            f = float(val)
-            return None if math.isnan(f) else f
-        except (TypeError, ValueError):
-            return None
+    def _get_latest_value(self, quarterly_list, key):
+        if not quarterly_list: return 0
+        return quarterly_list[0].get(key, 0) or 0
 
-    @staticmethod
-    def _quarter_label(date_str: str) -> str:
-        """'2024-06-30' → 'Q2 2024'"""
-        year, month, *_ = date_str.split("-")
-        quarter = (int(month) - 1) // 3 + 1
-        return f"Q{quarter} {year}"
-
-    def _tag(self, records: list, view: str) -> list:
-        """Attach _period_label to each record dict."""
-        tagged = []
-        for r in records:
-            r = dict(r)
-            r["_period_label"] = (
-                r["date"][:4] if view == "annual" else self._quarter_label(r["date"])
-            )
-            tagged.append(r)
-        return tagged
-
-    def _merge(self, view: str, count: Optional[int] = None) -> list:
-        """
-        Merge all three statements into one list of period-dicts.
-        Each dict contains fields from all statements for that period.
-        Sorted newest → oldest.
-        """
-        by_label: dict[str, dict] = {}
-        for stmt in StatementType:
-            key = f"{view}_{stmt.name}"
-            records = self.raw_data.get(key, [])
-            for r in self._tag(records, view):
-                label = r["_period_label"]
-                if label not in by_label:
-                    by_label[label] = {"_period_label": label, "date": r.get("date", "")}
-                by_label[label].update(r)
-
-        # Sort by raw date descending (most recent first)
-        merged = sorted(by_label.values(), key=lambda x: x.get("date", ""), reverse=True)
-        return merged[:count] if count else merged
-
-    # ── TTM ───────────────────────────────────────────────────────────────────
-
-    def _compute_ttm(self) -> dict:
-        """
-        Compute TTM for every item in SCHEMA.
-
-        Called once; result is cached in self._ttm_cache.
-        """
-        if self._ttm_cache is not None:
-            return self._ttm_cache
-
-        ttm: dict[str, Optional[float]] = {}
-        for item in SCHEMA:
-            quarters = self.raw_data.get(f"quarterly_{item.statement.name}", [])
-            if not quarters:
-                ttm[item.fmp_key] = None
-                continue
-
-            if item.item_type == ItemType.STOCK:
-                # Balance sheet: point-in-time → latest quarter
-                ttm[item.fmp_key] = self._safe(quarters[0], item.fmp_key)
-
-            else:
-                # Flow: sum last 4 quarters
-                values = [
-                    v
-                    for q in quarters[:4]
-                    if (v := self._safe(q, item.fmp_key)) is not None
-                ]
-                if len(values) == 4:
-                    ttm[item.fmp_key] = sum(values)
-                elif values:
-                    # Partial data: sum what we have (flagged implicitly by < 4 values)
-                    ttm[item.fmp_key] = sum(values)
-                else:
-                    ttm[item.fmp_key] = None
-
-        self._ttm_cache = ttm
-        return ttm
-
-    # ── Row builder ───────────────────────────────────────────────────────────
-
-    def _build_row(self, fmp_key: str, period_records: list) -> dict:
-        item = ITEMS_BY_KEY.get(fmp_key)
-        if not item:
-            return {}
-
-        row: dict = {"label": item.label}
-        row["TTM"] = self._compute_ttm().get(fmp_key)
-
-        for record in period_records:
-            row[record["_period_label"]] = self._safe(record, fmp_key)
-
-        return row
-
-    # ── Public tables ─────────────────────────────────────────────────────────
-
-    def build_annual_table(self) -> list[dict]:
-        """
-        Annual table: TTM | FY2024 | FY2023 | … (up to 10 years)
-        Rows ordered by SCHEMA definition.
-        """
-        periods = self._merge("annual")
-        return [row for item in SCHEMA if (row := self._build_row(item.fmp_key, periods))]
-
-    def build_quarterly_table(self) -> list[dict]:
-        """
-        Quarterly table: TTM | Q3 2024 | Q2 2024 | … (10 quarters)
-        TTM values are identical to those in the annual table.
-        """
-        periods = self._merge("quarterly", count=10)
-        return [row for item in SCHEMA if (row := self._build_row(item.fmp_key, periods))]
-
-    def get_column_headers(self, view: str = "annual") -> list[str]:
-        """Return ordered column headers: ['Item', 'TTM', period1, period2, ...]"""
-        if view == "annual":
-            period_labels = [r["_period_label"] for r in self._merge("annual")]
+    def get_column_headers(self, period_type='annual'):
+        if period_type == 'annual':
+            data = self.annual_is[:5]
+            headers = ["Item"] + [str(d.get('calendarYear', '')) for d in data] + ["TTM"]
         else:
-            period_labels = [r["_period_label"] for r in self._merge("quarterly", count=10)]
-        return ["Item", "TTM"] + period_labels
+            data = self.quarterly_is[:5]
+            headers = ["Item"] + [f"{d.get('calendarYear')} {d.get('period')}" for d in data] + ["TTM"]
+        return headers
+
+    def build_table(self, mapping, period_type='annual'):
+        headers = self.get_column_headers(period_type)
+        rows = []
+        is_list = self.annual_is if period_type == 'annual' else self.quarterly_is
+        bs_list = self.annual_bs if period_type == 'annual' else self.quarterly_bs
+        cf_list = self.annual_cf if period_type == 'annual' else self.quarterly_cf
+
+        for label, key, calc_fn in mapping:
+            row = {"label": label}
+            if calc_fn:
+                calc_vals = calc_fn(period_type)
+                for i, h in enumerate(headers[1:]):
+                    row[h] = calc_vals[i] if i < len(calc_vals) else 0
+            else:
+                vals, ttm_val, found_list = [], 0, None
+                if is_list and key in is_list[0]:
+                    found_list, ttm_val = is_list, self._get_ttm_value(self.quarterly_is, key)
+                elif bs_list and key in bs_list[0]:
+                    found_list, ttm_val = bs_list, self._get_latest_value(self.quarterly_bs, key)
+                elif cf_list and key in cf_list[0]:
+                    found_list, ttm_val = cf_list, self._get_ttm_value(self.quarterly_cf, key)
+                
+                vals = [d.get(key, 0) or 0 for d in found_list[:5]] if found_list else [0]*5
+                for i, v in enumerate(vals): row[headers[i+1]] = v
+                row["TTM"] = ttm_val
+            rows.append(row)
+        return rows
+
+    def get_income_statement(self, period_type='annual'):
+        mapping = [
+            ("Revenues", "revenue", None),
+            ("Gross profit", "grossProfit", None),
+            ("Operating income", "operatingIncome", None),
+            ("EBITDA", "ebitda", None),
+            ("Interest Expense", "interestExpense", None),
+            ("Income Tax", "incomeTaxExpense", None),
+            ("Net Income", "netIncome", None),
+            ("EPS", "eps", None),
+        ]
+        return self.build_table(mapping, period_type)
+
+    def get_cash_flow(self, period_type='annual'):
+        def calc_fcf(p):
+            cf = self.annual_cf if p=='annual' else self.quarterly_cf
+            ops = [d.get('operatingCashFlow', 0) or 0 for d in cf[:5]]
+            capex = [d.get('capitalExpenditure', 0) or 0 for d in cf[:5]]
+            fcf = [o + c for o, c in zip(ops, capex)]
+            ttm_fcf = self._get_ttm_value(self.quarterly_cf, 'operatingCashFlow') + self._get_ttm_value(self.quarterly_cf, 'capitalExpenditure')
+            return fcf + [ttm_fcf]
+
+        mapping = [
+            ("Cash flow from operations", "operatingCashFlow", None),
+            ("Capital expenditures", "capitalExpenditure", None),
+            ("Free Cash flow", None, calc_fcf),
+            ("Stock based compensation", "stockBasedCompensation", None),
+            ("Depreciation & Amortization", "depreciationAndAmortization", None),
+            ("Change in Working Capital", "changeInWorkingCapital", None),
+            ("Dividend paid", "dividendsPaid", None),
+            ("Repurchase of Common Stock", "commonStockRepurchased", None),
+        ]
+        return self.build_table(mapping, period_type)
+
+    def get_balance_sheet(self, period_type='annual'):
+        mapping = [
+            ("Cash and Cash Equivalents", "cashAndCashEquivalents", None),
+            ("Current Assets", "totalCurrentAssets", None),
+            ("Total Assets", "totalAssets", None),
+            ("Total Current Liabilities", "totalCurrentLiabilities", None),
+            ("Debt", "totalDebt", None),
+            ("Equity value", "totalStockholdersEquity", None),
+            ("Shares Outstanding", "weightedAverageShsOut", None),
+        ]
+        return self.build_table(mapping, period_type)
+
+    def get_debt_table(self, period_type='annual'):
+        mapping = [
+            ("Long-Term Debt", "longTermDebt", None),
+            ("Total Debt", "totalDebt", None),
+            ("Net Debt", "netDebt", None),
+        ]
+        return self.build_table(mapping, period_type)

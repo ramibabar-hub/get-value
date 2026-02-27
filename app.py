@@ -1,81 +1,61 @@
-import io
-import sys
-import os
+import io, sys, os
 import streamlit as st
-
-# Ensuring path visibility
+import pandas as pd
 sys.path.insert(0, os.path.dirname(__file__))
 from agents.gateway_agent import GatewayAgent
 from agents.core_agent import DataNormalizer
 
 st.set_page_config(page_title="Get Value", layout="wide")
-st.title("📊 Get Value — Financial Statement Viewer")
+st.title("📊 Get Value — Financial Viewer")
 
-# --- Inputs ---
-col1, col2, col3 = st.columns([2, 2, 1])
-with col1:
-    ticker = st.text_input("Ticker", placeholder="e.g. NVDA, AAPL").strip().upper()
-with col2:
-    view = st.selectbox("View", ["Both", "Annual", "Quarterly"])
-with col3:
-    st.write(""); st.write("")
-    run = st.button("Fetch", use_container_width=True, type="primary")
+ticker = st.text_input("Enter Ticker (e.g. NVDA)", "NVDA").upper()
+view_type = st.selectbox("Select View", ["Annual", "Quarterly"])
 
-if not run or not ticker:
-    st.stop()
+if st.button("Analyze", type="primary"):
+    with st.spinner(f"Analyzing {ticker}..."):
+        try:
+            raw = GatewayAgent().fetch_all(ticker)
+            norm = DataNormalizer(raw, ticker)
+        except Exception as e:
+            st.error(f"Error: {e}"); st.stop()
+        
+        def fmt(v):
+            if v is None: return "—"
+            if not isinstance(v, (int, float)): return str(v)
+            a = abs(v)
+            if a >= 1e9: return f"{v/1e9:.2f}B"
+            if a >= 1e6: return f"{v/1e6:.2f}M"
+            return f"{v:,.0f}"
 
-# --- Execution ---
-with st.spinner(f"Fetching {ticker}..."):
-    try:
-        raw_data = GatewayAgent().fetch_all(ticker)
-        normalizer = DataNormalizer(raw_data, ticker)
-    except Exception as e:
-        st.error(str(e)); st.stop()
+        def display_section(title, rows, hdrs):
+            st.subheader(title)
+            df = pd.DataFrame([{ "Item": r["label"], **{h: fmt(r.get(h)) for h in hdrs[1:]} } for r in rows]).set_index("Item")
+            st.dataframe(df, use_container_width=True)
 
-def fmt(val):
-    if val is None: return "—"
-    if not isinstance(val, float): return str(val)
-    from math import isnan
-    if isnan(val): return "—"
-    a = abs(val)
-    if a >= 1e12: return f"{val/1e12:.2f}T"
-    if a >= 1e9:  return f"{val/1e9:.2f}B"
-    if a >= 1e6:  return f"{val/1e6:.2f}M"
-    return f"{val:,.0f}"
+        p = view_type.lower()
+        hdrs = norm.get_column_headers(p)
+        
+        display_section("📈 Income Statement", norm.get_income_statement(p), hdrs)
+        display_section("💸 Cash Flow", norm.get_cash_flow(p), hdrs)
+        display_section("⚖️ Balance Sheet", norm.get_balance_sheet(p), hdrs)
+        display_section("💳 Debt Analysis", norm.get_debt_table(p), hdrs)
 
-def show(title, rows, headers):
-    import pandas as pd
-    st.subheader(title)
-    recs = [{"Item": r.get("label","")} | {h: fmt(r.get(h)) for h in headers[1:]} for r in rows]
-    st.dataframe(pd.DataFrame(recs).set_index("Item"), use_container_width=True)
+        st.success("Analysis Complete!")
 
-annual_rows = quarterly_rows = annual_hdrs = quarterly_hdrs = None
-if view in ("Both", "Annual"):
-    annual_hdrs = normalizer.get_column_headers("annual")
-    annual_rows = normalizer.build_annual_table()
-    show(f"Annual (5Y + TTM)", annual_rows, annual_hdrs)
-
-if view in ("Both", "Quarterly"):
-    quarterly_hdrs = normalizer.get_column_headers("quarterly")
-    quarterly_rows = normalizer.build_quarterly_table()
-    show(f"Quarterly (5Q + TTM)", quarterly_rows, quarterly_hdrs)
-
-# --- Excel ---
-st.divider()
-if st.button("Export to Excel"):
-    import xlsxwriter
-    buf = io.BytesIO()
-    wb = xlsxwriter.Workbook(buf, {"in_memory": True})
-    hdr = wb.add_format({"bold": True, "bg_color": "#1a1a2e", "font_color": "#ffffff", "border": 1})
-    cel = wb.add_format({"border": 1})
-    def ws(name, rows, hdrs):
-        s = wb.add_worksheet(name)
-        s.set_column(0,0,30)
-        for c, h in enumerate(hdrs): s.write(0, c, h, hdr)
-        for r, row in enumerate(rows, 1):
-            s.write(r, 0, row.get("label",""), cel)
-            for c, h in enumerate(hdrs[1:], 1): s.write(r, c, fmt(row.get(h)), cel)
-    if annual_rows: ws("Annual", annual_rows, annual_hdrs)
-    if quarterly_rows: ws("Quarterly", quarterly_rows, quarterly_hdrs)
-    wb.close(); buf.seek(0)
-    st.download_button("Download Excel", buf, f"{ticker}_report.xlsx")
+        # Excel Export with tabs
+        import xlsxwriter
+        buf = io.BytesIO()
+        wb = xlsxwriter.Workbook(buf, {"in_memory": True})
+        def add_sheet(name, rows, hdrs):
+            ws = wb.add_worksheet(name)
+            for c, h in enumerate(hdrs): ws.write(0, c, h)
+            for r_idx, row in enumerate(rows, 1):
+                ws.write(r_idx, 0, row["label"])
+                for c_idx, h in enumerate(hdrs[1:], 1): ws.write(r_idx, c_idx, fmt(row.get(h)))
+        
+        add_sheet("Income Statement", norm.get_income_statement(p), hdrs)
+        add_sheet("Cash Flow", norm.get_cash_flow(p), hdrs)
+        add_sheet("Balance Sheet", norm.get_balance_sheet(p), hdrs)
+        add_sheet("Debt", norm.get_debt_table(p), hdrs)
+        wb.close()
+        st.download_button("📥 Download Excel Report", buf.getvalue(), f"{ticker}_report.xlsx")
