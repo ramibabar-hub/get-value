@@ -7,7 +7,6 @@ class DataNormalizer:
         self.is_l = raw_data.get('annual_income_statement', [])
         self.bs_l = raw_data.get('annual_balance_sheet', [])
         self.cf_l = raw_data.get('annual_cash_flow', [])
-        self.ratios = raw_data.get('annual_ratios', [])
 
     def _get_ttm_value(self, q_list, key):
         return sum(q.get(key, 0) or 0 for q in q_list[:4]) if q_list else 0
@@ -15,8 +14,10 @@ class DataNormalizer:
     def get_column_headers(self, p_type='annual'):
         source = self.is_l if p_type == 'annual' else self.raw_data.get('quarterly_income_statement', [])
         if not source: return ["Item", "TTM"]
+        # יצירת רשימת השנים/רבעונים
         dates = [str(d.get('calendarYear', '')) if p_type=='annual' else f"{d.get('calendarYear')} {d.get('period')}" for d in source[:10]]
-        return ["Item"] + dates + ["TTM"]
+        # החזרת TTM כעמודה הראשונה אחרי Item
+        return ["Item", "TTM"] + dates
 
     def build_table(self, mapping, p_type='annual'):
         headers = self.get_column_headers(p_type)
@@ -29,9 +30,16 @@ class DataNormalizer:
             row = {"label": label}
             found = is_l if is_l and key in is_l[0] else bs_l if bs_l and key in bs_l[0] else cf_l if cf_l and key in cf_l[0] else None
             if found:
+                # חישוב TTM (יופיע בעמודה השנייה בטבלה)
+                if found == bs_l:
+                    row["TTM"] = found[0].get(key, 0) # במאזן TTM הוא הדוח האחרון
+                else:
+                    row["TTM"] = self._get_ttm_value(found, key)
+                
+                # מילוי שאר השנים (החל מהעמודה השלישית)
                 for i, d in enumerate(found[:10]):
-                    if i+1 < len(headers): row[headers[i+1]] = d.get(key, 0)
-                row["TTM"] = d.get(key, 0) if found == bs_l else self._get_ttm_value(found, key)
+                    if i+2 < len(headers):
+                        row[headers[i+2]] = d.get(key, 0)
             rows.append(row)
         return rows
 
@@ -45,12 +53,8 @@ class DataNormalizer:
         return self.build_table([("Operating Cash Flow","operatingCashFlow"),("CapEx","capitalExpenditure"),("Free Cash Flow","freeCashFlow")], p)
 
     # מבנה ה-Insight הקשיח
-    def get_insights_cagr(self):
-        return [{"CAGR": n, "3yr": None, "5yr": None, "10yr": None} for n in ["Revenues", "Operating income", "EBITDA", "EPS", "Adj. FCF", "Shares outs."]]
-    
-    def get_template_data(self, rows, label):
-        return [{label: r, "TTM": None, "Avg. 5yr": None, "Avg. 10yr": None} for r in rows]
-
+    def get_insights_cagr(self): return [{"CAGR": n, "3yr": None, "5yr": None, "10yr": None} for n in ["Revenues", "Operating income", "EBITDA", "EPS", "Adj. FCF", "Shares outs."]]
+    def get_template_data(self, rows, label): return [{label: r, "TTM": None, "Avg. 5yr": None, "Avg. 10yr": None} for r in rows]
     def get_insights_valuation(self): return self.get_template_data(["EV / EBITDA", "EV / Adj. FCF", "P/E", "P/S", "P/B", "P/FCF", "PEG", "Earnings Yield"], "Valuation")
     def get_insights_profitability(self): return self.get_template_data(["Gross profit", "EBIT", "EBITDA", "Net Income", "FCF"], "Profitability")
     def get_insights_returns(self): return self.get_template_data(["ROIC", "FCF ROC", "ROE", "ROA", "ROCE", "ROIC/WACC"], "Returns")
