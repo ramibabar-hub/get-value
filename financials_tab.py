@@ -68,68 +68,6 @@ def _build_link_map(src_list, hist_col_headers):
     return link_map
 
 
-def _render_stmt_html(rows_data, period_cols, cell_fmt_fn, link_map):
-    """
-    Render a financial statement as an HTML table with clickable column headers.
-
-    rows_data    : list of row-dicts with "label" key and period values.
-    period_cols  : ["TTM", "2023", "2022", ...] — first element is always TTM.
-    cell_fmt_fn  : callable(label, col, raw_v) → formatted string.
-    link_map     : {col_label: url} — only historical cols; TTM intentionally absent.
-    """
-    # ── header ────────────────────────────────────────────────────────────────
-    hdr_style = (
-        "text-align:right;padding:6px 8px;"
-        "background:#f0f2f6;font-weight:600;"
-        "white-space:nowrap;border-bottom:2px solid #d0d8e8;"
-    )
-    header_cells = (
-        "<th style='text-align:left;padding:6px 8px;background:#f0f2f6;"
-        "font-weight:600;white-space:nowrap;border-bottom:2px solid #d0d8e8;'>Item</th>"
-    )
-    for col in period_cols:
-        url = link_map.get(col, "")
-        if url:
-            col_html = (
-                f"<a href='{url}' target='_blank' rel='noopener' "
-                f"style='color:#4a90d9;text-decoration:none;' "
-                f"onmouseover=\"this.style.textDecoration='underline'\" "
-                f"onmouseout=\"this.style.textDecoration='none'\">{col}</a>"
-            )
-        else:
-            col_html = col
-        header_cells += f"<th style='{hdr_style}'>{col_html}</th>"
-
-    # ── body ──────────────────────────────────────────────────────────────────
-    body_html = ""
-    for idx, rec in enumerate(rows_data):
-        label = rec["label"]
-        bg = "#ffffff" if idx % 2 == 0 else "#f8f9fc"
-        row_html = f"<tr style='background:{bg};'>"
-        row_html += (
-            f"<td style='padding:5px 8px;white-space:nowrap;font-weight:500;'>"
-            f"{label}</td>"
-        )
-        for col in period_cols:
-            formatted = cell_fmt_fn(label, col, rec.get(col))
-            row_html += (
-                f"<td style='padding:5px 8px;text-align:right;"
-                f"font-family:\"Courier New\",monospace;white-space:nowrap;'>"
-                f"{formatted}</td>"
-            )
-        row_html += "</tr>"
-        body_html += row_html
-
-    html = (
-        "<div style='overflow-x:auto;margin-bottom:16px;'>"
-        "<table style='width:100%;border-collapse:collapse;font-size:0.84em;'>"
-        f"<thead><tr>{header_cells}</tr></thead>"
-        f"<tbody>{body_html}</tbody>"
-        "</table></div>"
-    )
-    st.markdown(html, unsafe_allow_html=True)
-
-
 # ═════════════════════════════════════════════════════════════════════════════
 class FinancialExtras:
     """
@@ -197,7 +135,7 @@ class FinancialExtras:
 
     def _adj_fcf_ttm(self):
         fcf = self._ttm_q(self.q_cf, "freeCashFlow")
-        sbc = self._ttm_q(self.q_is, "stockBasedCompensation")
+        sbc = self._ttm_q(self.q_cf, "stockBasedCompensation")
         if fcf is None:
             return None
         return fcf - (_safe(sbc) or 0)
@@ -443,7 +381,7 @@ class FinancialExtras:
         ebitda_ttm = self._ttm_q(self.q_is, "ebitda")
         ebit_ttm   = self._ttm_q(self.q_is, "operatingIncome")
         int_ttm    = self._ttm_q(self.q_is, "interestExpense")
-        sbc_ttm    = self._ttm_q(self.q_is, "stockBasedCompensation")
+        sbc_ttm    = self._ttm_q(self.q_cf, "stockBasedCompensation")
         fcf_ttm    = self._ttm_q(self.q_cf, "freeCashFlow")
         af_ttm     = self._adj_fcf_ttm()
         nd_ttm     = ((debt_ttm or 0) - (cash_ttm or 0)) if debt_ttm is not None else None
@@ -794,8 +732,31 @@ def render_financials_tab(norm, raw):
         ("Balance Sheet",    norm.get_balance_sheet),
         ("Debt",             norm.get_debt_table),
     ]:
-        st.markdown(f"<div class='section-header'>{title}</div>",
-                    unsafe_allow_html=True)
+        # ── Section header: IS / CF / BS get per-year SEC filing links ────────
+        if title != "Debt":
+            src  = stmt_src[title]
+            lmap = _build_link_map(src, hdrs[2:])
+            link_html = "".join(
+                f"<a href='{url}' target='_blank' rel='noopener' "
+                f"style='color:#90bfff;text-decoration:none;margin-left:8px;"
+                f"font-size:0.72em;font-weight:500;letter-spacing:0;' "
+                f"onmouseover=\"this.style.textDecoration='underline'\" "
+                f"onmouseout=\"this.style.textDecoration='none'\">{col}</a>"
+                for col, url in lmap.items()
+            )
+            hdr_content = (
+                f"<span style='flex:1;'>{title}</span>"
+                + (f"<span>{link_html}</span>" if link_html else "")
+            )
+            st.markdown(
+                f"<div class='section-header' style='display:flex;align-items:center;'>"
+                f"{hdr_content}</div>",
+                unsafe_allow_html=True,
+            )
+        else:
+            st.markdown(f"<div class='section-header'>{title}</div>",
+                        unsafe_allow_html=True)
+
         rows_data = method(p)
 
         # Debug: verify raw EPS values before any formatting
@@ -805,30 +766,23 @@ def render_financials_tab(norm, raw):
                 for col in hdrs[2:]:
                     print(f"DEBUG: Ticker: {ticker_sym}, Year: {col}, Raw EPS: {eps_row.get(col)}")
 
-        if title == "Debt":
-            # Debt table: plain st.dataframe — no links
-            table_rows = []
-            for rec in rows_data:
-                label = rec["label"]
-                record = {"Item": label}
-                for h in period_cols:
-                    record[h] = fmt_fin(rec.get(h))
-                table_rows.append(record)
-            df = pd.DataFrame(table_rows)
-            st.dataframe(df.set_index("Item"),
-                         use_container_width=True, column_config=fin_col_cfg)
-        else:
-            # IS / CF / BS: HTML table with clickable SEC-filing column headers
-            lmap = _build_link_map(stmt_src[title], hdrs[2:])
-
-            def _cell_fmt(label, col, raw_v):
+        table_rows = []
+        for rec in rows_data:
+            label = rec["label"]
+            record = {"Item": label}
+            for h in period_cols:
+                raw_v = rec.get(h)
                 if label == "EPS":
                     # EPS is a per-share decimal — never divide by scale
                     f = _safe(raw_v)
-                    return f"{f:,.2f}" if (f is not None and f != 0) else "N/A"
-                return fmt_fin(raw_v)
+                    record[h] = f"{f:,.2f}" if (f is not None and f != 0) else "N/A"
+                else:
+                    record[h] = fmt_fin(raw_v)
+            table_rows.append(record)
 
-            _render_stmt_html(rows_data, period_cols, _cell_fmt, lmap)
+        df = pd.DataFrame(table_rows)
+        st.dataframe(df.set_index("Item"),
+                     use_container_width=True, column_config=fin_col_cfg)
 
     # ── 7 new metric groups — appended strictly after Debt ────────────────────
     fe = FinancialExtras(norm, raw)
