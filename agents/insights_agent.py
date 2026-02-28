@@ -69,16 +69,25 @@ class InsightsAgent:
         return a / b
 
     def _cagr(self, end_val, start_val, years):
-        """CAGR = (end/start)^(1/years) - 1. Returns 'N/M' for invalid inputs."""
+        """CAGR = (end/start)^(1/years) - 1. Returns 'N/M' for invalid inputs.
+
+        Both end and start must be strictly positive — a negative or zero
+        value in either position makes the ratio negative, which raises a
+        complex number when taken to a fractional power.
+        """
         e = self._safe(end_val)
         s = self._safe(start_val)
-        if e is None or s is None or s == 0 or years <= 0:
+        if e is None or s is None or years <= 0:
             return "N/M"
-        if s < 0:
+        if e <= 0 or s <= 0:   # negative/zero → complex number territory
             return "N/M"
         try:
-            return (e / s) ** (1 / years) - 1
-        except (ZeroDivisionError, ValueError):
+            result = (e / s) ** (1.0 / years) - 1
+            # Final safety net: reject anything that isn't a plain real float
+            if not isinstance(result, float):
+                return "N/M"
+            return result
+        except (ZeroDivisionError, ValueError, TypeError):
             return "N/M"
 
     def _avg_annual(self, src_list, key, n):
