@@ -200,7 +200,7 @@ else:
 
     st.divider()
 
-    # ── Company Header ────────────────────────────────────────────────────────
+    # ── Dashboard Header: identity + price + 15 cardinal metrics ─────────────
     agent    = ProfileAgent(raw)
     flag     = agent.get_flag()
     logo_url = raw.get("image", "")
@@ -229,25 +229,43 @@ else:
         else f"<span style='font-size:2.4em;line-height:1;'>{flag}</span>"
     )
 
+    # Rows 0-2 (Ticker, Company Name, Price) are shown in the identity block;
+    # rows 3-17 become the 15-cell horizontal metrics grid (5 cols × 3 rows).
+    ov_rows = agent.get_rows()
+    metric_cells = ""
+    for r in ov_rows[3:]:
+        val_color = r["color"] if r["color"] else "#0d1b2a"
+        metric_cells += (
+            f"<div style='min-width:0;'>"
+            f"<div style='font-size:0.60em;text-transform:uppercase;letter-spacing:0.07em;"
+            f"color:#4d6b88;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"
+            f"margin-bottom:2px;'>{r['label']}</div>"
+            f"<div style='font-size:0.86em;font-weight:700;color:{val_color};white-space:nowrap;"
+            f"overflow:hidden;text-overflow:ellipsis;'>{r['value']}</div>"
+            f"</div>"
+        )
+
     st.markdown(f"""
-        <div style="display:flex;align-items:center;gap:20px;
-                    padding:14px 0 16px;border-bottom:2px solid #1c2b46;
+        <div style="display:flex;align-items:center;gap:18px;
+                    padding:14px 0 18px;border-bottom:2px solid #1c2b46;
                     margin-bottom:6px;">
-            <div style="flex-shrink:0;">{logo_html}</div>
-            <div style="flex:1;min-width:0;">
-                <div style="font-size:1.4em;font-weight:700;
-                            white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
-                    {flag}&nbsp;&nbsp;{co_name}
+            <div style="flex-shrink:0;padding-top:2px;">{logo_html}</div>
+            <div style="flex-shrink:0;min-width:170px;">
+                <div style="font-size:1.22em;font-weight:700;white-space:nowrap;
+                            overflow:hidden;text-overflow:ellipsis;">
+                    {flag}&nbsp;{co_name}
                 </div>
-                <div style="color:#4d6b88;font-size:0.88em;margin-top:3px;">
-                    {sub_line}
+                <div style="color:#4d6b88;font-size:0.80em;margin-top:2px;">{sub_line}</div>
+                <div style="margin-top:7px;line-height:1.15;">
+                    <span style="font-size:1.45em;font-weight:800;color:#0d1b2a;">{price_fmt}</span>
+                    &nbsp;
+                    <span style="font-size:0.90em;font-weight:700;color:{chg_color};">{chg_fmt}</span>
                 </div>
             </div>
-            <div style="text-align:right;white-space:nowrap;">
-                <div style="font-size:1.65em;font-weight:700;">{price_fmt}</div>
-                <div style="font-size:1.1em;font-weight:600;color:{chg_color};">
-                    {chg_fmt}
-                </div>
+            <div style="flex:1;display:grid;grid-template-columns:repeat(5,1fr);
+                        gap:10px 12px;padding-left:18px;
+                        border-left:1px solid #d0d8e8;">
+                {metric_cells}
             </div>
         </div>
         """, unsafe_allow_html=True)
@@ -255,34 +273,17 @@ else:
     # ── Tabs ──────────────────────────────────────────────────────────────────
     tab_ov, tab_fin, tab_ins = st.tabs(["📊 Overview", "📋 Financials", "💡 Insights"])
 
-    # ── Tab 1: Overview ───────────────────────────────────────────────────────
+    # ── Tab 1: Overview — description only (metrics now live in the header) ──
     with tab_ov:
         description = raw.get("description", "")
         if description:
             st.markdown(
-                f"<p style='color:#4d6b88;font-size:0.9em;line-height:1.7;"
-                f"max-width:820px;margin-bottom:24px;'>{description}</p>",
+                f"<p style='color:#4d6b88;font-size:0.92em;line-height:1.75;"
+                f"max-width:900px;margin-top:8px;'>{description}</p>",
                 unsafe_allow_html=True,
             )
-        ov_rows = agent.get_rows()
-        table_html = ""
-        for r in ov_rows:
-            val_html = (
-                f"<span style='color:{r['color']};'>{r['value']}</span>"
-                if r["color"] else r["value"]
-            )
-            table_html += (
-                f"<tr><td class='lbl'>{r['label']}</td>"
-                f"<td class='val'>{val_html}</td></tr>"
-            )
-        col_tbl, _ = st.columns([5, 4])
-        with col_tbl:
-            st.markdown(
-                f"<div class='ov-wrap'>"
-                f"<table class='ov-table'><tbody>{table_html}</tbody></table>"
-                f"</div>",
-                unsafe_allow_html=True,
-            )
+        else:
+            st.caption("No company description available.")
 
     # ── Tab 2: Financials ─────────────────────────────────────────────────────
     with tab_fin:
