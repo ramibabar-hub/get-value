@@ -8,25 +8,13 @@ st.set_page_config(page_title="getValue | Financial Analysis", layout="wide")
 
 st.markdown("""
     <style>
-    /* ── Section headers (financial tables) ── */
+    /* ── Financial table section headers ── */
     .section-header {
         font-size: 1.1em; font-weight: bold; color: #ffffff;
         background-color: #1c2b46; padding: 6px 15px;
         border-radius: 4px; margin-top: 25px;
     }
     .stTable { font-size: 0.85em; }
-
-    /* ── Terminal company header ── */
-    .term-header {
-        font-family: 'Courier New', Courier, monospace;
-        font-size: 0.82em;
-        color: #5a7a99;
-        text-transform: uppercase;
-        letter-spacing: 0.10em;
-        padding: 6px 0 10px;
-        border-bottom: 1px solid #1c2b46;
-        margin-bottom: 2px;
-    }
 
     /* ── Cardinal Overview Table ── */
     .ov-wrap { max-width: 560px; }
@@ -37,11 +25,7 @@ st.markdown("""
     }
     .ov-table tr { border-bottom: 1px solid #1a2535; }
     .ov-table tr:last-child { border-bottom: none; }
-    .ov-table td {
-        padding: 5px 10px;
-        vertical-align: middle;
-        line-height: 1.4;
-    }
+    .ov-table td { padding: 5px 10px; vertical-align: middle; line-height: 1.4; }
     .ov-table td.lbl {
         color: #4d6b88;
         text-transform: uppercase;
@@ -54,162 +38,239 @@ st.markdown("""
         font-family: 'Courier New', Courier, monospace;
         color: #c8d8e8;
     }
-    .ov-up   { color: #22c55e !important; }
-    .ov-down { color: #ef4444 !important; }
     </style>
     """, unsafe_allow_html=True)
 
-# ── Cached helpers ────────────────────────────────────────────────────────────
-
+# ── Cached search helper ──────────────────────────────────────────────────────
 @st.cache_data(ttl=300, show_spinner=False)
 def _search(query: str) -> list:
     return GatewayAgent().search_ticker(query)
 
-@st.cache_data(ttl=60, show_spinner=False)
-def _overview(ticker: str) -> dict:
-    return GatewayAgent().fetch_overview(ticker)
+# ── Number formatter (financial tables) ──────────────────────────────────────
+def fmt(v, is_pct=False):
+    if v is None: return "N/A"
+    try:
+        if pd.isna(v): return "N/A"
+    except (TypeError, ValueError):
+        pass
+    if v == 0: return "N/A"
+    if is_pct: return f"{v*100:.2f}%"
+    a = abs(v)
+    if a >= 1e9: return f"{v/1e9:.2f}B"
+    if a >= 1e6: return f"{v/1e6:.2f}M"
+    return f"{v:,.2f}"
 
 # ── Session-state bootstrap ───────────────────────────────────────────────────
-for key, default in [("norm", None), ("norm_ticker", None)]:
-    if key not in st.session_state:
-        st.session_state[key] = default
+for k, v in [("active_ticker", None), ("overview_data", None),
+              ("norm", None), ("norm_ticker", None)]:
+    if k not in st.session_state:
+        st.session_state[k] = v
 
-# ── Sidebar ───────────────────────────────────────────────────────────────────
-with st.sidebar:
-    st.markdown("<h1 style='color:#007bff;'>getValue</h1>", unsafe_allow_html=True)
-    view_type = st.radio("Period:", ["Annual", "Quarterly"])
-    st.divider()
-    run_button = st.button("▶  Run Analysis", use_container_width=True, type="primary")
+# ═════════════════════════════════════════════════════════════════════════════
+# LANDING PAGE  (active_ticker is None)
+# ═════════════════════════════════════════════════════════════════════════════
+if st.session_state["active_ticker"] is None:
 
-# ── Greeting + Search ─────────────────────────────────────────────────────────
-st.write("### Hi Rami, Let's get Value")
+    # Hide sidebar on the landing page for a clean full-screen look
+    st.markdown("""
+        <style>
+        section[data-testid="stSidebar"]  { display: none !important; }
+        [data-testid="collapsedControl"]  { display: none !important; }
+        </style>""", unsafe_allow_html=True)
 
-search_query = st.text_input(
-    "🔍  Search company or ticker:",
-    value="NVDA",
-    placeholder="e.g. NVDA, Apple, Microsoft…",
-    label_visibility="visible",
-)
+    # Vertical breathing room
+    st.markdown("<div style='height:80px;'></div>", unsafe_allow_html=True)
 
-# Autocomplete dropdown (appears as user types)
-ticker = search_query.strip().upper()
-if len(search_query.strip()) >= 2:
-    suggestions = _search(search_query.strip())
-    if suggestions:
-        labels = [
-            f"{s.get('flag', '🏳️')} {s.get('symbol', '')} — "
-            f"{s.get('name', '')} ({s.get('exchangeShortName', s.get('stockExchange', ''))})"
-            for s in suggestions[:10]
-        ]
-        chosen = st.selectbox("Select from results:", labels, label_visibility="collapsed")
-        # Label format: "🇺🇸 NVDA — NVIDIA Corporation (NASDAQ)"
-        # Ticker is the last token before " — "
-        ticker = chosen.split(" — ")[0].split()[-1].strip()
+    # Brand + greeting
+    st.markdown("""
+        <div style='text-align:center;margin-bottom:6px;'>
+            <span style='color:#007bff;font-size:3em;font-weight:900;
+                         letter-spacing:-0.02em;'>
+                get<span style='color:#ffffff;'>Value</span>
+            </span>
+        </div>
+        <div style='text-align:center;color:#8899bb;font-size:1.1em;margin-bottom:38px;'>
+            Hi Rami, Let's get Value
+        </div>
+        """, unsafe_allow_html=True)
 
-# ── Cardinal Overview Table (auto-loads on ticker change) ────────────────────
-if ticker:
-    raw = _overview(ticker)
-    if raw:
-        agent = ProfileAgent(raw)
-        rows  = agent.get_rows()
-        flag  = agent.get_flag()
-        name  = raw.get("companyName", ticker)
-        exch  = raw.get("exchangeShortName") or raw.get("exchange", "")
-
-        # Compact terminal header line
-        st.markdown(
-            f"<div class='term-header'>"
-            f"{flag}&nbsp;&nbsp;{name.upper()}&nbsp;&nbsp;·&nbsp;&nbsp;"
-            f"{ticker}&nbsp;&nbsp;·&nbsp;&nbsp;{exch}"
-            f"</div>",
-            unsafe_allow_html=True,
+    # Centered search column
+    _, mid, _ = st.columns([2, 4, 2])
+    with mid:
+        search_query = st.text_input(
+            "search",
+            value="",
+            placeholder="🔍  Search company or ticker…",
+            label_visibility="collapsed",
         )
 
-        # Build the 18-row HTML table
-        table_rows_html = ""
-        for r in rows:
-            if r["color"]:
-                val_html = f"<span style='color:{r['color']};'>{r['value']}</span>"
-            else:
-                val_html = r["value"]
-            table_rows_html += (
+        ticker_candidate = search_query.strip().upper()
+
+        if len(search_query.strip()) >= 2:
+            suggestions = _search(search_query.strip())
+            if suggestions:
+                labels = [
+                    f"{s.get('flag','🏳️')} {s.get('symbol','')} — "
+                    f"{s.get('name','')} "
+                    f"({s.get('exchangeShortName', s.get('stockExchange',''))})"
+                    for s in suggestions[:10]
+                ]
+                chosen = st.selectbox("results", labels, label_visibility="collapsed")
+                ticker_candidate = chosen.split(" — ")[0].split()[-1].strip()
+
+        if ticker_candidate:
+            if st.button(
+                f"Analyze  {ticker_candidate}  →",
+                use_container_width=True,
+                type="primary",
+            ):
+                with st.spinner(f"Loading {ticker_candidate}…"):
+                    gw          = GatewayAgent()
+                    overview    = gw.fetch_overview(ticker_candidate)
+                    raw_fin     = gw.fetch_all(ticker_candidate)
+                    st.session_state["active_ticker"] = ticker_candidate
+                    st.session_state["overview_data"] = overview
+                    st.session_state["norm"]          = DataNormalizer(raw_fin, ticker_candidate)
+                    st.session_state["norm_ticker"]   = ticker_candidate
+                st.rerun()
+
+# ═════════════════════════════════════════════════════════════════════════════
+# COMPANY PAGE  (active_ticker is set)
+# ═════════════════════════════════════════════════════════════════════════════
+else:
+    ticker = st.session_state["active_ticker"]
+    raw    = st.session_state["overview_data"] or {}
+    norm   = st.session_state["norm"]
+
+    # ── Sidebar ───────────────────────────────────────────────────────────────
+    with st.sidebar:
+        st.markdown("<h1 style='color:#007bff;'>getValue</h1>", unsafe_allow_html=True)
+        view_type = st.radio("Period:", ["Annual", "Quarterly"])
+        st.divider()
+        if st.button("← Search Another Stock", use_container_width=True):
+            for k in ["active_ticker", "overview_data", "norm", "norm_ticker"]:
+                st.session_state[k] = None
+            st.rerun()
+
+    # ── Company Header ────────────────────────────────────────────────────────
+    agent    = ProfileAgent(raw)
+    flag     = agent.get_flag()
+    logo_url = raw.get("image", "")
+    co_name  = raw.get("companyName", ticker)
+    exchange = raw.get("exchangeShortName") or raw.get("exchange", "")
+    sector   = raw.get("sector") or ""
+
+    try:
+        price_val = float(raw.get("price") or 0)
+        chg_raw   = raw.get("changesPercentage", 0) or 0
+        chg_pct   = float(str(chg_raw).replace("%", "").strip())
+    except (TypeError, ValueError):
+        price_val, chg_pct = 0.0, 0.0
+
+    price_fmt = f"${price_val:,.2f}" if price_val else "N/A"
+    chg_sign  = "+" if chg_pct >= 0 else ""
+    chg_fmt   = f"{chg_sign}{chg_pct:.2f}%"
+    chg_color = "#22c55e" if chg_pct >= 0 else "#ef4444"
+    sub_line  = " &nbsp;·&nbsp; ".join(filter(None, [ticker, exchange, sector]))
+
+    logo_html = (
+        f"<img src='{logo_url}' width='54' height='54' "
+        f"style='border-radius:10px;object-fit:contain;background:#0d1b2a;padding:4px;' "
+        f"onerror=\"this.style.display='none'\">"
+        if logo_url
+        else f"<span style='font-size:2.4em;line-height:1;'>{flag}</span>"
+    )
+
+    st.markdown(f"""
+        <div style="display:flex;align-items:center;gap:20px;
+                    padding:14px 0 16px;border-bottom:2px solid #1c2b46;
+                    margin-bottom:6px;">
+            <div style="flex-shrink:0;">{logo_html}</div>
+            <div style="flex:1;min-width:0;">
+                <div style="font-size:1.4em;font-weight:700;
+                            white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+                    {flag}&nbsp;&nbsp;{co_name}
+                </div>
+                <div style="color:#8899bb;font-size:0.88em;margin-top:3px;">
+                    {sub_line}
+                </div>
+            </div>
+            <div style="text-align:right;white-space:nowrap;">
+                <div style="font-size:1.65em;font-weight:700;">{price_fmt}</div>
+                <div style="font-size:1.1em;font-weight:600;color:{chg_color};">
+                    {chg_fmt}
+                </div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    # ── Tabs ──────────────────────────────────────────────────────────────────
+    tab_ov, tab_fin, tab_ins = st.tabs(["📊 Overview", "📋 Financials", "💡 Insights"])
+
+    # ── Tab 1: Overview ───────────────────────────────────────────────────────
+    with tab_ov:
+        ov_rows = agent.get_rows()
+        table_html = ""
+        for r in ov_rows:
+            val_html = (
+                f"<span style='color:{r['color']};'>{r['value']}</span>"
+                if r["color"] else r["value"]
+            )
+            table_html += (
                 f"<tr>"
                 f"<td class='lbl'>{r['label']}</td>"
                 f"<td class='val'>{val_html}</td>"
                 f"</tr>"
             )
-
-        col_table, _ = st.columns([5, 4])
-        with col_table:
+        col_tbl, _ = st.columns([5, 4])
+        with col_tbl:
             st.markdown(
                 f"<div class='ov-wrap'>"
-                f"<table class='ov-table'><tbody>{table_rows_html}</tbody></table>"
+                f"<table class='ov-table'><tbody>{table_html}</tbody></table>"
                 f"</div>",
                 unsafe_allow_html=True,
             )
 
-        st.divider()
-
-# ── Run Analysis (financial statements) ──────────────────────────────────────
-if run_button and ticker:
-    st.cache_data.clear()
-    with st.spinner(f"Fetching financials for {ticker}…"):
-        raw_fin = GatewayAgent().fetch_all(ticker)
-        st.session_state["norm"] = DataNormalizer(raw_fin, ticker)
-        st.session_state["norm_ticker"] = ticker
-
-# Show financials only when they belong to the current ticker
-if st.session_state["norm"] and st.session_state["norm_ticker"] == ticker:
-    norm = st.session_state["norm"]
-
-    def fmt(v, is_pct=False):
-        if v is None: return "N/A"
-        try:
-            if pd.isna(v): return "N/A"
-        except (TypeError, ValueError):
-            pass
-        if v == 0: return "N/A"
-        if is_pct: return f"{v*100:.2f}%"
-        a = abs(v)
-        if a >= 1e9: return f"{v/1e9:.2f}B"
-        if a >= 1e6: return f"{v/1e6:.2f}M"
-        return f"{v:,.2f}"
-
-    p = view_type.lower()
-    hdrs = norm.get_column_headers(p)
-    period_cols = hdrs[1:]
-    fin_col_cfg = {col: st.column_config.TextColumn(col, width=120) for col in period_cols}
-
-    tab_fin, tab_ins = st.tabs(["📋 Financials", "💡 Insights"])
-
+    # ── Tab 2: Financials ─────────────────────────────────────────────────────
     with tab_fin:
-        for title, method in [
-            ("Income Statement", norm.get_income_statement),
-            ("Cashflow",         norm.get_cash_flow),
-            ("Balance Sheet",    norm.get_balance_sheet),
-            ("Debt",             norm.get_debt_table),
-        ]:
-            st.markdown(f"<div class='section-header'>{title}</div>", unsafe_allow_html=True)
-            data = method(p)
-            df = pd.DataFrame([
-                {"Item": r["label"], **{h: fmt(r.get(h)) for h in period_cols}}
-                for r in data
-            ])
-            st.dataframe(df.set_index("Item"), use_container_width=True, column_config=fin_col_cfg)
+        if norm:
+            p           = view_type.lower()
+            hdrs        = norm.get_column_headers(p)
+            period_cols = hdrs[1:]
+            fin_col_cfg = {col: st.column_config.TextColumn(col, width=120) for col in period_cols}
+            for title, method in [
+                ("Income Statement", norm.get_income_statement),
+                ("Cashflow",         norm.get_cash_flow),
+                ("Balance Sheet",    norm.get_balance_sheet),
+                ("Debt",             norm.get_debt_table),
+            ]:
+                st.markdown(f"<div class='section-header'>{title}</div>", unsafe_allow_html=True)
+                df = pd.DataFrame([
+                    {"Item": rec["label"], **{h: fmt(rec.get(h)) for h in period_cols}}
+                    for rec in method(p)
+                ])
+                st.dataframe(df.set_index("Item"), use_container_width=True, column_config=fin_col_cfg)
+        else:
+            st.info("Financial data is unavailable for this ticker.")
 
+    # ── Tab 3: Insights ───────────────────────────────────────────────────────
     with tab_ins:
-        for title, method, cols, is_pct in [
-            ("Growth (CAGR)",       norm.get_insights_cagr,         ["3yr", "5yr", "10yr"],             True),
-            ("Valuation Multiples", norm.get_insights_valuation,    ["TTM", "Avg. 5yr", "Avg. 10yr"],   False),
-            ("Profitability",       norm.get_insights_profitability, ["TTM", "Avg. 5yr", "Avg. 10yr"],   True),
-            ("Returns Analysis",    norm.get_insights_returns,       ["TTM", "Avg. 5yr", "Avg. 10yr"],   True),
-            ("Liquidity",           norm.get_insights_liquidity,     ["TTM", "Avg. 5yr", "Avg. 10yr"],   False),
-            ("Dividends",           norm.get_insights_dividends,     ["TTM", "Avg. 5yr", "Avg. 10yr"],   True),
-            ("Efficiency",          norm.get_insights_efficiency,    ["TTM", "Avg. 5yr", "Avg. 10yr"],   False),
-        ]:
-            st.markdown(f"<div class='section-header'>{title}</div>", unsafe_allow_html=True)
-            df = pd.DataFrame(method())
-            for c in cols:
-                df[c] = df[c].apply(lambda x: fmt(x, is_pct))
-            ins_col_cfg = {col: st.column_config.TextColumn(col, width=120) for col in cols}
-            st.dataframe(df.set_index(df.columns[0]), use_container_width=True, column_config=ins_col_cfg)
+        if norm:
+            p = view_type.lower()
+            for title, method, cols, is_pct in [
+                ("Growth (CAGR)",       norm.get_insights_cagr,         ["3yr", "5yr", "10yr"],             True),
+                ("Valuation Multiples", norm.get_insights_valuation,    ["TTM", "Avg. 5yr", "Avg. 10yr"],   False),
+                ("Profitability",       norm.get_insights_profitability, ["TTM", "Avg. 5yr", "Avg. 10yr"],   True),
+                ("Returns Analysis",    norm.get_insights_returns,       ["TTM", "Avg. 5yr", "Avg. 10yr"],   True),
+                ("Liquidity",           norm.get_insights_liquidity,     ["TTM", "Avg. 5yr", "Avg. 10yr"],   False),
+                ("Dividends",           norm.get_insights_dividends,     ["TTM", "Avg. 5yr", "Avg. 10yr"],   True),
+                ("Efficiency",          norm.get_insights_efficiency,    ["TTM", "Avg. 5yr", "Avg. 10yr"],   False),
+            ]:
+                st.markdown(f"<div class='section-header'>{title}</div>", unsafe_allow_html=True)
+                df = pd.DataFrame(method())
+                for c in cols:
+                    df[c] = df[c].apply(lambda x, p=is_pct: fmt(x, p))
+                ins_col_cfg = {col: st.column_config.TextColumn(col, width=120) for col in cols}
+                st.dataframe(df.set_index(df.columns[0]), use_container_width=True, column_config=ins_col_cfg)
+        else:
+            st.info("Insights data is unavailable for this ticker.")
