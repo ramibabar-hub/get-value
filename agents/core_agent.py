@@ -10,6 +10,9 @@ class DataNormalizer:
         self.q_is = raw_data.get('quarterly_income_statement', [])
         self.q_bs = raw_data.get('quarterly_balance_sheet', [])
         self.q_cf = raw_data.get('quarterly_cash_flow', [])
+        # key-metrics: per-period price, market cap, employees, multiples
+        self.km_l = raw_data.get('annual_key_metrics', [])
+        self.q_km = raw_data.get('quarterly_key_metrics', [])
 
     def _get_ttm_value(self, q_list, key):
         if not q_list: return 0

@@ -199,6 +199,9 @@ class GatewayAgent:
             "annual_cash_flow":           self.fetch_data("cash-flow-statement",    ticker),
             "quarterly_cash_flow":        self.fetch_data("cash-flow-statement",    ticker, True),
             "annual_ratios":              self.fetch_data("ratios",                 ticker),
+            # key-metrics: per-period price, market cap, employees, and pre-computed multiples
+            "annual_key_metrics":         self.fetch_data("key-metrics",            ticker),
+            "quarterly_key_metrics":      self.fetch_data("key-metrics",            ticker, True),
         }
 
     # ── autocomplete search ───────────────────────────────────────────────────

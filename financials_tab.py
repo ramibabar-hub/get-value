@@ -65,7 +65,10 @@ class FinancialExtras:
         self.q_is = norm.q_is
         self.q_bs = norm.q_bs
         self.q_cf = norm.q_cf
-        self.rt_l = norm.raw_data.get("annual_ratios", []) or []
+        self.rt_l = norm.raw_data.get("annual_ratios",      []) or []
+        # key-metrics: end-of-period price, market cap, employees, pre-computed multiples
+        self.km_l = norm.raw_data.get("annual_key_metrics",    []) or []
+        self.q_km = norm.raw_data.get("quarterly_key_metrics", []) or []
 
     # ── data accessors ────────────────────────────────────────────────────────
 
@@ -87,6 +90,8 @@ class FinancialExtras:
             ("cf", "quarterly"): self.q_cf,
             ("rt", "annual"):    self.rt_l,
             ("rt", "quarterly"): [],          # ratios are annual-only
+            ("km", "annual"):    self.km_l,   # key-metrics (price, mktcap, employees)
+            ("km", "quarterly"): self.q_km,
         }.get((stmt, p), [])
 
     def _hist(self, stmt, key, i, p):
@@ -185,6 +190,7 @@ class FinancialExtras:
     # ══════════════════════════════════════════════════════════════════════════
 
     def get_market_valuation(self, hdrs, p):
+        # ── TTM values (always from live overview + trailing quarters) ────────
         mkt      = _safe(self.ov.get("mktCap"))
         price    = _safe(self.ov.get("price"))
         emp      = _safe(self.ov.get("fullTimeEmployees"))
@@ -197,67 +203,133 @@ class FinancialExtras:
         div_abs  = abs(div_ttm) if div_ttm is not None else 0
         rp_abs   = abs(rp_ttm)  if rp_ttm  is not None else 0
 
-        # Share counts for dilution
+        # km_src: key-metrics list matching the current period
+        km_src = self.q_km if p == "quarterly" else self.km_l
+
+        # ── helpers using end-of-period price / market cap from key-metrics ──
+        def _km(key, i):
+            """End-of-period value from key-metrics for historical column i."""
+            return self._g(km_src, key, i)
+
+        def _mkt_h(i):
+            return _km("marketCap", i)
+
+        def _pe_h(i):
+            return (_km("peRatio", i)
+                    or self._g(self.rt_l, "priceEarningsRatio", i))
+
+        def _ps_h(i):
+            return (_km("priceToSalesRatio", i)
+                    or self._g(self.rt_l, "priceToSalesRatio", i))
+
+        def _pb_h(i):
+            return (_km("pbRatio", i)
+                    or self._g(self.rt_l, "priceToBookRatio", i))
+
+        def _paf_h(i):
+            """P/Adj.FCF = end-of-period market cap / Adj.FCF for that period."""
+            return _d(_mkt_h(i), self._adj_fcf_hist(i, p))
+
+        def _by_h(i):
+            """Buyback yield = repurchases / end-of-period market cap."""
+            rp = self._hist("cf", "commonStockRepurchased", i, p)
+            mc = _mkt_h(i)
+            return _d(abs(rp) if rp else None, mc)
+
+        def _tsy_h(i):
+            """Total shareholder yield = (div + repurch) / end-of-period market cap."""
+            d  = self._hist("cf", "commonDividendsPaid",   i, p)
+            rp = self._hist("cf", "commonStockRepurchased", i, p)
+            mc = _mkt_h(i)
+            return _d((abs(d) if d else 0) + (abs(rp) if rp else 0), mc)
+
+        def _dr_h(i):
+            """Div.&Repurch./Adj.FCF for period i."""
+            d  = self._hist("cf", "commonDividendsPaid",   i, p)
+            rp = self._hist("cf", "commonStockRepurchased", i, p)
+            af = self._adj_fcf_hist(i, p)
+            return _d((abs(d) if d else 0) + (abs(rp) if rp else 0), af)
+
+        def _dil_h(i):
+            src = self._src("is", p)
+            a = (self._g(src, "weightedAverageShsOutDil", i)
+                 or self._g(src, "weightedAverageShsOut", i))
+            b = (self._g(src, "weightedAverageShsOutDil", i + 1)
+                 or self._g(src, "weightedAverageShsOut", i + 1))
+            return _d((a - b) if (a and b) else None, b)
+
+        def _rev_emp_h(i):
+            rev = self._hist("is", "revenue", i, p)
+            e   = _km("numberOfEmployees", i)
+            return _d(rev, e)
+
+        def _ni_emp_h(i):
+            ni = self._hist("is", "netIncome", i, p)
+            e  = _km("numberOfEmployees", i)
+            return _d(ni, e)
+
+        # ── Share counts for TTM dilution ─────────────────────────────────────
         sh0 = (self._g(self.is_l, "weightedAverageShsOutDil", 0)
                or self._g(self.is_l, "weightedAverageShsOut", 0))
         sh1 = (self._g(self.is_l, "weightedAverageShsOutDil", 1)
                or self._g(self.is_l, "weightedAverageShsOut", 1))
-
         by_ttm  = _d(rp_abs or None, mkt)
         dil_ttm = _d((sh0 - sh1) if (sh0 and sh1) else None, sh1)
-
-        def _dil_h(i):
-            a = (self._g(self.is_l, "weightedAverageShsOutDil", i)
-                 or self._g(self.is_l, "weightedAverageShsOut", i))
-            b = (self._g(self.is_l, "weightedAverageShsOutDil", i + 1)
-                 or self._g(self.is_l, "weightedAverageShsOut", i + 1))
-            return _d((a - b) if (a and b) else None, b)
-
-        def _dr_h(i):
-            d  = self._g(self.cf_l, "commonDividendsPaid",   i)
-            rp = self._g(self.cf_l, "commonStockRepurchased", i)
-            af = self._adj_fcf_hist(i)
-            return _d((abs(d) if d else 0) + (abs(rp) if rp else 0), af)
-
-        byd = None
-        if by_ttm is not None and dil_ttm and dil_ttm != 0:
-            byd = by_ttm / dil_ttm
+        byd_ttm = (by_ttm / dil_ttm
+                   if (by_ttm is not None and dil_ttm and dil_ttm != 0) else None)
 
         rows = [
-            self._row("Price",                      price,
-                      lambda i: None,                                                         hdrs),
-            self._row("Market Cap",                 mkt,
-                      lambda i: None,                                                         hdrs, "money"),
-            self._row("P/E",                        _d(mkt, ni_ttm),
-                      lambda i: self._g(self.rt_l, "priceEarningsRatio", i),                 hdrs),
-            self._row("P/S",                        _d(mkt, rev_ttm),
-                      lambda i: self._g(self.rt_l, "priceToSalesRatio", i),                  hdrs),
-            self._row("P/B",                        _d(mkt, book_ttm),
-                      lambda i: self._g(self.rt_l, "priceToBookRatio", i),                   hdrs),
-            self._row("P/Adj. FCF",                 _d(mkt, af_ttm),
-                      lambda i: None,                                                         hdrs),
-            self._row("Buyback Yield",              by_ttm,
-                      lambda i: None,                                                         hdrs, "pct"),
-            self._row("Dilution",                   dil_ttm,
-                      _dil_h,                                                                 hdrs, "pct"),
-            self._row("Buyback Yield / (Dilution)", byd,
-                      lambda i: None,                                                         hdrs),
-            self._row("Div.&Repurch./ Adj. FCF",    _d(div_abs + rp_abs, af_ttm),
-                      _dr_h,                                                                  hdrs),
-            self._row("Total shareholder yield",    _d(div_abs + rp_abs, mkt),
-                      lambda i: None,                                                         hdrs, "pct"),
-            self._row("Piotroski score",             self._piotroski_at(0),
-                      lambda i: self._piotroski_at(i),                                       hdrs, "int"),
-            self._row("5 Yr Beta",                  _safe(self.ov.get("beta")),
-                      lambda i: None,                                                         hdrs),
-            self._row("WACC",                       None,
-                      lambda i: None,                                                         hdrs),
-            self._row("Num. of Employees",          emp,
-                      lambda i: None,                                                         hdrs, "int"),
-            self._row("Revenue / Employee",         _d(rev_ttm, emp),
-                      lambda i: None,                                                         hdrs),
-            self._row("Net Income / Employee",      _d(ni_ttm, emp),
-                      lambda i: None,                                                         hdrs),
+            self._row("Price",
+                      price,
+                      lambda i: _km("stockPrice", i),                    hdrs),
+            self._row("Market Cap",
+                      mkt,
+                      _mkt_h,                                             hdrs, "money"),
+            self._row("P/E",
+                      _d(mkt, ni_ttm),
+                      _pe_h,                                              hdrs),
+            self._row("P/S",
+                      _d(mkt, rev_ttm),
+                      _ps_h,                                              hdrs),
+            self._row("P/B",
+                      _d(mkt, book_ttm),
+                      _pb_h,                                              hdrs),
+            self._row("P/Adj. FCF",
+                      _d(mkt, af_ttm),
+                      _paf_h,                                             hdrs),
+            self._row("Buyback Yield",
+                      by_ttm,
+                      _by_h,                                              hdrs, "pct"),
+            self._row("Dilution",
+                      dil_ttm,
+                      _dil_h,                                             hdrs, "pct"),
+            self._row("Buyback Yield / (Dilution)",
+                      byd_ttm,
+                      lambda i: None,                                     hdrs),
+            self._row("Div.&Repurch./ Adj. FCF",
+                      _d(div_abs + rp_abs, af_ttm),
+                      _dr_h,                                              hdrs),
+            self._row("Total shareholder yield",
+                      _d(div_abs + rp_abs, mkt),
+                      _tsy_h,                                             hdrs, "pct"),
+            self._row("Piotroski score",
+                      self._piotroski_at(0),
+                      lambda i: self._piotroski_at(i),                   hdrs, "int"),
+            self._row("5 Yr Beta",
+                      _safe(self.ov.get("beta")),
+                      lambda i: None,                                     hdrs),
+            self._row("WACC",
+                      None,
+                      lambda i: None,                                     hdrs),
+            self._row("Num. of Employees",
+                      emp,
+                      lambda i: _km("numberOfEmployees", i),              hdrs, "int"),
+            self._row("Revenue / Employee",
+                      _d(rev_ttm, emp),
+                      _rev_emp_h,                                         hdrs),
+            self._row("Net Income / Employee",
+                      _d(ni_ttm, emp),
+                      _ni_emp_h,                                          hdrs),
         ]
         return rows
 
@@ -302,9 +374,10 @@ class FinancialExtras:
                           abs(ie) if ie else None))
 
         def _sbcfcf_h(i):
+            # SBC / FCF (no abs — formula is literal SBC ÷ FCF)
             sbc = self._g(self.is_l, "stockBasedCompensation", i)
             fcf = self._g(self.cf_l, "freeCashFlow", i)
-            return _d(abs(sbc) if sbc else None, fcf)
+            return _d(sbc, fcf)
 
         rows = [
             self._row("Debt / Equity",
@@ -319,8 +392,7 @@ class FinancialExtras:
                       _d(ebit_ttm,
                          abs(int_ttm) if int_ttm else None), _ic_h, hdrs),
             self._row("SBC / FCF",
-                      _d(abs(sbc_ttm) if sbc_ttm else None,
-                         fcf_ttm),                _sbcfcf_h, hdrs),
+                      _d(sbc_ttm, fcf_ttm),       _sbcfcf_h, hdrs),
             self._row("ROIC / WACC",              None, lambda i: None, hdrs),
         ]
         return rows
