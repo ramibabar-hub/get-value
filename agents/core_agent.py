@@ -88,7 +88,7 @@ class DataNormalizer:
         return self.build_table([
             ("Revenues","revenue"), ("Gross profit","grossProfit"), ("Operating income","operatingIncome"),
             ("EBITDA","ebitda"), ("Interest Expense","interestExpense"), ("Income Tax","incomeTaxExpense"),
-            ("Net Income","netIncome"), ("EPS","eps")
+            ("Net Income","netIncome"), ("EPS","epsDiluted")
         ], p)
 
     def get_cash_flow(self, p):

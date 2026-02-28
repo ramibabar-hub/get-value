@@ -32,7 +32,10 @@ def _fmt(v, fmt_type, div):
     Format a single cell value.
     fmt_type: "money" | "ratio" | "pct" | "days" | "int"
     div: scale divisor (only applied to "money")
+    Sentinel strings (e.g. "N/M") are passed through unchanged.
     """
+    if isinstance(v, str):      # sentinel strings like "N/M"
+        return v
     if v is None:
         return "N/A"
     f = _safe(v)
@@ -215,8 +218,16 @@ class FinancialExtras:
             return _km("marketCap", i)
 
         def _pe_h(i):
-            return (_km("peRatio", i)
-                    or self._g(self.rt_l, "priceEarningsRatio", i))
+            # Primary: pre-computed end-of-period P/E from key-metrics
+            pe = _km("peRatio", i)
+            if pe is not None:
+                return pe
+            # Fallback: Price / EPS Diluted — return "N/M" when EPS ≤ 0
+            px  = _price_h(i)
+            eps = self._hist("is", "epsDiluted", i, p)
+            if eps is None or eps <= 0:
+                return "N/M"
+            return _d(px, eps)
 
         def _ps_h(i):
             return (_km("priceToSalesRatio", i)
@@ -689,7 +700,9 @@ def render_financials_tab(norm, raw):
     period_cols = hdrs[1:]
     fin_col_cfg = {col: st.column_config.TextColumn(col, width=120) for col in period_cols}
 
-    # ── Original 4 tables — UNTOUCHED ─────────────────────────────────────────
+    # ── Original 4 tables ─────────────────────────────────────────────────────
+    ticker_sym = raw.get("symbol", "?")
+
     for title, method in [
         ("Income Statement", norm.get_income_statement),
         ("Cashflow",         norm.get_cash_flow),
@@ -698,11 +711,30 @@ def render_financials_tab(norm, raw):
     ]:
         st.markdown(f"<div class='section-header'>{title}</div>",
                     unsafe_allow_html=True)
-        df = pd.DataFrame([
-            {"Item": rec["label"],
-             **{h: fmt_fin(rec.get(h)) for h in period_cols}}
-            for rec in method(p)
-        ])
+        rows_data = method(p)
+
+        # Debug: verify raw EPS values before any formatting
+        if title == "Income Statement":
+            eps_row = next((r for r in rows_data if r.get("label") == "EPS"), None)
+            if eps_row:
+                for col in hdrs[2:]:
+                    print(f"DEBUG: Ticker: {ticker_sym}, Year: {col}, Raw EPS: {eps_row.get(col)}")
+
+        table_rows = []
+        for rec in rows_data:
+            label = rec["label"]
+            record = {"Item": label}
+            for h in period_cols:
+                raw_v = rec.get(h)
+                if label == "EPS":
+                    # EPS is a per-share decimal — never divide by scale
+                    f = _safe(raw_v)
+                    record[h] = f"{f:,.2f}" if (f is not None and f != 0) else "N/A"
+                else:
+                    record[h] = fmt_fin(raw_v)
+            table_rows.append(record)
+
+        df = pd.DataFrame(table_rows)
         st.dataframe(df.set_index("Item"),
                      use_container_width=True, column_config=fin_col_cfg)
 
