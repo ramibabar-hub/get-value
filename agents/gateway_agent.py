@@ -82,3 +82,35 @@ class GatewayAgent:
             "quarterly_cash_flow":        self.fetch_data("cash-flow-statement",    ticker, True),
             "annual_ratios":              self.fetch_data("ratios",                 ticker),
         }
+
+    def search_ticker(self, query: str, limit: int = 10) -> list:
+        """Autocomplete: returns [{symbol, name, exchangeShortName, ...}]."""
+        if not self.api_key or not query.strip():
+            return []
+        url = f"{self.base_url}/search"
+        params = {"query": query.strip(), "limit": limit, "apikey": self.api_key}
+        try:
+            res = requests.get(url, params=params, timeout=5)
+            body = res.json()
+            return body if isinstance(body, list) else []
+        except Exception as e:
+            print(f"[GatewayAgent] search_ticker ERROR: {e}")
+            return []
+
+    def fetch_profile(self, ticker: str) -> dict:
+        """Returns the company profile dict (price, mktCap, sector, etc.)."""
+        if not self.api_key or not ticker.strip():
+            return {}
+        url = f"{self.base_url}/profile"
+        params = {"symbol": ticker.strip().upper(), "apikey": self.api_key}
+        try:
+            res = requests.get(url, params=params, timeout=10)
+            body = res.json()
+            if isinstance(body, list) and body:
+                return body[0]
+            if isinstance(body, dict) and body:
+                return body
+            return {}
+        except Exception as e:
+            print(f"[GatewayAgent] fetch_profile ERROR: {e}")
+            return {}
