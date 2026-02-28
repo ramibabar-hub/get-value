@@ -89,14 +89,31 @@ class DataNormalizer:
         ], p)
 
     def get_cash_flow(self, p):
-        # חישוב Adj. FCF יבוצע בעתיד, כרגע מוצג כסעיף קבוע
-        return self.build_table([
-            ("Cash flow from operations","operatingCashFlow"), ("Capital expenditures","capitalExpenditure"),
-            ("Free Cash flow","freeCashFlow"), ("Stock based compensation","stockBasedCompensation"),
-            ("Adj. FCF","freeCashFlow"), ("Depreciation & Amortization","depreciationAndAmortization"),
-            ("Change in Working Capital (inc) / dec","changeInWorkingCapital"), ("Dividend paid","commonDividendsPaid"),
-            ("Repurchase of Common Stock","weightedAverageShsOut") # דורש מיפוי ייעודי
+        rows = self.build_table([
+            ("Cash flow from operations", "operatingCashFlow"),
+            ("Capital expenditures",      "capitalExpenditure"),
+            ("Free Cash flow",            "freeCashFlow"),
+            ("Stock based compensation",  "stockBasedCompensation"),
+            ("Adj. FCF",                  "freeCashFlow"),   # overridden below
+            ("Depreciation & Amortization", "depreciationAndAmortization"),
+            ("Change in Working Capital (inc) / dec", "changeInWorkingCapital"),
+            ("Dividend paid",             "commonDividendsPaid"),
+            ("Repurchase of Common Stock","commonStockRepurchased"),
         ], p)
+
+        # Adj. FCF = Free Cash Flow − Stock Based Compensation
+        fcf_row = next((r for r in rows if r["label"] == "Free Cash flow"),           None)
+        sbc_row = next((r for r in rows if r["label"] == "Stock based compensation"), None)
+        adj_row = next((r for r in rows if r["label"] == "Adj. FCF"),                 None)
+        if fcf_row and sbc_row and adj_row:
+            for col in [k for k in adj_row if k != "label"]:
+                try:
+                    fcf_v = float(fcf_row.get(col) or 0)
+                    sbc_v = float(sbc_row.get(col) or 0)
+                    adj_row[col] = fcf_v - sbc_v
+                except (TypeError, ValueError):
+                    adj_row[col] = None
+        return rows
 
     def get_balance_sheet(self, p):
         return self.build_table([
