@@ -40,7 +40,8 @@ st.markdown("""
     }
     .ov-table td.val {
         font-family: 'Courier New', Courier, monospace;
-        color: #c8d8e8;
+        color: #e8edf5;
+        font-weight: 600;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -72,7 +73,12 @@ for k, v in [("active_ticker", None), ("overview_data", None),
 
 # ── Shared: build search suggestions and return chosen ticker ─────────────────
 def _search_widget(input_key: str, select_key: str, placeholder: str) -> str:
-    """Renders text_input + optional selectbox. Returns the resolved ticker string."""
+    """
+    Renders text_input + optional selectbox. Returns the resolved ticker string.
+    The selectbox key includes a query-derived suffix so Streamlit renders a
+    fresh widget (index 0) whenever the search text changes — fixing the stale
+    selection bug that prevented the dropdown from updating dynamically.
+    """
     query = st.text_input(
         input_key,
         key=input_key,
@@ -89,8 +95,13 @@ def _search_widget(input_key: str, select_key: str, placeholder: str) -> str:
                 f"({s.get('exchangeShortName', s.get('stockExchange',''))})"
                 for s in hits[:10]
             ]
-            chosen = st.selectbox(select_key, labels,
-                                  key=select_key, label_visibility="collapsed")
+            # Dynamic key: changes with every new query string, forcing the
+            # selectbox to reset to index 0 and show fresh suggestions.
+            safe_q  = query.strip()[:24].replace(" ", "_")
+            dyn_key = f"{select_key}__{safe_q}"
+            chosen  = st.selectbox(
+                select_key, labels, key=dyn_key, label_visibility="collapsed"
+            )
             candidate = chosen.split(" — ")[0].split()[-1].strip()
     return candidate
 
@@ -136,8 +147,18 @@ else:
     raw    = st.session_state["overview_data"] or {}
     norm   = st.session_state["norm"]
 
-    # ── Persistent top search bar ─────────────────────────────────────────────
-    srch_col, btn_col = st.columns([7, 1])
+    # ── Brand logo + persistent search bar (same row) ────────────────────────
+    logo_col, srch_col, btn_col = st.columns([1, 6, 1])
+    with logo_col:
+        st.markdown(
+            "<div style='padding-top:6px;white-space:nowrap;'>"
+            "<span style='color:#007bff;font-weight:900;font-size:1.35em;"
+            "letter-spacing:-0.01em;'>get</span>"
+            "<span style='color:#ffffff;font-weight:900;font-size:1.35em;"
+            "letter-spacing:-0.01em;'>Value</span>"
+            "</div>",
+            unsafe_allow_html=True,
+        )
     with srch_col:
         new_candidate = _search_widget(
             "top_q", "top_sel",

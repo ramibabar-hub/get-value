@@ -2,6 +2,7 @@ import os
 import json
 import requests
 import streamlit as st
+from concurrent.futures import ThreadPoolExecutor
 
 def _load_api_key():
     """
@@ -28,6 +29,7 @@ def _load_api_key():
             if line.startswith("FMP_API_KEY="):
                 return line.split("=", 1)[1].strip().strip('"').strip("'")
     return ""
+
 
 class GatewayAgent:
 
@@ -121,17 +123,39 @@ class GatewayAgent:
         else:
             print(f"[GatewayAgent] API key loaded (ends: ...{self.api_key[-4:]})")
 
+    # ── internal GET helper ───────────────────────────────────────────────────
+    def _get(self, path: str, params: dict, timeout: int = 8):
+        """Raw GET, returns parsed JSON or None on error."""
+        try:
+            res = requests.get(
+                f"{self.base_url}/{path}",
+                params={**params, "apikey": self.api_key},
+                timeout=timeout,
+            )
+            return res.json()
+        except Exception as e:
+            print(f"[GatewayAgent] GET /{path} ERROR: {e}")
+            return None
+
+    def _first(self, body) -> dict:
+        """Return first item from list, or the dict itself, or {}."""
+        if isinstance(body, list) and body:
+            return body[0]
+        if isinstance(body, dict) and body:
+            return body
+        return {}
+
+    # ── financial statement bulk fetch ────────────────────────────────────────
     def fetch_data(self, path, ticker, is_quarterly=False):
         if not self.api_key:
             print(f"[GatewayAgent] No API key — skipping {path}/{ticker}")
             return []
         url = f"{self.base_url}/{path}"
-        # limit=15 ensures 10+ historical records (verified in params below)
         params = {"symbol": ticker, "apikey": self.api_key, "limit": 15}
         if is_quarterly:
             params["period"] = "quarter"
         label = f"{'Q' if is_quarterly else 'A'}/{path}/{ticker}"
-        print(f"[GatewayAgent] GET {url} params={list(params.keys())} limit={params['limit']}")
+        print(f"[GatewayAgent] GET {url} limit=15")
         try:
             res = requests.get(url, params=params, timeout=10)
             body = res.json()
@@ -145,7 +169,6 @@ class GatewayAgent:
             print(f"[GatewayAgent] OK {label}: {len(body)} records | "
                   f"fiscalYear={first.get('fiscalYear')} calendarYear={first.get('calendarYear')} "
                   f"period={first.get('period')}")
-            # Diagnostic: print first record keys if year fields are both missing
             if not first.get('fiscalYear') and not first.get('calendarYear'):
                 print(f"[GatewayAgent] DIAGNOSTIC — first record keys: {list(first.keys())}")
                 print(f"[GatewayAgent] DIAGNOSTIC — first record: {json.dumps(first, default=str)}")
@@ -165,71 +188,103 @@ class GatewayAgent:
             "annual_ratios":              self.fetch_data("ratios",                 ticker),
         }
 
+    # ── autocomplete search ───────────────────────────────────────────────────
     def search_ticker(self, query: str, limit: int = 10) -> list:
         """Autocomplete: returns [{symbol, name, exchangeShortName, flag, ...}]."""
         if not self.api_key or not query.strip():
             return []
-        url = f"{self.base_url}/search"
-        params = {"query": query.strip(), "limit": limit, "apikey": self.api_key}
-        try:
-            res = requests.get(url, params=params, timeout=5)
-            body = res.json()
-            if not isinstance(body, list):
-                return []
-            # Annotate each result with the exchange-based flag
-            for item in body:
-                exch = str(item.get("exchangeShortName") or item.get("stockExchange") or "").upper()
-                item["flag"] = self.EXCHANGE_FLAGS.get(exch, "🏳️")
-            return body
-        except Exception as e:
-            print(f"[GatewayAgent] search_ticker ERROR: {e}")
+        body = self._get("search", {"query": query.strip(), "limit": limit})
+        if not isinstance(body, list):
             return []
+        for item in body:
+            exch = str(item.get("exchangeShortName") or item.get("stockExchange") or "").upper()
+            item["flag"] = self.EXCHANGE_FLAGS.get(exch, "🏳️")
+        return body
 
+    # ── single-endpoint fetchers (used by fetch_overview) ────────────────────
     def fetch_profile(self, ticker: str) -> dict:
-        """Returns the company profile dict (price, mktCap, sector, etc.)."""
+        """Base company profile — name, sector, country, beta, volAvg, etc."""
         if not self.api_key or not ticker.strip():
             return {}
-        url = f"{self.base_url}/profile"
-        params = {"symbol": ticker.strip().upper(), "apikey": self.api_key}
-        try:
-            res = requests.get(url, params=params, timeout=10)
-            body = res.json()
-            if isinstance(body, list) and body:
-                return body[0]
-            if isinstance(body, dict) and body:
-                return body
-            return {}
-        except Exception as e:
-            print(f"[GatewayAgent] fetch_profile ERROR: {e}")
-            return {}
+        return self._first(self._get("profile", {"symbol": ticker.upper()}))
 
+    def _fetch_quote(self, ticker: str) -> dict:
+        """Real-time quote — price, changesPercentage, avgVolume, eps, pe, earningsAnnouncement."""
+        return self._first(self._get("quote", {"symbol": ticker}))
+
+    def _fetch_income_latest(self, ticker: str) -> dict:
+        """Most-recent annual income statement (1 record) — fiscalYear, epsDiluted."""
+        body = self._get("income-statement", {"symbol": ticker, "limit": 1})
+        return self._first(body)
+
+    def _fetch_key_metrics_ttm(self, ticker: str) -> dict:
+        """Key metrics TTM — peRatioTTM, netIncomePerShareTTM, dividendYieldTTM, etc."""
+        return self._first(self._get("key-metrics-ttm", {"symbol": ticker}))
+
+    def _fetch_shares_float(self, ticker: str) -> dict:
+        """Shares float — shortPercent, floatShares, outstandingShares."""
+        return self._first(self._get("shares-float", {"symbol": ticker}))
+
+    # ── combined overview fetch (parallel) ────────────────────────────────────
     def fetch_overview(self, ticker: str) -> dict:
         """
-        Combined profile + latest annual income statement (1 record).
-        Enriches the profile dict with:
-          _latestFiscalYear  — most recent fiscal year label
-          _eps               — diluted EPS from latest annual IS
-        All keys prefixed with '_' are private enrichment fields.
+        Merges 5 FMP endpoints in parallel to minimise N/A values:
+          /profile · /quote · /income-statement(1) · /key-metrics-ttm · /shares-float
+
+        Private keys (prefixed _) carry enrichment data for ProfileAgent:
+          _latestFiscalYear  — most recent fiscal year string
+          _eps               — best available EPS figure
         """
-        data = self.fetch_profile(ticker)
-        if not data:
+        t = ticker.strip().upper()
+        if not self.api_key or not t:
             return {}
 
-        # Fetch the single most-recent annual income statement record
-        try:
-            url = f"{self.base_url}/income-statement"
-            params = {"symbol": ticker.strip().upper(), "limit": 1, "apikey": self.api_key}
-            res = requests.get(url, params=params, timeout=8)
-            body = res.json()
-            if isinstance(body, list) and body:
-                rec = body[0]
-                fy = (str(rec.get("fiscalYear") or "")
-                      or str(rec.get("calendarYear") or "")
-                      or str(rec.get("date") or "")[:4])
-                data["_latestFiscalYear"] = fy or "N/A"
-                data["_eps"] = rec.get("epsDiluted") or rec.get("eps")
-        except Exception as e:
-            print(f"[GatewayAgent] fetch_overview income-stmt ERROR: {e}")
+        # Fire all 5 requests concurrently
+        with ThreadPoolExecutor(max_workers=5) as ex:
+            f_profile = ex.submit(self.fetch_profile,          t)
+            f_quote   = ex.submit(self._fetch_quote,           t)
+            f_income  = ex.submit(self._fetch_income_latest,   t)
+            f_km      = ex.submit(self._fetch_key_metrics_ttm, t)
+            f_sf      = ex.submit(self._fetch_shares_float,    t)
+
+        profile = f_profile.result() or {}
+        quote   = f_quote.result()   or {}
+        income  = f_income.result()  or {}
+        km      = f_km.result()      or {}
+        sf      = f_sf.result()      or {}
+
+        # ── Merge: profile is the base ────────────────────────────────────────
+        data = dict(profile)
+
+        # Quote: prefer for real-time price/volume/pe/eps/earnings
+        for field in ("price", "changesPercentage", "change",
+                      "eps", "pe", "earningsAnnouncement"):
+            if quote.get(field) is not None:
+                data[field] = quote[field]
+        if quote.get("avgVolume"):
+            data["volAvg"] = quote["avgVolume"]   # normalise to profile key name
+        if quote.get("marketCap"):
+            data["mktCap"] = quote["marketCap"]
+
+        # Key-metrics TTM: fill P/E gap if still missing
+        if not data.get("pe") and km.get("peRatioTTM"):
+            data["pe"] = km["peRatioTTM"]
+
+        # Income statement: fiscal year label + best EPS
+        fy = (str(income.get("fiscalYear")    or "")
+              or str(income.get("calendarYear") or "")
+              or str(income.get("date")         or "")[:4])
+        data["_latestFiscalYear"] = fy or "N/A"
+        data["_eps"] = (
+            data.get("eps")
+            or income.get("epsDiluted")
+            or income.get("eps")
+            or km.get("netIncomePerShareTTM")
+        )
+
+        # Shares float: short percent if not already in profile
+        if not data.get("shortPercent") and sf:
+            data["shortPercent"] = sf.get("shortPercent") or sf.get("shortRatio")
 
         data.setdefault("_latestFiscalYear", "N/A")
         data.setdefault("_eps", None)
