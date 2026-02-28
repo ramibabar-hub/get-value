@@ -81,7 +81,8 @@ def fmt(v, is_pct=False):
 
 # ── Session-state bootstrap ───────────────────────────────────────────────────
 for k, v in [("active_ticker", None), ("overview_data", None),
-              ("norm", None), ("norm_ticker", None), ("view_type", "Annual")]:
+              ("norm", None), ("norm_ticker", None), ("view_type", "Annual"),
+              ("fin_scale", "MM")]:
     if k not in st.session_state:
         st.session_state[k] = v
 
@@ -301,15 +302,53 @@ else:
 
     # ── Tab 2: Financials ─────────────────────────────────────────────────────
     with tab_fin:
-        # Period selector lives here; key binds it directly to session state
-        st.radio(
-            "Period:",
-            ["Annual", "Quarterly"],
-            key="view_type",
-            horizontal=True,
-        )
+        # ── Controls row: Period | Scale | Currency ──────────────────────
+        ctrl_l, ctrl_m, ctrl_r = st.columns([3, 3, 4])
+        with ctrl_l:
+            st.radio(
+                "Period:",
+                ["Annual", "Quarterly"],
+                key="view_type",
+                horizontal=True,
+            )
+        with ctrl_m:
+            st.radio(
+                "Scale:",
+                ["B", "MM", "K"],
+                key="fin_scale",
+                horizontal=True,
+            )
+        with ctrl_r:
+            # Currency: income-statement metadata first, profile fallback
+            _currency = ""
+            if norm and norm.is_l and isinstance(norm.is_l[0], dict):
+                _currency = norm.is_l[0].get("reportedCurrency", "")
+            if not _currency:
+                _currency = raw.get("currency") or "N/A"
+            st.markdown(
+                f"<div style='padding-top:28px;color:#4d6b88;font-size:0.85em;'>"
+                f"Currency: <strong>{_currency}</strong></div>",
+                unsafe_allow_html=True,
+            )
+
         if norm:
-            p           = st.session_state["view_type"].lower()
+            p     = st.session_state["view_type"].lower()
+            scale = st.session_state.get("fin_scale", "MM")
+            _div  = {"B": 1e9, "MM": 1e6, "K": 1e3}[scale]
+
+            def fmt_fin(v):
+                """Scale a financial value and format to 2 dp. Safe for None/0."""
+                if v is None:
+                    return "N/A"
+                try:
+                    if pd.isna(v):
+                        return "N/A"
+                except (TypeError, ValueError):
+                    pass
+                if v == 0:
+                    return "N/A"
+                return f"{v / _div:,.2f}"
+
             hdrs        = norm.get_column_headers(p)
             period_cols = hdrs[1:]
             fin_col_cfg = {col: st.column_config.TextColumn(col, width=120)
@@ -324,7 +363,7 @@ else:
                             unsafe_allow_html=True)
                 df = pd.DataFrame([
                     {"Item": rec["label"],
-                     **{h: fmt(rec.get(h)) for h in period_cols}}
+                     **{h: fmt_fin(rec.get(h)) for h in period_cols}}
                     for rec in method(p)
                 ])
                 st.dataframe(df.set_index("Item"),
