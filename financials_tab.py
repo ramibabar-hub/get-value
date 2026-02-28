@@ -52,6 +52,84 @@ def _fmt(v, fmt_type, div):
     return f"{f:,.2f}"          # "ratio" — plain 2dp number
 
 
+def _build_link_map(src_list, hist_col_headers):
+    """
+    Build {col_label: url} for historical columns only.
+    Uses 'finalLink' first, falls back to 'link', skips if both absent.
+    hist_col_headers: hdrs[2:] — the year/quarter labels in order.
+    """
+    link_map = {}
+    for i, label in enumerate(hist_col_headers):
+        if i < len(src_list) and isinstance(src_list[i], dict):
+            rec = src_list[i]
+            url = rec.get("finalLink") or rec.get("link") or ""
+            if url:
+                link_map[label] = url
+    return link_map
+
+
+def _render_stmt_html(rows_data, period_cols, cell_fmt_fn, link_map):
+    """
+    Render a financial statement as an HTML table with clickable column headers.
+
+    rows_data    : list of row-dicts with "label" key and period values.
+    period_cols  : ["TTM", "2023", "2022", ...] — first element is always TTM.
+    cell_fmt_fn  : callable(label, col, raw_v) → formatted string.
+    link_map     : {col_label: url} — only historical cols; TTM intentionally absent.
+    """
+    # ── header ────────────────────────────────────────────────────────────────
+    hdr_style = (
+        "text-align:right;padding:6px 8px;"
+        "background:#f0f2f6;font-weight:600;"
+        "white-space:nowrap;border-bottom:2px solid #d0d8e8;"
+    )
+    header_cells = (
+        "<th style='text-align:left;padding:6px 8px;background:#f0f2f6;"
+        "font-weight:600;white-space:nowrap;border-bottom:2px solid #d0d8e8;'>Item</th>"
+    )
+    for col in period_cols:
+        url = link_map.get(col, "")
+        if url:
+            col_html = (
+                f"<a href='{url}' target='_blank' rel='noopener' "
+                f"style='color:#4a90d9;text-decoration:none;' "
+                f"onmouseover=\"this.style.textDecoration='underline'\" "
+                f"onmouseout=\"this.style.textDecoration='none'\">{col}</a>"
+            )
+        else:
+            col_html = col
+        header_cells += f"<th style='{hdr_style}'>{col_html}</th>"
+
+    # ── body ──────────────────────────────────────────────────────────────────
+    body_html = ""
+    for idx, rec in enumerate(rows_data):
+        label = rec["label"]
+        bg = "#ffffff" if idx % 2 == 0 else "#f8f9fc"
+        row_html = f"<tr style='background:{bg};'>"
+        row_html += (
+            f"<td style='padding:5px 8px;white-space:nowrap;font-weight:500;'>"
+            f"{label}</td>"
+        )
+        for col in period_cols:
+            formatted = cell_fmt_fn(label, col, rec.get(col))
+            row_html += (
+                f"<td style='padding:5px 8px;text-align:right;"
+                f"font-family:\"Courier New\",monospace;white-space:nowrap;'>"
+                f"{formatted}</td>"
+            )
+        row_html += "</tr>"
+        body_html += row_html
+
+    html = (
+        "<div style='overflow-x:auto;margin-bottom:16px;'>"
+        "<table style='width:100%;border-collapse:collapse;font-size:0.84em;'>"
+        f"<thead><tr>{header_cells}</tr></thead>"
+        f"<tbody>{body_html}</tbody>"
+        "</table></div>"
+    )
+    st.markdown(html, unsafe_allow_html=True)
+
+
 # ═════════════════════════════════════════════════════════════════════════════
 class FinancialExtras:
     """
@@ -703,6 +781,13 @@ def render_financials_tab(norm, raw):
     # ── Original 4 tables ─────────────────────────────────────────────────────
     ticker_sym = raw.get("symbol", "?")
 
+    # Source lists for building SEC filing link maps (annual vs quarterly)
+    stmt_src = {
+        "Income Statement": norm.is_l if p == "annual" else norm.q_is,
+        "Cashflow":         norm.cf_l if p == "annual" else norm.q_cf,
+        "Balance Sheet":    norm.bs_l if p == "annual" else norm.q_bs,
+    }
+
     for title, method in [
         ("Income Statement", norm.get_income_statement),
         ("Cashflow",         norm.get_cash_flow),
@@ -720,23 +805,30 @@ def render_financials_tab(norm, raw):
                 for col in hdrs[2:]:
                     print(f"DEBUG: Ticker: {ticker_sym}, Year: {col}, Raw EPS: {eps_row.get(col)}")
 
-        table_rows = []
-        for rec in rows_data:
-            label = rec["label"]
-            record = {"Item": label}
-            for h in period_cols:
-                raw_v = rec.get(h)
+        if title == "Debt":
+            # Debt table: plain st.dataframe — no links
+            table_rows = []
+            for rec in rows_data:
+                label = rec["label"]
+                record = {"Item": label}
+                for h in period_cols:
+                    record[h] = fmt_fin(rec.get(h))
+                table_rows.append(record)
+            df = pd.DataFrame(table_rows)
+            st.dataframe(df.set_index("Item"),
+                         use_container_width=True, column_config=fin_col_cfg)
+        else:
+            # IS / CF / BS: HTML table with clickable SEC-filing column headers
+            lmap = _build_link_map(stmt_src[title], hdrs[2:])
+
+            def _cell_fmt(label, col, raw_v):
                 if label == "EPS":
                     # EPS is a per-share decimal — never divide by scale
                     f = _safe(raw_v)
-                    record[h] = f"{f:,.2f}" if (f is not None and f != 0) else "N/A"
-                else:
-                    record[h] = fmt_fin(raw_v)
-            table_rows.append(record)
+                    return f"{f:,.2f}" if (f is not None and f != 0) else "N/A"
+                return fmt_fin(raw_v)
 
-        df = pd.DataFrame(table_rows)
-        st.dataframe(df.set_index("Item"),
-                     use_container_width=True, column_config=fin_col_cfg)
+            _render_stmt_html(rows_data, period_cols, _cell_fmt, lmap)
 
     # ── 7 new metric groups — appended strictly after Debt ────────────────────
     fe = FinancialExtras(norm, raw)
