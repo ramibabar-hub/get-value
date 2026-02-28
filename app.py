@@ -3,6 +3,7 @@ import pandas as pd
 from agents.gateway_agent import GatewayAgent
 from agents.core_agent import DataNormalizer
 from agents.profile_agent import ProfileAgent
+from agents.insights_agent import InsightsAgent
 
 st.set_page_config(
     page_title="getValue | Financial Analysis",
@@ -334,29 +335,35 @@ else:
     # ── Tab 3: Insights ───────────────────────────────────────────────────────
     with tab_ins:
         if norm:
-            # Reads the period value set in the Financials tab (or "Annual" default)
-            p = st.session_state.get("view_type", "Annual").lower()
+            ins = InsightsAgent(norm.raw_data, raw)
+
+            def fmt_ins(v, is_pct=False):
+                """Like fmt() but passes strings (e.g. 'N/M') through unchanged."""
+                if isinstance(v, str):
+                    return v
+                return fmt(v, is_pct)
+
             for title, method, cols, is_pct in [
-                ("Growth (CAGR)",       norm.get_insights_cagr,
+                ("Growth (CAGR)",       ins.get_insights_cagr,
                  ["3yr", "5yr", "10yr"], True),
-                ("Valuation Multiples", norm.get_insights_valuation,
+                ("Valuation Multiples", ins.get_insights_valuation,
                  ["TTM", "Avg. 5yr", "Avg. 10yr"], False),
-                ("Profitability",       norm.get_insights_profitability,
+                ("Profitability",       ins.get_insights_profitability,
                  ["TTM", "Avg. 5yr", "Avg. 10yr"], True),
-                ("Returns Analysis",    norm.get_insights_returns,
+                ("Returns Analysis",    ins.get_insights_returns,
                  ["TTM", "Avg. 5yr", "Avg. 10yr"], True),
-                ("Liquidity",           norm.get_insights_liquidity,
+                ("Liquidity",           ins.get_insights_liquidity,
                  ["TTM", "Avg. 5yr", "Avg. 10yr"], False),
-                ("Dividends",           norm.get_insights_dividends,
+                ("Dividends",           ins.get_insights_dividends,
                  ["TTM", "Avg. 5yr", "Avg. 10yr"], True),
-                ("Efficiency",          norm.get_insights_efficiency,
+                ("Efficiency",          ins.get_insights_efficiency,
                  ["TTM", "Avg. 5yr", "Avg. 10yr"], False),
             ]:
                 st.markdown(f"<div class='section-header'>{title}</div>",
                             unsafe_allow_html=True)
                 df = pd.DataFrame(method())
                 for c in cols:
-                    df[c] = df[c].apply(lambda x, p=is_pct: fmt(x, p))
+                    df[c] = df[c].apply(lambda x, p=is_pct: fmt_ins(x, p))
                 ins_col_cfg = {col: st.column_config.TextColumn(col, width=120)
                                for col in cols}
                 st.dataframe(df.set_index(df.columns[0]),
