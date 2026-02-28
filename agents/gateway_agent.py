@@ -275,8 +275,11 @@ class GatewayAgent:
               f"avgVolume={quote.get('avgVolume')} pe={quote.get('pe')} eps={quote.get('eps')}")
         print(f"[fetch_overview/{t}] km: peRatioTTM={km.get('peRatioTTM')} "
               f"netIncomePerShareTTM={km.get('netIncomePerShareTTM')}")
-        print(f"[fetch_overview/{t}] sf: shortPercent={sf.get('shortPercent')} "
-              f"shortRatio={sf.get('shortRatio')}")
+        print(f"[fetch_overview/{t}] sf: shortPercentOfFloat={sf.get('shortPercentOfFloat')} "
+              f"shortPercent={sf.get('shortPercent')} shortRatio={sf.get('shortRatio')}")
+        print(f"[fetch_overview/{t}] profile: heldByInstitutions={profile.get('heldByInstitutions')} "
+              f"institutionalHolderProp={profile.get('institutionalHolderProp')} "
+              f"heldByInsiders={profile.get('heldByInsiders')}")
 
         # ── Merge: profile is the base ────────────────────────────────────────
         data = dict(profile)
@@ -304,11 +307,16 @@ class GatewayAgent:
                 or data.get("lastDiv")
             )
 
-        # Key-metrics TTM: fill P/E and beta gaps if still missing
-        if not data.get("pe") and km.get("peRatioTTM"):
+        # Key-metrics TTM: fill P/E and beta gaps if still missing or negative
+        _pe = data.get("pe")
+        if (not _pe or _pe < 0) and km.get("peRatioTTM") and km["peRatioTTM"] > 0:
             data["pe"] = km["peRatioTTM"]
         if not data.get("beta") and km.get("beta"):
             data["beta"] = km["beta"]
+
+        # Institutional holdings — /stable profile may use either field name
+        if not data.get("heldByInstitutions") and data.get("institutionalHolderProp"):
+            data["heldByInstitutions"] = data["institutionalHolderProp"]
 
         # Income statement: fiscal year label + best EPS
         fy = (str(income.get("fiscalYear")    or "")
@@ -322,12 +330,13 @@ class GatewayAgent:
             or km.get("netIncomePerShareTTM")
         )
 
-        # Short interest: profile.shortRatio → shares-float fields
+        # Short interest — check all known FMP field names; primary is shortPercentOfFloat
         if not data.get("shortPercent"):
             data["shortPercent"] = (
-                data.get("shortRatio")
+                sf.get("shortPercentOfFloat")
                 or sf.get("shortPercent")
                 or sf.get("shortRatio")
+                or data.get("shortRatio")
             )
 
         data.setdefault("_latestFiscalYear", "N/A")

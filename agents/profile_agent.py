@@ -123,8 +123,10 @@ class ProfileAgent:
 
         # EPS: prefer enriched _eps from income-statement, fall back to profile field
         eps_raw = d.get("_eps") or d.get("eps")
-        # Short float: FMP may use shortPercent (ratio) or shortRatio
-        short_raw = d.get("shortPercent") or d.get("shortRatio")
+        # Short float: check all known FMP field names
+        short_raw = (d.get("shortPercent")
+                     or d.get("shortPercentOfFloat")
+                     or d.get("shortRatio"))
 
         def row(label, value, color=None):
             return {"label": label, "value": value or "N/A", "color": color}
@@ -144,7 +146,8 @@ class ProfileAgent:
             row("Beta",                     self._num(d.get("beta"))),
             row("Ex-Dividend Date",         self._date(d.get("exDividendDate") or d.get("lastDiv"))),
             row("% Held by Insiders",       self._pct(d.get("heldByInsiders"))),
-            row("% Held by Institutions",   self._pct(d.get("heldByInstitutions"))),
+            row("% Held by Institutions",   self._pct(d.get("heldByInstitutions")
+                                                      or d.get("institutionalHolderProp"))),
             row("Put/Call Interest",        d.get("putCallRatio") or "N/A"),
             row("Short Float",              self._pct(short_raw)),
             row("Num. of Employees",        self._employees(d.get("fullTimeEmployees"))),
