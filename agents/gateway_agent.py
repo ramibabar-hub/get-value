@@ -257,8 +257,7 @@ class GatewayAgent:
         data = dict(profile)
 
         # Quote: prefer for real-time price/volume/pe/eps/earnings
-        for field in ("price", "changesPercentage", "change",
-                      "eps", "pe", "earningsAnnouncement"):
+        for field in ("price", "changesPercentage", "change", "eps", "pe"):
             if quote.get(field) is not None:
                 data[field] = quote[field]
         if quote.get("avgVolume"):
@@ -266,9 +265,25 @@ class GatewayAgent:
         if quote.get("marketCap"):
             data["mktCap"] = quote["marketCap"]
 
-        # Key-metrics TTM: fill P/E gap if still missing
+        # Earnings announcement — /stable may use either field name
+        data["earningsAnnouncement"] = (
+            quote.get("earningsAnnouncement")
+            or quote.get("nextEarningsDate")
+            or data.get("earningsAnnouncement")
+        )
+
+        # Ex-dividend date — /stable profile may use either field name
+        if not data.get("exDividendDate"):
+            data["exDividendDate"] = (
+                data.get("exDividend")
+                or data.get("lastDiv")
+            )
+
+        # Key-metrics TTM: fill P/E and beta gaps if still missing
         if not data.get("pe") and km.get("peRatioTTM"):
             data["pe"] = km["peRatioTTM"]
+        if not data.get("beta") and km.get("beta"):
+            data["beta"] = km["beta"]
 
         # Income statement: fiscal year label + best EPS
         fy = (str(income.get("fiscalYear")    or "")
@@ -282,9 +297,13 @@ class GatewayAgent:
             or km.get("netIncomePerShareTTM")
         )
 
-        # Shares float: short percent if not already in profile
-        if not data.get("shortPercent") and sf:
-            data["shortPercent"] = sf.get("shortPercent") or sf.get("shortRatio")
+        # Short interest: profile.shortRatio → shares-float fields
+        if not data.get("shortPercent"):
+            data["shortPercent"] = (
+                data.get("shortRatio")
+                or sf.get("shortPercent")
+                or sf.get("shortRatio")
+            )
 
         data.setdefault("_latestFiscalYear", "N/A")
         data.setdefault("_eps", None)

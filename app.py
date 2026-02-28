@@ -12,6 +12,9 @@ st.set_page_config(
 
 st.markdown("""
     <style>
+    /* ── Force dark app background so white branding is always visible ── */
+    .stApp { background-color: #0d1b2a !important; }
+
     /* ── Hide sidebar and its toggle globally ── */
     section[data-testid="stSidebar"]  { display: none !important; }
     [data-testid="collapsedControl"]  { display: none !important; }
@@ -46,10 +49,20 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# ── Cached search helper ──────────────────────────────────────────────────────
-@st.cache_data(ttl=300, show_spinner=False)
+# ── Search helper — session-state cache that never stores empty results ────────
 def _search(query: str) -> list:
-    return GatewayAgent().search_ticker(query.lower())
+    """
+    Caches non-empty results in session_state for the lifetime of the session.
+    Empty / error results are NOT cached so the next keystroke retries live.
+    """
+    key = f"_srch_{query.strip().lower()}"
+    if key not in st.session_state:
+        results = GatewayAgent().search_ticker(query.strip())
+        if results:
+            st.session_state[key] = results
+        else:
+            return []
+    return st.session_state[key]
 
 # ── Number formatter ──────────────────────────────────────────────────────────
 def fmt(v, is_pct=False):
@@ -119,7 +132,17 @@ def _load_ticker(ticker: str):
 # ═════════════════════════════════════════════════════════════════════════════
 if st.session_state["active_ticker"] is None:
 
-    st.markdown("<div style='height:90px;'></div>", unsafe_allow_html=True)
+    st.markdown("<div style='height:60px;'></div>", unsafe_allow_html=True)
+
+    st.markdown(
+        "<div style='text-align:center;margin-bottom:10px;'>"
+        "<span style='color:#007bff;font-weight:900;font-size:2em;"
+        "letter-spacing:-0.02em;'>get</span>"
+        "<span style='color:#ffffff;font-weight:900;font-size:2em;"
+        "letter-spacing:-0.02em;'>Value</span>"
+        "</div>",
+        unsafe_allow_html=True,
+    )
 
     st.markdown(
         "<div style='text-align:center;font-size:2.4em;font-weight:700;"
