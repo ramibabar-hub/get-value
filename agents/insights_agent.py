@@ -17,6 +17,7 @@ class InsightsAgent:
         self.q_bs = raw_data.get("quarterly_balance_sheet", []) or []
         self.q_cf = raw_data.get("quarterly_cash_flow", []) or []
         self.rt_l = raw_data.get("annual_ratios", []) or []
+        self.km_l = raw_data.get("annual_key_metrics", []) or []
         self.ov   = overview or {}
 
     # ── helpers ──────────────────────────────────────────────────────────────
@@ -106,29 +107,28 @@ class InsightsAgent:
         vals = [self._safe(r.get(key)) for r in self.rt_l[:n] if isinstance(r, dict)]
         return self._avg([v for v in vals if v is not None])
 
-    # ── Adj. FCF = CFO - |CapEx| - SBC ───────────────────────────────────────
+    def _km_avg(self, key, n):
+        """Average of first n annual key-metrics records for field key."""
+        vals = [self._safe(r.get(key)) for r in self.km_l[:n] if isinstance(r, dict)]
+        return self._avg([v for v in vals if v is not None])
+
+    # ── Adj. FCF = Free Cash Flow - SBC ──────────────────────────────────────
 
     def _adj_fcf(self, src_cf, src_is, idx):
-        """Compute Adj. FCF for a single annual period."""
-        cfo  = self._ann(src_cf, "operatingCashFlow", idx)
-        capx = self._ann(src_cf, "capitalExpenditure", idx)
-        sbc  = self._ann(src_is, "stockBasedCompensation", idx)
-        if cfo is None:
+        """Adj. FCF = Free Cash Flow - Stock Based Compensation."""
+        fcf = self._ann(src_cf, "freeCashFlow", idx)
+        sbc = self._ann(src_is, "stockBasedCompensation", idx)
+        if fcf is None:
             return None
-        capx = abs(capx) if capx is not None else 0
-        sbc  = abs(sbc)  if sbc  is not None else 0
-        return cfo - capx - sbc
+        return fcf - (self._safe(sbc) or 0)
 
     def _ttm_adj_fcf(self):
-        """TTM Adj. FCF = TTM CFO - |TTM CapEx| - TTM SBC."""
-        cfo  = self._ttm_flow(self.q_cf, "operatingCashFlow")
-        capx = self._ttm_flow(self.q_cf, "capitalExpenditure")
-        sbc  = self._ttm_flow(self.q_is, "stockBasedCompensation")
-        if cfo is None:
+        """TTM Adj. FCF = TTM Free Cash Flow - TTM Stock Based Compensation."""
+        fcf = self._ttm_flow(self.q_cf, "freeCashFlow")
+        sbc = self._ttm_flow(self.q_is, "stockBasedCompensation")
+        if fcf is None:
             return None
-        capx = abs(capx) if capx is not None else 0
-        sbc  = abs(sbc)  if sbc  is not None else 0
-        return cfo - capx - sbc
+        return fcf - (self._safe(sbc) or 0)
 
     # ── EV helper ─────────────────────────────────────────────────────────────
 
@@ -237,21 +237,18 @@ class InsightsAgent:
         # Piotroski F-Score (annual)
         piotroski = self._piotroski()
 
-        # 5yr / 10yr averages from pre-computed ratios
-        def _avg_rt(key, n):
-            return self._ratio_avg(key, n)
-
+        # 5yr / 10yr averages from key-metrics (end-of-period per-year values)
         return [
-            {"Valuation": "EV / EBITDA",        "TTM": ev_ebitda_t,  "Avg. 5yr": _avg_rt("enterpriseValueMultipleTTM", 5),  "Avg. 10yr": _avg_rt("enterpriseValueMultipleTTM", 10)},
-            {"Valuation": "EV / Adj. FCF",       "TTM": ev_adjfcf_t,  "Avg. 5yr": None,                                      "Avg. 10yr": None},
-            {"Valuation": "P/E",                 "TTM": pe_ttm,       "Avg. 5yr": _avg_rt("priceEarningsRatioTTM", 5),        "Avg. 10yr": _avg_rt("priceEarningsRatioTTM", 10)},
-            {"Valuation": "P/S",                 "TTM": ps_ttm,       "Avg. 5yr": _avg_rt("priceToSalesRatioTTM", 5),         "Avg. 10yr": _avg_rt("priceToSalesRatioTTM", 10)},
-            {"Valuation": "P/B",                 "TTM": pb_ttm,       "Avg. 5yr": _avg_rt("priceToBookRatioTTM", 5),          "Avg. 10yr": _avg_rt("priceToBookRatioTTM", 10)},
-            {"Valuation": "P/FCF",               "TTM": pfcf_ttm,     "Avg. 5yr": _avg_rt("priceToFreeCashFlowsRatioTTM", 5), "Avg. 10yr": _avg_rt("priceToFreeCashFlowsRatioTTM", 10)},
-            {"Valuation": "PEG",                 "TTM": peg_ttm,      "Avg. 5yr": None,                                      "Avg. 10yr": None},
-            {"Valuation": "Earnings Yield",      "TTM": earn_yield,   "Avg. 5yr": None,                                      "Avg. 10yr": None},
-            {"Valuation": "Adj. FCF Yield",      "TTM": adjfcf_yield, "Avg. 5yr": None,                                      "Avg. 10yr": None},
-            {"Valuation": "Piotroski F-Score",   "TTM": piotroski,    "Avg. 5yr": None,                                      "Avg. 10yr": None},
+            {"Valuation": "EV / EBITDA",        "TTM": ev_ebitda_t,  "Avg. 5yr": self._km_avg("enterpriseValueMultiple", 5),  "Avg. 10yr": self._km_avg("enterpriseValueMultiple", 10)},
+            {"Valuation": "EV / Adj. FCF",       "TTM": ev_adjfcf_t,  "Avg. 5yr": None,                                        "Avg. 10yr": None},
+            {"Valuation": "P/E",                 "TTM": pe_ttm,       "Avg. 5yr": self._km_avg("peRatio", 5),                  "Avg. 10yr": self._km_avg("peRatio", 10)},
+            {"Valuation": "P/S",                 "TTM": ps_ttm,       "Avg. 5yr": self._km_avg("priceToSalesRatio", 5),        "Avg. 10yr": self._km_avg("priceToSalesRatio", 10)},
+            {"Valuation": "P/B",                 "TTM": pb_ttm,       "Avg. 5yr": self._km_avg("pbRatio", 5),                  "Avg. 10yr": self._km_avg("pbRatio", 10)},
+            {"Valuation": "P/FCF",               "TTM": pfcf_ttm,     "Avg. 5yr": self._km_avg("pfcfRatio", 5),               "Avg. 10yr": self._km_avg("pfcfRatio", 10)},
+            {"Valuation": "PEG",                 "TTM": peg_ttm,      "Avg. 5yr": None,                                        "Avg. 10yr": None},
+            {"Valuation": "Earnings Yield",      "TTM": earn_yield,   "Avg. 5yr": None,                                        "Avg. 10yr": None},
+            {"Valuation": "Adj. FCF Yield",      "TTM": adjfcf_yield, "Avg. 5yr": None,                                        "Avg. 10yr": None},
+            {"Valuation": "Piotroski F-Score",   "TTM": piotroski,    "Avg. 5yr": None,                                        "Avg. 10yr": None},
         ]
 
     def _piotroski(self):
@@ -496,11 +493,9 @@ class InsightsAgent:
 
         def div_yield_ann(i):
             d  = self._ann(self.cf_l, "commonDividendsPaid", i)
-            mc = self._ann(self.bs_l,  "totalStockholdersEquity", i)  # fallback
-            price_i = self._safe(self.ov.get("price"))
-            sh_i = self._ann(self.is_l, "weightedAverageShsOutDil", i) or self._ann(self.is_l, "weightedAverageShsOut", i)
-            est_mkt = (price_i * sh_i) if price_i and sh_i else None
-            return self._div(abs(d) if d else None, est_mkt)
+            mc = (self._safe(self.km_l[i].get("marketCap"))
+                  if i < len(self.km_l) and isinstance(self.km_l[i], dict) else None)
+            return self._div(abs(d) if d else None, mc)
 
         def payout_ann(i):
             d = self._ann(self.cf_l, "commonDividendsPaid", i)
@@ -508,7 +503,7 @@ class InsightsAgent:
             return self._div(abs(d) if d else None, n)
 
         return [
-            {"Dividends": "Dividend Yield",         "TTM": div_yield,      "Avg. 5yr": self._avg([div_yield_ann(i) for i in range(5)]), "Avg. 10yr": self._avg([div_yield_ann(i) for i in range(10)])},
+            {"Dividends": "Dividend Yield",         "TTM": div_yield,      "Avg. 5yr": self._km_avg("dividendYield", 5), "Avg. 10yr": self._km_avg("dividendYield", 10)},
             {"Dividends": "Payout Ratio",           "TTM": payout_ratio,   "Avg. 5yr": self._avg([payout_ann(i)   for i in range(5)]), "Avg. 10yr": self._avg([payout_ann(i)   for i in range(10)])},
             {"Dividends": "Buyback Yield",          "TTM": buyback_yield,  "Avg. 5yr": None,                                            "Avg. 10yr": None},
             {"Dividends": "Total Shareholder Yield","TTM": total_sh_yield, "Avg. 5yr": None,                                            "Avg. 10yr": None},
@@ -556,7 +551,7 @@ class InsightsAgent:
         wc_t   = self._div(rev_ttm, nwc_avg)
         fat    = self._div(rev_ttm, ppe_avg)
         at     = self._div(rev_ttm, ta_avg)
-        sbc_fcf = self._div(abs(sbc_ttm) if sbc_ttm else None, fcf_ttm)
+        sbc_fcf = self._div(sbc_ttm, fcf_ttm)
         rev_emp = self._div(rev_ttm, employees) if employees else None
 
         return [

@@ -278,10 +278,20 @@ class FinancialExtras:
         byd_ttm = (by_ttm / dil_ttm
                    if (by_ttm is not None and dil_ttm and dil_ttm != 0) else None)
 
+        def _price_h(i):
+            # Prefer stockPrice from key-metrics; derive from mktCap÷shares when absent
+            px = _km("stockPrice", i)
+            if px is None:
+                mc = _km("marketCap", i)
+                sh = (self._hist("is", "weightedAverageShsOutDil", i, p)
+                      or self._hist("is", "weightedAverageShsOut",    i, p))
+                px = _d(mc, sh)
+            return px
+
         rows = [
             self._row("Price",
                       price,
-                      lambda i: _km("stockPrice", i),                    hdrs),
+                      _price_h,                                           hdrs),
             self._row("Market Cap",
                       mkt,
                       _mkt_h,                                             hdrs, "money"),
