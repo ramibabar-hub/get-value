@@ -311,9 +311,11 @@ else:
             ins = InsightsAgent(norm.raw_data, raw)
 
             def fmt_ins(v, is_pct=False):
-                """Like fmt() but passes strings (e.g. 'N/M') through unchanged."""
+                """Like fmt() but passes 'N/M' strings through and guards complex."""
                 if isinstance(v, str):
                     return v
+                if isinstance(v, complex):   # guard against stray complex numbers
+                    return "N/M"
                 return fmt(v, is_pct)
 
             for title, method, cols, is_pct in [
