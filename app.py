@@ -108,10 +108,11 @@ def _search_widget(input_key: str, select_key: str, placeholder: str) -> str:
 # ── Shared: fetch all data and store in session state ─────────────────────────
 def _load_ticker(ticker: str):
     gw = GatewayAgent()
-    st.session_state["overview_data"] = gw.fetch_overview(ticker)
-    st.session_state["norm"]          = DataNormalizer(gw.fetch_all(ticker), ticker)
+    # Set active_ticker first so navigation is committed before data arrives
     st.session_state["active_ticker"] = ticker
     st.session_state["norm_ticker"]   = ticker
+    st.session_state["overview_data"] = gw.fetch_overview(ticker)
+    st.session_state["norm"]          = DataNormalizer(gw.fetch_all(ticker), ticker)
 
 # ═════════════════════════════════════════════════════════════════════════════
 # LANDING PAGE  (active_ticker is None)
@@ -172,9 +173,6 @@ else:
     if go and new_candidate and new_candidate != ticker:
         with st.spinner(f"Loading {new_candidate}…"):
             _load_ticker(new_candidate)
-            # clear the search box after navigation
-            st.session_state["top_q"]  = ""
-            st.session_state["top_sel"] = None
         st.rerun()
 
     st.divider()
