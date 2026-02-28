@@ -3,9 +3,11 @@ financials_tab.py
 Renders the full Financials tab: existing 4 tables + 7 new metric groups appended after Debt.
 Reacts to the Period (Annual/Quarterly) and Scale (B/MM/K) selectors already in session state.
 """
+import json
 import math
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 
 # ── module-level helpers ──────────────────────────────────────────────────────
 
@@ -66,6 +68,128 @@ def _build_link_map(src_list, hist_col_headers):
             if url:
                 link_map[label] = url
     return link_map
+
+
+def _inject_df_tooltips(link_map: dict, anchor_id: str) -> None:
+    """
+    Inject a 1px-height iframe (st.components.v1.html) whose script adds
+    hover tooltips to the year/quarter column headers of the st.dataframe
+    that immediately follows #{anchor_id} in the Streamlit page.
+
+    Strategy: attach a *non-intercepting* mousemove listener directly to the
+    dataframe's <canvas> element so Streamlit's built-in sort/filter is
+    fully preserved.  The script accesses the parent page via
+    window.parent.document (same-origin Streamlit server).
+    """
+    if not link_map:
+        return
+    lm_json = json.dumps(link_map)
+    html = f"""<!DOCTYPE html><html><body style="margin:0;padding:0;overflow:hidden;">
+<script>
+(function(){{
+  var LM={lm_json}, AID="{anchor_id}";
+
+  /* ── shared tooltip (one element reused across all tables) ────────── */
+  function getTip(){{
+    var d=window.parent.document, t=d.getElementById('_gv_hdr_tip');
+    if(!t){{
+      t=d.createElement('div'); t.id='_gv_hdr_tip';
+      t.style.cssText=[
+        'position:fixed','background:#1c2b46','color:#fff',
+        'padding:8px 14px','border-radius:6px',
+        'font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif',
+        'font-size:12px','z-index:99999','display:none','pointer-events:auto',
+        'box-shadow:0 3px 14px rgba(0,0,0,.55)','white-space:nowrap',
+        'border:1px solid rgba(144,191,255,.25)'
+      ].join(';');
+      t.innerHTML=
+        '<span style="font-size:10px;opacity:.65;display:block;margin-bottom:4px;'
+        +'letter-spacing:.06em;text-transform:uppercase;">SEC Filing</span>'
+        +'<a id="_gv_tip_a" href="#" target="_blank" rel="noopener" '
+        +'style="color:#90bfff;text-decoration:none;font-weight:500;">'
+        +'&#128196; View Original Filing</a>';
+      d.body.appendChild(t);
+      t.addEventListener('mouseleave',function(){{t.style.display='none';}});
+    }}
+    return t;
+  }}
+
+  function showTip(t,mx,by,url){{
+    var a=window.parent.document.getElementById('_gv_tip_a');
+    if(a)a.href=url;
+    var w=t.offsetWidth||200, vw=window.parent.innerWidth;
+    t.style.left=Math.min(Math.max(mx-w/2,6),vw-w-6)+'px';
+    t.style.top=(by+8)+'px';
+    t.style.display='block';
+  }}
+
+  function hideTip(t){{
+    setTimeout(function(){{if(!t.matches(':hover'))t.style.display='none';}},180);
+  }}
+
+  function setup(tries){{
+    if(tries>30)return;
+    try{{
+      var d=window.parent.document;
+      var anc=d.getElementById(AID);
+      if(!anc){{setTimeout(function(){{setup(tries+1);}},250);return;}}
+
+      /* first [data-testid=stDataFrame] that follows the anchor in DOM order */
+      var all=Array.from(d.querySelectorAll('[data-testid="stDataFrame"]'));
+      var frame=null;
+      for(var i=0;i<all.length;i++){{
+        if(anc.compareDocumentPosition(all[i])&Node.DOCUMENT_POSITION_FOLLOWING)
+          {{frame=all[i];break;}}
+      }}
+      if(!frame){{setTimeout(function(){{setup(tries+1);}},250);return;}}
+
+      var canvas=frame.querySelector('canvas');
+      if(!canvas){{setTimeout(function(){{setup(tries+1);}},250);return;}}
+
+      /* aria column-header elements carry the column widths */
+      var aria=Array.from(frame.querySelectorAll('[role="columnheader"]'));
+      if(!aria.length){{setTimeout(function(){{setup(tries+1);}},250);return;}}
+
+      /* build column-width array; fall back to 120px if offsetWidth is 0 */
+      var canvasW=canvas.getBoundingClientRect().width||canvas.offsetWidth;
+      var nPeriod=aria.length-1;
+      var colW=aria.map(function(h){{return h.offsetWidth||(parseInt(h.style.width)||0);}});
+      if(!colW.slice(1).some(function(w){{return w>0;}})){{
+        colW=colW.map(function(_,i){{
+          return i===0?Math.max(canvasW-120*nPeriod,80):120;
+        }});
+      }}
+
+      var tip=getTip();
+      var HEADER_H=46; /* approximate px height of the column-header row */
+
+      /* mousemove on the canvas — purely observing, never intercepting */
+      canvas.addEventListener('mousemove',function(e){{
+        var cr=canvas.getBoundingClientRect();
+        var x=e.clientX-cr.left, y=e.clientY-cr.top;
+        if(y>HEADER_H){{hideTip(tip);return;}}
+        var cum=0;
+        for(var i=0;i<aria.length;i++){{
+          cum+=colW[i];
+          if(x<=cum){{
+            if(i>0){{
+              var col=(aria[i].textContent||aria[i].innerText||'').trim();
+              var url=LM[col];
+              if(url){{showTip(tip,e.clientX,cr.top+HEADER_H,url);return;}}
+            }}
+            hideTip(tip);return;
+          }}
+        }}
+        hideTip(tip);
+      }});
+      canvas.addEventListener('mouseleave',function(){{hideTip(tip);}});
+    }}catch(e){{/* fail silently on cross-origin / DOM-access error */}}
+  }}
+
+  setTimeout(function(){{setup(0);}},800);
+}})();
+</script></body></html>"""
+    components.html(html, height=1, scrolling=False)
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -732,6 +856,7 @@ def render_financials_tab(norm, raw):
         ("Balance Sheet",    norm.get_balance_sheet),
         ("Debt",             norm.get_debt_table),
     ]:
+        lmap = {}  # reset for each table
         # ── Section header: IS / CF / BS get per-year SEC filing links ────────
         if title != "Debt":
             src  = stmt_src[title]
@@ -781,8 +906,16 @@ def render_financials_tab(norm, raw):
             table_rows.append(record)
 
         df = pd.DataFrame(table_rows)
+        if title != "Debt":
+            anchor_id = "gv_anc_" + title.lower().replace(" ", "_")
+            st.markdown(
+                f"<div id='{anchor_id}' style='height:0;margin:0;padding:0;'></div>",
+                unsafe_allow_html=True,
+            )
         st.dataframe(df.set_index("Item"),
                      use_container_width=True, column_config=fin_col_cfg)
+        if title != "Debt" and lmap:
+            _inject_df_tooltips(lmap, anchor_id)
 
     # ── 7 new metric groups — appended strictly after Debt ────────────────────
     fe = FinancialExtras(norm, raw)
