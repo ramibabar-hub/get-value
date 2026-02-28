@@ -27,11 +27,10 @@ st.markdown("""
     /* ── Cardinal Overview Table ── */
     .ov-wrap { max-width: 560px; }
     .ov-table { width: 100%; border-collapse: collapse; font-size: 0.875em; }
-    .ov-table tr { border-bottom: 1px solid #1a2535; }
-    .ov-table tr:last-child { border-bottom: none; }
-    .ov-table td { padding: 5px 10px; vertical-align: middle; line-height: 1.4; }
+    .ov-table tr { border: none; }
+    .ov-table td { padding: 8px; border: none; vertical-align: middle; line-height: 1.4; }
     .ov-table td.lbl {
-        color: #4d6b88;
+        color: #A0B0C0;
         text-transform: uppercase;
         font-size: 0.76em;
         letter-spacing: 0.07em;
@@ -40,8 +39,9 @@ st.markdown("""
     }
     .ov-table td.val {
         font-family: 'Courier New', Courier, monospace;
-        color: #e8edf5;
-        font-weight: 600;
+        color: #FFFFFF;
+        font-weight: 800;
+        font-size: 1.05em;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -86,7 +86,7 @@ def _search_widget(input_key: str, select_key: str, placeholder: str) -> str:
         label_visibility="collapsed",
     )
     candidate = query.strip().upper()
-    if len(query.strip()) >= 2:
+    if len(query.strip()) >= 1:
         hits = _search(query.strip())
         if hits:
             labels = [
@@ -234,6 +234,13 @@ else:
 
     # ── Tab 1: Overview ───────────────────────────────────────────────────────
     with tab_ov:
+        description = raw.get("description", "")
+        if description:
+            st.markdown(
+                f"<p style='color:#8899bb;font-size:0.9em;line-height:1.7;"
+                f"max-width:820px;margin-bottom:24px;'>{description}</p>",
+                unsafe_allow_html=True,
+            )
         ov_rows = agent.get_rows()
         table_html = ""
         for r in ov_rows:
