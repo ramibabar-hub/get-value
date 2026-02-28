@@ -102,12 +102,18 @@ def _search_widget(input_key: str, select_key: str, placeholder: str) -> str:
     if len(query.strip()) >= 1:
         hits = _search(query.strip())
         if hits:
-            labels = [
-                f"{s.get('flag','🏳️')} {s.get('symbol','')} — "
-                f"{s.get('name','')} "
-                f"({s.get('exchangeShortName', s.get('stockExchange',''))})"
-                for s in hits[:10]
-            ]
+            labels = []
+            for s in hits[:10]:
+                exch = s.get('exchangeShortName', s.get('stockExchange', ''))
+                # Replace bare ISO-2 country codes with their flag emoji
+                exch_display = (
+                    ProfileAgent.COUNTRY_FLAGS.get(exch.upper(), exch)
+                    if len(exch) <= 2 else exch
+                )
+                labels.append(
+                    f"{s.get('flag','🏳️')} {s.get('symbol','')} — "
+                    f"{s.get('name','')} ({exch_display})"
+                )
             # Dynamic key: changes with every new query string, forcing the
             # selectbox to reset to index 0 and show fresh suggestions.
             safe_q  = query.strip()[:24].replace(" ", "_")
@@ -219,7 +225,14 @@ else:
     chg_sign  = "+" if chg_pct >= 0 else ""
     chg_fmt   = f"{chg_sign}{chg_pct:.2f}%"
     chg_color = "#22c55e" if chg_pct >= 0 else "#ef4444"
-    sub_line  = " &nbsp;·&nbsp; ".join(filter(None, [ticker, exchange, sector]))
+    # If FMP returns a bare ISO-2 country code as the exchange name, replace
+    # it with the emoji flag so no country code appears as plain text.
+    _exch_display = (
+        ProfileAgent.COUNTRY_FLAGS.get(exchange.strip().upper(), exchange)
+        if len(exchange.strip()) <= 2
+        else exchange
+    )
+    sub_line  = " &nbsp;·&nbsp; ".join(filter(None, [ticker, _exch_display, sector]))
 
     logo_html = (
         f"<img src='{logo_url}' width='54' height='54' "

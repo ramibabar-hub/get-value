@@ -33,8 +33,21 @@ def _load_api_key():
 
 class GatewayAgent:
 
-    # Exchange short-name → emoji flag (used in search dropdown)
+    # Exchange short-name → emoji flag (used in search dropdown).
+    # ISO-2 country codes are included as fallbacks so that when FMP
+    # returns a bare country code (e.g. "IL", "US") instead of an exchange
+    # short-name, the flag lookup still resolves to the correct emoji.
     EXCHANGE_FLAGS = {
+        # ── ISO-2 country-code fallbacks ──────────────────────────────────────
+        "US": "🇺🇸", "GB": "🇬🇧", "IL": "🇮🇱", "DE": "🇩🇪", "FR": "🇫🇷",
+        "CN": "🇨🇳", "JP": "🇯🇵", "CA": "🇨🇦", "AU": "🇦🇺", "IN": "🇮🇳",
+        "KR": "🇰🇷", "SE": "🇸🇪", "CH": "🇨🇭", "NL": "🇳🇱", "SG": "🇸🇬",
+        "BR": "🇧🇷", "TW": "🇹🇼", "HK": "🇭🇰", "NO": "🇳🇴", "DK": "🇩🇰",
+        "FI": "🇫🇮", "IE": "🇮🇪", "IT": "🇮🇹", "ES": "🇪🇸", "MX": "🇲🇽",
+        "ZA": "🇿🇦", "RU": "🇷🇺", "SA": "🇸🇦", "AR": "🇦🇷", "CL": "🇨🇱",
+        "PT": "🇵🇹", "BE": "🇧🇪", "AT": "🇦🇹", "NZ": "🇳🇿", "TH": "🇹🇭",
+        "ID": "🇮🇩", "MY": "🇲🇾", "PH": "🇵🇭", "PK": "🇵🇰",
+        # ── Exchange short-names ───────────────────────────────────────────────
         # United States
         "NASDAQ": "🇺🇸", "NYSE": "🇺🇸", "AMEX": "🇺🇸", "NYSEARCA": "🇺🇸",
         "NYSEMKT": "🇺🇸", "OTC": "🇺🇸", "OTCBB": "🇺🇸", "PINK": "🇺🇸", "CBOE": "🇺🇸",
