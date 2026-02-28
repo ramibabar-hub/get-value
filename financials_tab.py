@@ -52,10 +52,72 @@ def _fmt(v, fmt_type, div):
     return f"{f:,.2f}"          # "ratio" — plain 2dp number
 
 
-def _build_link_map(src_list, hist_col_headers):
+def _filing_url_fallback(ticker: str, exchange: str, col_label: str,
+                         period_type: str) -> str:
+    """
+    Return a best-effort filing portal URL when FMP's finalLink/link are absent.
+
+    ticker      : FMP symbol, e.g. "AAPL", "TEVA"
+    exchange    : FMP exchangeShortName, e.g. "NASDAQ", "TASE", "LSE"
+    col_label   : column header, e.g. "2023" or "2023 Q3"
+    period_type : "annual" | "quarterly"
+
+    Returns "" when the exchange has no supported mapping.
+    """
+    exch = (exchange or "").upper().strip()
+    tkr  = (ticker  or "").strip()
+    if not tkr:
+        return ""
+
+    # Extract 4-digit year ("2023" → 2023, "2023 Q3" → 2023)
+    try:
+        year = int(col_label.strip()[:4])
+    except (ValueError, IndexError):
+        year = None
+
+    # ── US exchanges → SEC EDGAR ──────────────────────────────────────────
+    _US = {
+        "NASDAQ", "NYSE", "AMEX", "NYSE ARCA", "NYSEARCA", "NYSEMKT",
+        "BATS", "OTC", "OTCQB", "OTCQX", "PINK", "CBOE",
+    }
+    if not exch or exch in _US:
+        form = "10-K" if period_type == "annual" else "10-Q"
+        # dateb = first day of the *next* year so the target filing appears at top
+        dateb_param = f"&dateb={year + 1}0101" if year else ""
+        return (
+            f"https://www.sec.gov/cgi-bin/browse-edgar"
+            f"?action=getcompany&CIK={tkr}&type={form}"
+            f"{dateb_param}&owner=include&count=10"
+        )
+
+    # ── Israel / TASE ─────────────────────────────────────────────────────
+    if exch in {"TASE", "TLV", "TA", "TAL"}:
+        return f"https://maya.tase.co.il/company/{tkr}/reports"
+
+    # ── London Stock Exchange / AIM ────────────────────────────────────────
+    if exch in {"LSE", "LON", "AIM", "XLON"}:
+        return f"https://www.londonstockexchange.com/stock/{tkr.upper()}/company-page"
+
+    # ── Toronto Stock Exchange ─────────────────────────────────────────────
+    if exch in {"TSX", "TSXV", "TSX-V", "CVE"}:
+        return (
+            f"https://www.sedar.com/FindCompany.do"
+            f"?lang=EN&company_search={tkr}&SEARCH_BUTTON=Search+Now&bprofile=y"
+        )
+
+    # ── Australian Securities Exchange ────────────────────────────────────
+    if exch in {"ASX", "XASX"}:
+        return f"https://www.asx.com.au/markets/company/{tkr.lower()}"
+
+    return ""
+
+
+def _build_link_map(src_list, hist_col_headers,
+                    ticker="", exchange="", period_type="annual"):
     """
     Build {col_label: url} for historical columns only.
-    Uses 'finalLink' first, falls back to 'link', skips if both absent.
+    Primary  : FMP 'finalLink' or 'link' field from the statement record.
+    Fallback : _filing_url_fallback() when both primary fields are absent.
     hist_col_headers: hdrs[2:] — the year/quarter labels in order.
     """
     link_map = {}
@@ -63,6 +125,8 @@ def _build_link_map(src_list, hist_col_headers):
         if i < len(src_list) and isinstance(src_list[i], dict):
             rec = src_list[i]
             url = rec.get("finalLink") or rec.get("link") or ""
+            if not url:
+                url = _filing_url_fallback(ticker, exchange, label, period_type)
             if url:
                 link_map[label] = url
     return link_map
@@ -770,7 +834,12 @@ def render_financials_tab(norm, raw):
                     unsafe_allow_html=True)
         if title != "Debt":
             src  = stmt_src[title]
-            lmap = _build_link_map(src, hdrs[2:])
+            lmap = _build_link_map(
+                src, hdrs[2:],
+                ticker=ticker_sym,
+                exchange=raw.get("exchangeShortName") or raw.get("exchange", ""),
+                period_type=p,
+            )
 
         rows_data = method(p)
 
