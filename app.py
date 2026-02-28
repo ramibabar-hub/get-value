@@ -8,7 +8,7 @@ st.set_page_config(page_title="getValue | Financial Analysis", layout="wide")
 
 st.markdown("""
     <style>
-    /* ── Section headers ── */
+    /* ── Section headers (financial tables) ── */
     .section-header {
         font-size: 1.1em; font-weight: bold; color: #ffffff;
         background-color: #1c2b46; padding: 6px 15px;
@@ -16,51 +16,58 @@ st.markdown("""
     }
     .stTable { font-size: 0.85em; }
 
-    /* ── Company header ── */
-    .company-header {
-        padding: 10px 0 8px;
+    /* ── Terminal company header ── */
+    .term-header {
+        font-family: 'Courier New', Courier, monospace;
+        font-size: 0.82em;
+        color: #5a7a99;
+        text-transform: uppercase;
+        letter-spacing: 0.10em;
+        padding: 6px 0 10px;
         border-bottom: 1px solid #1c2b46;
-        margin-bottom: 14px;
+        margin-bottom: 2px;
     }
 
-    /* ── Metric cards ── */
-    .metric-card {
-        background: #1c2b46;
-        border-radius: 8px;
-        padding: 11px 14px;
-        height: 100%;
+    /* ── Cardinal Overview Table ── */
+    .ov-wrap { max-width: 560px; }
+    .ov-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.875em;
     }
-    .metric-label {
-        font-size: 0.70em;
-        color: #8899bb;
+    .ov-table tr { border-bottom: 1px solid #1a2535; }
+    .ov-table tr:last-child { border-bottom: none; }
+    .ov-table td {
+        padding: 5px 10px;
+        vertical-align: middle;
+        line-height: 1.4;
+    }
+    .ov-table td.lbl {
+        color: #4d6b88;
         text-transform: uppercase;
-        letter-spacing: 0.06em;
-        margin-bottom: 5px;
+        font-size: 0.76em;
+        letter-spacing: 0.07em;
+        width: 44%;
+        white-space: nowrap;
     }
-    .metric-value      { font-size: 1.05em; font-weight: 600; color: #e8edf5; }
-    .metric-value-up   { font-size: 1.05em; font-weight: 600; color: #22c55e; }
-    .metric-value-down { font-size: 1.05em; font-weight: 600; color: #ef4444; }
-
-    /* ── Group labels ── */
-    .group-label {
-        font-size: 0.72em;
-        color: #5577aa;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-        margin: 14px 0 4px;
+    .ov-table td.val {
+        font-family: 'Courier New', Courier, monospace;
+        color: #c8d8e8;
     }
+    .ov-up   { color: #22c55e !important; }
+    .ov-down { color: #ef4444 !important; }
     </style>
     """, unsafe_allow_html=True)
 
-# ── Cached helpers (minimize API calls) ──────────────────────────────────────
+# ── Cached helpers ────────────────────────────────────────────────────────────
 
 @st.cache_data(ttl=300, show_spinner=False)
 def _search(query: str) -> list:
     return GatewayAgent().search_ticker(query)
 
 @st.cache_data(ttl=60, show_spinner=False)
-def _profile(ticker: str) -> dict:
-    return GatewayAgent().fetch_profile(ticker)
+def _overview(ticker: str) -> dict:
+    return GatewayAgent().fetch_overview(ticker)
 
 # ── Session-state bootstrap ───────────────────────────────────────────────────
 for key, default in [("norm", None), ("norm_ticker", None)]:
@@ -84,74 +91,62 @@ search_query = st.text_input(
     label_visibility="visible",
 )
 
-# Autocomplete suggestions
+# Autocomplete dropdown (appears as user types)
 ticker = search_query.strip().upper()
 if len(search_query.strip()) >= 2:
     suggestions = _search(search_query.strip())
     if suggestions:
         labels = [
-            f"{s.get('symbol','')} — {s.get('name','')} ({s.get('exchangeShortName', s.get('stockExchange',''))})"
+            f"{s.get('flag', '🏳️')} {s.get('symbol', '')} — "
+            f"{s.get('name', '')} ({s.get('exchangeShortName', s.get('stockExchange', ''))})"
             for s in suggestions[:10]
         ]
-        chosen = st.selectbox(
-            "Select from results:",
-            labels,
-            label_visibility="collapsed",
-        )
-        ticker = chosen.split(" — ")[0].strip()
+        chosen = st.selectbox("Select from results:", labels, label_visibility="collapsed")
+        # Label format: "🇺🇸 NVDA — NVIDIA Corporation (NASDAQ)"
+        # Ticker is the last token before " — "
+        ticker = chosen.split(" — ")[0].split()[-1].strip()
 
-# ── Profile Dashboard (auto-updates on ticker change) ────────────────────────
-def _card(label: str, value: str, css_class: str = "metric-value") -> str:
-    return (
-        f"<div class='metric-card'>"
-        f"<div class='metric-label'>{label}</div>"
-        f"<div class='{css_class}'>{value}</div>"
-        f"</div>"
-    )
-
+# ── Cardinal Overview Table (auto-loads on ticker change) ────────────────────
 if ticker:
-    raw_profile = _profile(ticker)
-    if raw_profile:
-        m = ProfileAgent(raw_profile).get_metrics()
-        price_cls = "metric-value-up" if m["change_positive"] else "metric-value-down"
+    raw = _overview(ticker)
+    if raw:
+        agent = ProfileAgent(raw)
+        rows  = agent.get_rows()
+        flag  = agent.get_flag()
+        name  = raw.get("companyName", ticker)
+        exch  = raw.get("exchangeShortName") or raw.get("exchange", "")
 
-        # Company name bar
+        # Compact terminal header line
         st.markdown(
-            f"<div class='company-header'>"
-            f"<span style='font-size:1.55em;font-weight:700;'>"
-            f"{m['flag']} {m['company_name']}"
-            f"</span>"
-            f"&nbsp;&nbsp;"
-            f"<span style='color:#8899bb;font-size:0.95em;'>"
-            f"{m['ticker']} · {m['exchange']}"
-            f"</span>"
+            f"<div class='term-header'>"
+            f"{flag}&nbsp;&nbsp;{name.upper()}&nbsp;&nbsp;·&nbsp;&nbsp;"
+            f"{ticker}&nbsp;&nbsp;·&nbsp;&nbsp;{exch}"
             f"</div>",
             unsafe_allow_html=True,
         )
 
-        # ── Valuation row ──
-        st.markdown("<div class='group-label'>Valuation</div>", unsafe_allow_html=True)
-        c1, c2, c3, c4 = st.columns(4)
-        with c1: st.markdown(_card("Price",      m["price"],   price_cls),  unsafe_allow_html=True)
-        with c2: st.markdown(_card("Change %",   m["change_pct"], price_cls), unsafe_allow_html=True)
-        with c3: st.markdown(_card("Market Cap", m["mkt_cap"]),              unsafe_allow_html=True)
-        with c4: st.markdown(_card("P / E",      m["pe"]),                   unsafe_allow_html=True)
+        # Build the 18-row HTML table
+        table_rows_html = ""
+        for r in rows:
+            if r["color"]:
+                val_html = f"<span style='color:{r['color']};'>{r['value']}</span>"
+            else:
+                val_html = r["value"]
+            table_rows_html += (
+                f"<tr>"
+                f"<td class='lbl'>{r['label']}</td>"
+                f"<td class='val'>{val_html}</td>"
+                f"</tr>"
+            )
 
-        # ── Basic Info row ──
-        st.markdown("<div class='group-label'>Basic Info</div>", unsafe_allow_html=True)
-        c1, c2, c3, c4 = st.columns(4)
-        with c1: st.markdown(_card("Sector",        m["sector"]),         unsafe_allow_html=True)
-        with c2: st.markdown(_card("Industry",      m["industry"]),       unsafe_allow_html=True)
-        with c3: st.markdown(_card("Next Earnings", m["next_earnings"]),  unsafe_allow_html=True)
-        with c4: st.markdown(_card("Employees",     m["employees"]),      unsafe_allow_html=True)
-
-        # ── Ownership + Risk/Short row ──
-        st.markdown("<div class='group-label'>Ownership &amp; Risk</div>", unsafe_allow_html=True)
-        c1, c2, c3, c4 = st.columns(4)
-        with c1: st.markdown(_card("Insider Own.",  m["insider_own"]),   unsafe_allow_html=True)
-        with c2: st.markdown(_card("Inst. Own.",    m["inst_own"]),      unsafe_allow_html=True)
-        with c3: st.markdown(_card("Beta",          m["beta"]),          unsafe_allow_html=True)
-        with c4: st.markdown(_card("Short Float",   m["short_float"]),   unsafe_allow_html=True)
+        col_table, _ = st.columns([5, 4])
+        with col_table:
+            st.markdown(
+                f"<div class='ov-wrap'>"
+                f"<table class='ov-table'><tbody>{table_rows_html}</tbody></table>"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
 
         st.divider()
 
@@ -159,8 +154,8 @@ if ticker:
 if run_button and ticker:
     st.cache_data.clear()
     with st.spinner(f"Fetching financials for {ticker}…"):
-        raw = GatewayAgent().fetch_all(ticker)
-        st.session_state["norm"] = DataNormalizer(raw, ticker)
+        raw_fin = GatewayAgent().fetch_all(ticker)
+        st.session_state["norm"] = DataNormalizer(raw_fin, ticker)
         st.session_state["norm_ticker"] = ticker
 
 # Show financials only when they belong to the current ticker
@@ -204,13 +199,13 @@ if st.session_state["norm"] and st.session_state["norm_ticker"] == ticker:
 
     with tab_ins:
         for title, method, cols, is_pct in [
-            ("Growth (CAGR)",        norm.get_insights_cagr,          ["3yr", "5yr", "10yr"],             True),
-            ("Valuation Multiples",  norm.get_insights_valuation,     ["TTM", "Avg. 5yr", "Avg. 10yr"],   False),
-            ("Profitability",        norm.get_insights_profitability,  ["TTM", "Avg. 5yr", "Avg. 10yr"],   True),
-            ("Returns Analysis",     norm.get_insights_returns,        ["TTM", "Avg. 5yr", "Avg. 10yr"],   True),
-            ("Liquidity",            norm.get_insights_liquidity,      ["TTM", "Avg. 5yr", "Avg. 10yr"],   False),
-            ("Dividends",            norm.get_insights_dividends,      ["TTM", "Avg. 5yr", "Avg. 10yr"],   True),
-            ("Efficiency",           norm.get_insights_efficiency,     ["TTM", "Avg. 5yr", "Avg. 10yr"],   False),
+            ("Growth (CAGR)",       norm.get_insights_cagr,         ["3yr", "5yr", "10yr"],             True),
+            ("Valuation Multiples", norm.get_insights_valuation,    ["TTM", "Avg. 5yr", "Avg. 10yr"],   False),
+            ("Profitability",       norm.get_insights_profitability, ["TTM", "Avg. 5yr", "Avg. 10yr"],   True),
+            ("Returns Analysis",    norm.get_insights_returns,       ["TTM", "Avg. 5yr", "Avg. 10yr"],   True),
+            ("Liquidity",           norm.get_insights_liquidity,     ["TTM", "Avg. 5yr", "Avg. 10yr"],   False),
+            ("Dividends",           norm.get_insights_dividends,     ["TTM", "Avg. 5yr", "Avg. 10yr"],   True),
+            ("Efficiency",          norm.get_insights_efficiency,    ["TTM", "Avg. 5yr", "Avg. 10yr"],   False),
         ]:
             st.markdown(f"<div class='section-header'>{title}</div>", unsafe_allow_html=True)
             df = pd.DataFrame(method())

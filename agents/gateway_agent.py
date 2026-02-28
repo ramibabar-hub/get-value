@@ -30,6 +30,88 @@ def _load_api_key():
     return ""
 
 class GatewayAgent:
+
+    # Exchange short-name → emoji flag (used in search dropdown)
+    EXCHANGE_FLAGS = {
+        # United States
+        "NASDAQ": "🇺🇸", "NYSE": "🇺🇸", "AMEX": "🇺🇸", "NYSEARCA": "🇺🇸",
+        "NYSEMKT": "🇺🇸", "OTC": "🇺🇸", "OTCBB": "🇺🇸", "PINK": "🇺🇸", "CBOE": "🇺🇸",
+        # Israel
+        "TASE": "🇮🇱",
+        # United Kingdom
+        "LSE": "🇬🇧", "AIM": "🇬🇧",
+        # Germany
+        "XETRA": "🇩🇪", "FSE": "🇩🇪", "FWB": "🇩🇪",
+        # Canada
+        "TSX": "🇨🇦", "TSXV": "🇨🇦", "CNQ": "🇨🇦",
+        # Australia
+        "ASX": "🇦🇺",
+        # Japan
+        "TSE": "🇯🇵", "OSE": "🇯🇵", "TYO": "🇯🇵",
+        # South Korea
+        "KSE": "🇰🇷", "KOSDAQ": "🇰🇷", "KRX": "🇰🇷",
+        # Hong Kong
+        "HKEX": "🇭🇰", "HKSE": "🇭🇰",
+        # Singapore
+        "SGX": "🇸🇬",
+        # India
+        "NSE": "🇮🇳", "BSE": "🇮🇳", "NSEI": "🇮🇳",
+        # Switzerland
+        "SIX": "🇨🇭",
+        # Norway
+        "OSL": "🇳🇴",
+        # Sweden
+        "OMX": "🇸🇪", "STO": "🇸🇪",
+        # Finland
+        "HEL": "🇫🇮",
+        # Denmark
+        "CPH": "🇩🇰",
+        # China
+        "SHH": "🇨🇳", "SHZ": "🇨🇳", "SSE": "🇨🇳", "SZSE": "🇨🇳",
+        # Taiwan
+        "TWSE": "🇹🇼", "TPE": "🇹🇼",
+        # Italy
+        "BIT": "🇮🇹", "MIL": "🇮🇹",
+        # Spain
+        "BME": "🇪🇸", "MCE": "🇪🇸",
+        # Netherlands
+        "AMS": "🇳🇱",
+        # France
+        "PAR": "🇫🇷",
+        # Brazil
+        "BOVESPA": "🇧🇷", "B3": "🇧🇷",
+        # South Africa
+        "JSE": "🇿🇦",
+        # Russia
+        "MCX": "🇷🇺", "MOEX": "🇷🇺",
+        # Saudi Arabia
+        "SAU": "🇸🇦", "TADAWUL": "🇸🇦",
+        # Mexico
+        "BMV": "🇲🇽",
+        # Belgium
+        "BRU": "🇧🇪",
+        # Portugal
+        "LIS": "🇵🇹",
+        # Austria
+        "VIE": "🇦🇹",
+        # New Zealand
+        "NZX": "🇳🇿",
+        # Thailand
+        "SET": "🇹🇭",
+        # Indonesia
+        "IDX": "🇮🇩",
+        # Malaysia
+        "KLS": "🇲🇾", "KLSE": "🇲🇾",
+        # Philippines
+        "PSE": "🇵🇭",
+        # Argentina
+        "BCBA": "🇦🇷",
+        # Chile
+        "BCS": "🇨🇱",
+        # Euronext (generic)
+        "EURONEXT": "🇪🇺",
+    }
+
     def __init__(self):
         self.api_key = _load_api_key()
         # FMP deprecated /api/v3 on Aug 31 2025 — use /stable
@@ -84,7 +166,7 @@ class GatewayAgent:
         }
 
     def search_ticker(self, query: str, limit: int = 10) -> list:
-        """Autocomplete: returns [{symbol, name, exchangeShortName, ...}]."""
+        """Autocomplete: returns [{symbol, name, exchangeShortName, flag, ...}]."""
         if not self.api_key or not query.strip():
             return []
         url = f"{self.base_url}/search"
@@ -92,7 +174,13 @@ class GatewayAgent:
         try:
             res = requests.get(url, params=params, timeout=5)
             body = res.json()
-            return body if isinstance(body, list) else []
+            if not isinstance(body, list):
+                return []
+            # Annotate each result with the exchange-based flag
+            for item in body:
+                exch = str(item.get("exchangeShortName") or item.get("stockExchange") or "").upper()
+                item["flag"] = self.EXCHANGE_FLAGS.get(exch, "🏳️")
+            return body
         except Exception as e:
             print(f"[GatewayAgent] search_ticker ERROR: {e}")
             return []
@@ -114,3 +202,35 @@ class GatewayAgent:
         except Exception as e:
             print(f"[GatewayAgent] fetch_profile ERROR: {e}")
             return {}
+
+    def fetch_overview(self, ticker: str) -> dict:
+        """
+        Combined profile + latest annual income statement (1 record).
+        Enriches the profile dict with:
+          _latestFiscalYear  — most recent fiscal year label
+          _eps               — diluted EPS from latest annual IS
+        All keys prefixed with '_' are private enrichment fields.
+        """
+        data = self.fetch_profile(ticker)
+        if not data:
+            return {}
+
+        # Fetch the single most-recent annual income statement record
+        try:
+            url = f"{self.base_url}/income-statement"
+            params = {"symbol": ticker.strip().upper(), "limit": 1, "apikey": self.api_key}
+            res = requests.get(url, params=params, timeout=8)
+            body = res.json()
+            if isinstance(body, list) and body:
+                rec = body[0]
+                fy = (str(rec.get("fiscalYear") or "")
+                      or str(rec.get("calendarYear") or "")
+                      or str(rec.get("date") or "")[:4])
+                data["_latestFiscalYear"] = fy or "N/A"
+                data["_eps"] = rec.get("epsDiluted") or rec.get("eps")
+        except Exception as e:
+            print(f"[GatewayAgent] fetch_overview income-stmt ERROR: {e}")
+
+        data.setdefault("_latestFiscalYear", "N/A")
+        data.setdefault("_eps", None)
+        return data

@@ -1,10 +1,13 @@
 class ProfileAgent:
     """
-    Transforms raw FMP /profile data into display-ready metrics.
-    All fields degrade gracefully to "N/A" when absent or zero.
+    Transforms raw FMP /profile + enrichment data (from fetch_overview) into
+    an ordered list of display rows for the Cardinal Overview Table.
+
+    Each row: {"label": str, "value": str, "color": str | None}
+    color is set only for the Price row (green = up, red = down).
     """
 
-    # ISO 3166-1 alpha-2 country code → emoji flag
+    # ISO 3166-1 alpha-2 → emoji flag (fallback for country-based flag in header)
     COUNTRY_FLAGS = {
         "US": "🇺🇸", "GB": "🇬🇧", "IL": "🇮🇱",
         "DE": "🇩🇪", "FR": "🇫🇷", "CN": "🇨🇳",
@@ -24,18 +27,25 @@ class ProfileAgent:
     def __init__(self, raw: dict):
         self.data = raw or {}
 
-    # ── private formatters ────────────────────────────────────────────────────
+    # ── flag ──────────────────────────────────────────────────────────────────
 
-    def _flag(self) -> str:
+    def get_flag(self) -> str:
         code = str(self.data.get("country", "")).strip().upper()
         return self.COUNTRY_FLAGS.get(code, "🏳️")
 
+    # ── formatters ────────────────────────────────────────────────────────────
+
     @staticmethod
-    def _price(v) -> str:
+    def _price_str(price, chg_pct) -> tuple[str, str]:
+        """Returns (formatted_string, css_color)."""
         try:
-            return f"${float(v):,.2f}" if v is not None else "N/A"
+            p = float(price)
+            c = float(str(chg_pct).replace("%", "").strip())
+            sign = "+" if c >= 0 else ""
+            color = "#22c55e" if c >= 0 else "#ef4444"
+            return f"${p:,.2f} ({sign}{c:.2f}%)", color
         except (TypeError, ValueError):
-            return "N/A"
+            return "N/A", None
 
     @staticmethod
     def _cap(v) -> str:
@@ -47,6 +57,19 @@ class ProfileAgent:
                 if v >= thr:
                     return f"${v / thr:.2f}{sfx}"
             return f"${v:,.0f}"
+        except (TypeError, ValueError):
+            return "N/A"
+
+    @staticmethod
+    def _vol(v) -> str:
+        try:
+            v = float(v)
+            if v <= 0:
+                return "N/A"
+            for thr, sfx in [(1e9, "B"), (1e6, "M"), (1e3, "K")]:
+                if v >= thr:
+                    return f"{v / thr:.2f}{sfx}"
+            return f"{v:,.0f}"
         except (TypeError, ValueError):
             return "N/A"
 
@@ -69,6 +92,14 @@ class ProfileAgent:
             return "N/A"
 
     @staticmethod
+    def _date(v) -> str:
+        if not v:
+            return "N/A"
+        s = str(v).strip()
+        # Trim timestamp if present: "2025-11-05T00:00:00" → "2025-11-05"
+        return s[:10] if len(s) >= 10 else s
+
+    @staticmethod
     def _employees(v) -> str:
         if not v:
             return "N/A"
@@ -79,39 +110,46 @@ class ProfileAgent:
 
     # ── public API ────────────────────────────────────────────────────────────
 
-    def get_metrics(self) -> dict:
+    def get_rows(self) -> list[dict]:
+        """
+        Returns 18 ordered rows: [{"label": str, "value": str, "color": str|None}]
+        Exact order specified by the Cardinal Overview Table requirement.
+        """
         d = self.data
 
-        raw_chg = d.get("changesPercentage", 0) or 0
-        try:
-            chg = float(str(raw_chg).replace("%", "").strip())
-        except (TypeError, ValueError):
-            chg = 0.0
+        price_str, price_color = self._price_str(
+            d.get("price"), d.get("changesPercentage", 0)
+        )
 
-        # short float: FMP may expose shortPercent (0–1 scale) or shortRatio
+        # EPS: prefer enriched _eps from income-statement, fall back to profile field
+        eps_raw = d.get("_eps") or d.get("eps")
+        # Short float: FMP may use shortPercent (ratio) or shortRatio
         short_raw = d.get("shortPercent") or d.get("shortRatio")
 
-        return {
-            # Identity
-            "flag":         self._flag(),
-            "company_name": d.get("companyName", ""),
-            "ticker":       d.get("symbol", ""),
-            "exchange":     d.get("exchangeShortName") or d.get("exchange", ""),
-            # Basic Info
-            "sector":       d.get("sector") or "N/A",
-            "industry":     d.get("industry") or "N/A",
-            "next_earnings": d.get("earningsAnnouncement") or "N/A",
-            "employees":    self._employees(d.get("fullTimeEmployees")),
-            # Valuation
-            "price":        self._price(d.get("price")),
-            "change_pct":   f"{'+' if chg >= 0 else ''}{chg:.2f}%",
-            "change_positive": chg >= 0,
-            "mkt_cap":      self._cap(d.get("mktCap")),
-            "pe":           self._num(d.get("pe")),
-            # Risk / Short
-            "beta":         self._num(d.get("beta")),
-            "short_float":  self._pct(short_raw),
-            # Ownership
-            "insider_own":  self._pct(d.get("heldByInsiders")),
-            "inst_own":     self._pct(d.get("heldByInstitutions")),
-        }
+        def row(label, value, color=None):
+            return {"label": label, "value": value or "N/A", "color": color}
+
+        return [
+            row("Ticker",                   d.get("symbol", "N/A")),
+            row("Company Name",             d.get("companyName", "N/A")),
+            row("Price",                    price_str, price_color),
+            row("Sector",                   d.get("sector") or "N/A"),
+            row("Industry",                 d.get("industry") or "N/A"),
+            row("Latest Fiscal Year",       d.get("_latestFiscalYear") or "N/A"),
+            row("Next Earnings Date",       self._date(d.get("earningsAnnouncement"))),
+            row("Avg. Daily Volume",        self._vol(d.get("volAvg"))),
+            row("Market Cap",               self._cap(d.get("mktCap"))),
+            row("P/E",                      self._num(d.get("pe"))),
+            row("EPS (TTM)",                self._num(eps_raw)),
+            row("Beta",                     self._num(d.get("beta"))),
+            row("Ex-Dividend Date",         self._date(d.get("exDividendDate") or d.get("lastDiv"))),
+            row("% Held by Insiders",       self._pct(d.get("heldByInsiders"))),
+            row("% Held by Institutions",   self._pct(d.get("heldByInstitutions"))),
+            row("Put/Call Interest",        d.get("putCallRatio") or "N/A"),
+            row("Short Float",              self._pct(short_raw)),
+            row("Num. of Employees",        self._employees(d.get("fullTimeEmployees"))),
+        ]
+
+    # keep backwards-compat alias used by nothing externally, but safe to have
+    def get_metrics(self) -> list[dict]:
+        return self.get_rows()
