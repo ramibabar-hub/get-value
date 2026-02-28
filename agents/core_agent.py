@@ -17,8 +17,34 @@ class DataNormalizer:
 
     def get_column_headers(self, p_type='annual'):
         source = self.is_l if p_type == 'annual' else self.q_is
-        if not source: return ["Item", "TTM"]
-        dates = [str(d.get('calendarYear', '')) if p_type=='annual' else f"{d.get('calendarYear')} {d.get('period')}" for d in source[:10]]
+        dates = []
+        if source and isinstance(source, list):
+            for d in source[:10]:
+                if not isinstance(d, dict):
+                    continue
+                # Priority 1: fiscalYear (FMP /stable API)
+                # Priority 2: calendarYear (FMP /api/v3 legacy)
+                # Priority 3: extract year from 'date' field (e.g. '2025-06-30')
+                year = (str(d.get('fiscalYear') or '')
+                        or str(d.get('calendarYear') or '')
+                        or str(d.get('date') or '')[:4])
+                period = str(d.get('period') or '')
+                if p_type == 'annual':
+                    dates.append(year if year else f"Y{len(dates)+1}")
+                else:
+                    label = f"{year} {period}".strip()
+                    dates.append(label if label else f"Q{len(dates)+1}")
+
+        # Debug: if we still have no dates, print the first record's keys
+        if not dates and source and isinstance(source, list) and source:
+            first = source[0] if isinstance(source[0], dict) else {}
+            print(f"[DataNormalizer] WARNING: could not extract period labels for '{p_type}'")
+            print(f"[DataNormalizer] First record keys: {list(first.keys())}")
+            print(f"[DataNormalizer] First record: {first}")
+
+        # Guarantee exactly 10 historical columns (pad if fewer records exist)
+        while len(dates) < 10:
+            dates.append(f"N/A-{len(dates) + 1}")
         return ["Item", "TTM"] + dates
 
     def build_table(self, mapping, p_type='annual'):
@@ -44,11 +70,14 @@ class DataNormalizer:
                 else:
                     q_source = self.q_is if found in [is_src, self.is_l] else self.q_cf
                     row["TTM"] = self._get_ttm_value(q_source, key)
-                
-                # מילוי עמודות היסטוריות
+
+                # מילוי עמודות היסטוריות — טיפול בזהירות בכל רשומה
                 for i, d in enumerate(found[:10]):
-                    if i+2 < len(headers):
-                        row[headers[i+2]] = d.get(key, 0)
+                    if i + 2 < len(headers):
+                        try:
+                            row[headers[i+2]] = d.get(key, 0) if isinstance(d, dict) else 0
+                        except Exception:
+                            row[headers[i+2]] = 0
             rows.append(row)
         return rows
 
@@ -65,7 +94,7 @@ class DataNormalizer:
             ("Cash flow from operations","operatingCashFlow"), ("Capital expenditures","capitalExpenditure"),
             ("Free Cash flow","freeCashFlow"), ("Stock based compensation","stockBasedCompensation"),
             ("Adj. FCF","freeCashFlow"), ("Depreciation & Amortization","depreciationAndAmortization"),
-            ("Change in Working Capital (inc) / dec","changeInWorkingCapital"), ("Dvidend paid","dividendsPaid"),
+            ("Change in Working Capital (inc) / dec","changeInWorkingCapital"), ("Dividend paid","commonDividendsPaid"),
             ("Repurchase of Common Stock","weightedAverageShsOut") # דורש מיפוי ייעודי
         ], p)
 
