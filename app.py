@@ -26,7 +26,7 @@ st.markdown("""
 
     /* ── Cardinal Overview Table ── */
     .ov-wrap { max-width: 560px; }
-    .ov-table { width: 100%; border-collapse: collapse; font-size: 0.875em; }
+    .ov-table { width: 100%; border: none; font-size: 0.875em; }
     .ov-table tr { border: none; }
     .ov-table td { padding: 8px; border: none; vertical-align: middle; line-height: 1.4; }
     .ov-table td.lbl {
@@ -40,8 +40,8 @@ st.markdown("""
     .ov-table td.val {
         font-family: 'Courier New', Courier, monospace;
         color: #FFFFFF;
-        font-weight: 800;
-        font-size: 1.05em;
+        font-weight: 900;
+        font-size: 1.1em;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -49,7 +49,7 @@ st.markdown("""
 # ── Cached search helper ──────────────────────────────────────────────────────
 @st.cache_data(ttl=300, show_spinner=False)
 def _search(query: str) -> list:
-    return GatewayAgent().search_ticker(query)
+    return GatewayAgent().search_ticker(query.lower())
 
 # ── Number formatter ──────────────────────────────────────────────────────────
 def fmt(v, is_pct=False):
@@ -149,7 +149,7 @@ else:
     norm   = st.session_state["norm"]
 
     # ── Brand logo + persistent search bar (same row) ────────────────────────
-    logo_col, srch_col, btn_col = st.columns([1, 6, 1])
+    logo_col, srch_col, btn_col = st.columns([2, 5, 1])
     with logo_col:
         st.markdown(
             "<div style='padding-top:6px;white-space:nowrap;'>"
