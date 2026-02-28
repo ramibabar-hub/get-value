@@ -12,8 +12,8 @@ st.set_page_config(
 
 st.markdown("""
     <style>
-    /* ── Force dark app background so white branding is always visible ── */
-    .stApp { background-color: #0d1b2a !important; }
+    /* ── Light theme — force white canvas globally ── */
+    .stApp { background-color: #FFFFFF !important; color: #1c2b46 !important; }
 
     /* ── Hide sidebar and its toggle globally ── */
     section[data-testid="stSidebar"]  { display: none !important; }
@@ -33,7 +33,7 @@ st.markdown("""
     .ov-table tr { border: none; }
     .ov-table td { padding: 8px; border: none; vertical-align: middle; line-height: 1.4; }
     .ov-table td.lbl {
-        color: #A0B0C0;
+        color: #1c2b46;
         text-transform: uppercase;
         font-size: 0.76em;
         letter-spacing: 0.07em;
@@ -42,7 +42,7 @@ st.markdown("""
     }
     .ov-table td.val {
         font-family: 'Courier New', Courier, monospace;
-        color: #FFFFFF;
+        color: #000000;
         font-weight: 900;
         font-size: 1.1em;
     }
@@ -138,7 +138,7 @@ if st.session_state["active_ticker"] is None:
         "<div style='text-align:center;margin-bottom:10px;'>"
         "<span style='color:#007bff;font-weight:900;font-size:2em;"
         "letter-spacing:-0.02em;'>get</span>"
-        "<span style='color:#ffffff;font-weight:900;font-size:2em;"
+        "<span style='color:#1c2b46;font-weight:900;font-size:2em;"
         "letter-spacing:-0.02em;'>Value</span>"
         "</div>",
         unsafe_allow_html=True,
@@ -178,7 +178,7 @@ else:
             "<div style='padding-top:6px;white-space:nowrap;'>"
             "<span style='color:#007bff;font-weight:900;font-size:1.35em;"
             "letter-spacing:-0.01em;'>get</span>"
-            "<span style='color:#ffffff;font-weight:900;font-size:1.35em;"
+            "<span style='color:#1c2b46;font-weight:900;font-size:1.35em;"
             "letter-spacing:-0.01em;'>Value</span>"
             "</div>",
             unsafe_allow_html=True,
@@ -223,7 +223,7 @@ else:
 
     logo_html = (
         f"<img src='{logo_url}' width='54' height='54' "
-        f"style='border-radius:10px;object-fit:contain;background:#0d1b2a;padding:4px;' "
+        f"style='border-radius:10px;object-fit:contain;background:#eef1f6;padding:4px;' "
         f"onerror=\"this.style.display='none'\">"
         if logo_url
         else f"<span style='font-size:2.4em;line-height:1;'>{flag}</span>"
@@ -239,7 +239,7 @@ else:
                             white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
                     {flag}&nbsp;&nbsp;{co_name}
                 </div>
-                <div style="color:#8899bb;font-size:0.88em;margin-top:3px;">
+                <div style="color:#4d6b88;font-size:0.88em;margin-top:3px;">
                     {sub_line}
                 </div>
             </div>
@@ -260,7 +260,7 @@ else:
         description = raw.get("description", "")
         if description:
             st.markdown(
-                f"<p style='color:#8899bb;font-size:0.9em;line-height:1.7;"
+                f"<p style='color:#4d6b88;font-size:0.9em;line-height:1.7;"
                 f"max-width:820px;margin-bottom:24px;'>{description}</p>",
                 unsafe_allow_html=True,
             )

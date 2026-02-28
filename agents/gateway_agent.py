@@ -253,6 +253,18 @@ class GatewayAgent:
         km      = f_km.result()      or {}
         sf      = f_sf.result()      or {}
 
+        # ── Diagnostic: log what each endpoint returned ───────────────────────
+        print(f"[fetch_overview/{t}] profile keys: {list(profile.keys())[:10]}")
+        print(f"[fetch_overview/{t}] mktCap={profile.get('mktCap')} volAvg={profile.get('volAvg')} "
+              f"beta={profile.get('beta')} pe={profile.get('pe')} "
+              f"heldByInsiders={profile.get('heldByInsiders')} shortRatio={profile.get('shortRatio')}")
+        print(f"[fetch_overview/{t}] quote: price={quote.get('price')} marketCap={quote.get('marketCap')} "
+              f"avgVolume={quote.get('avgVolume')} pe={quote.get('pe')} eps={quote.get('eps')}")
+        print(f"[fetch_overview/{t}] km: peRatioTTM={km.get('peRatioTTM')} "
+              f"netIncomePerShareTTM={km.get('netIncomePerShareTTM')}")
+        print(f"[fetch_overview/{t}] sf: shortPercent={sf.get('shortPercent')} "
+              f"shortRatio={sf.get('shortRatio')}")
+
         # ── Merge: profile is the base ────────────────────────────────────────
         data = dict(profile)
 
