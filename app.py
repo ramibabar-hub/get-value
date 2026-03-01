@@ -99,9 +99,32 @@ def fmt(v, is_pct=False):
     return f"{v:,.2f}"
 
 # ── Session-state bootstrap ───────────────────────────────────────────────────
-for k, v in [("active_ticker", None), ("overview_data", None),
-              ("norm", None), ("norm_ticker", None), ("view_type", "Annual"),
-              ("fin_scale", "MM"), ("treasury_rate", 0.042)]:
+for k, v in [
+    # ── Core app keys ──────────────────────────────────────────────────────────
+    ("active_ticker",            None),
+    ("overview_data",            None),
+    ("norm",                     None),
+    ("norm_ticker",              None),
+    ("view_type",                "Annual"),
+    ("fin_scale",                "MM"),
+    ("treasury_rate",            0.042),
+    # ── CF + IRR tab — WACC "Verify Source" panel ─────────────────────────────
+    ("cfirr_show_wacc_detail",   False),
+    ("cfirr_wacc_override",      False),
+    ("cfirr_wacc_rf_rate",       0.042),
+    ("cfirr_wacc_beta",          1.0),
+    ("cfirr_wacc_erp",           0.046),
+    # ── CF + IRR tab — YoY growth-rate editors (populated per-ticker) ─────────
+    ("cfirr_ebitda_growth_yoy",  []),
+    ("cfirr_fcf_growth_yoy",     []),
+    # ── CF + IRR tab — global growth-rate overrides ───────────────────────────
+    ("cfirr_ebitda_global_growth", None),   # None → use historical CAGR
+    ("cfirr_fcf_global_growth",    None),   # None → use historical CAGR
+    # ── CF + IRR tab — exit / MoS inputs ─────────────────────────────────────
+    ("cfirr_ebitda_exit",        15.0),
+    ("cfirr_fcf_exit_yield",     4.0),
+    ("cfirr_mos",                25.0),
+]:
     if k not in st.session_state:
         st.session_state[k] = v
 

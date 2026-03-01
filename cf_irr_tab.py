@@ -172,6 +172,25 @@ def _cagr_local(end_val, start_val, n_years):
         return "N/M"
 
 
+def _dec31_price(raw, year_str):
+    """Return closing price closest to Dec 31 for the given year from historical_prices."""
+    import datetime
+    hist = raw.get("historical_prices", [])
+    if not hist:
+        return None
+    yr = str(year_str)
+    year_prices = [p for p in hist if isinstance(p, dict) and str(p.get("date", ""))[:4] == yr]
+    if not year_prices:
+        return None
+    try:
+        target = datetime.date(int(yr), 12, 31)
+        closest = min(year_prices,
+                      key=lambda p: abs((datetime.date.fromisoformat(str(p["date"])) - target).days))
+        return _s(closest.get("adjClose") or closest.get("close"))
+    except Exception:
+        return None
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 #  UI helpers (match app.py section-header style)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -207,8 +226,7 @@ def _ebitda_hist(norm, raw, ins):
     hist_disp       list[dict] — pre-formatted display rows (oldest → newest)
     ttm_disp        dict       — TTM display row
     avg_disp        dict       — Average display row
-    cagr_disp       dict       — CAGR display row (10yr / 5yr from InsightsAgent)
-    local_cagr_disp dict       — Table CAGR (N-1 yr) computed locally
+    cagr_disp       dict       — CAGR display row ((latest/earliest)^(1/(n-1))-1)
     nd_ebt_ttm      float|None — TTM Net Debt/EBITDA (for checklist)
     rev_c10         float|str|None
     ebt_c10         float|str|None
@@ -298,37 +316,25 @@ def _ebitda_hist(norm, raw, ins):
         "Net Debt/EBITDA":   _f_x(_avg_col("nd_ebt")),
     }
 
-    # CAGR row (from InsightsAgent — 10yr primary, 5yr secondary)
+    # CAGR — InsightsAgent values kept for checklist; display row uses local formula
     cagr_data = ins.get_insights_cagr()
     rev_c10 = next((r.get("10yr") for r in cagr_data if r["CAGR"] == "Revenues"), None)
     rev_c5  = next((r.get("5yr")  for r in cagr_data if r["CAGR"] == "Revenues"), None)
     ebt_c10 = next((r.get("10yr") for r in cagr_data if r["CAGR"] == "EBITDA"),   None)
     ebt_c5  = next((r.get("5yr")  for r in cagr_data if r["CAGR"] == "EBITDA"),   None)
 
-    cagr_disp = {
-        "Year":              "CAGR (10yr / 5yr)",
-        "Revenues ($MM)":    f"{_f_pct(rev_c10)} / {_f_pct(rev_c5)}",
-        "EBITDA ($MM)":      f"{_f_pct(ebt_c10)} / {_f_pct(ebt_c5)}",
-        "Market Cap ($MM)":  "—",
-        "Debt ($MM)":        "—",
-        "Cash ($MM)":        "—",
-        "EV ($MM)":          "—",
-        "EV/EBITDA":         "—",
-        "Net Debt/EBITDA":   "—",
-    }
-
-    # Local CAGR row (N-1 years, first to last record in the table)
+    # Local CAGR for display: ((latest/earliest)**(1/(n-1)))-1
     n_hist = len(raw_hist)
     if n_hist >= 2:
         local_rev_cagr = _cagr_local(raw_hist[-1]["rev"], raw_hist[0]["rev"], n_hist - 1)
         local_ebt_cagr = _cagr_local(raw_hist[-1]["ebt"], raw_hist[0]["ebt"], n_hist - 1)
-        label = f"Table CAGR ({n_hist - 1}-yr)"
+        cagr_label = f"CAGR ({n_hist - 1}-yr)"
     else:
         local_rev_cagr = local_ebt_cagr = "N/M"
-        label = "Table CAGR"
+        cagr_label = "CAGR"
 
-    local_cagr_disp = {
-        "Year":              label,
+    cagr_disp = {
+        "Year":              cagr_label,
         "Revenues ($MM)":    _f_pct(local_rev_cagr),
         "EBITDA ($MM)":      _f_pct(local_ebt_cagr),
         "Market Cap ($MM)":  "—",
@@ -344,7 +350,7 @@ def _ebitda_hist(norm, raw, ins):
     base_ebitda = (_s(is_l[0].get("ebitda"))
                    if is_l and isinstance(is_l[0], dict) else None)
 
-    return (hist_disp, ttm_disp, avg_disp, cagr_disp, local_cagr_disp,
+    return (hist_disp, ttm_disp, avg_disp, cagr_disp,
             nd_ebt_t, rev_c10, ebt_c10, ebt_c5, ebt_avg_mult, base_ebitda)
 
 
@@ -361,8 +367,7 @@ def _fcf_hist(norm, raw, ins):
     hist_disp       list[dict]
     ttm_disp        dict
     avg_disp        dict
-    cagr_disp       dict
-    local_cagr_disp dict       — Table CAGR (N-1 yr) computed locally
+    cagr_disp       dict       — CAGR display row ((latest/earliest)^(1/(n-1))-1)
     adj_ps_ttm      float|None — TTM Adj.FCF/share (base for FCF forecast)
     fcf_c10         float|str|None
     fcf_c5          float|str|None
@@ -385,7 +390,8 @@ def _fcf_hist(norm, raw, ins):
         sh     = (_s(rec_is.get("weightedAverageShsOutDil"))
                   or _s(rec_is.get("weightedAverageShsOut")))
         adj_ps = _d(adj, sh)
-        px     = _s(rec_km.get("stockPrice"))
+        # Use Dec 31 closing price from historical_prices; fall back to key metrics price
+        px     = _dec31_price(raw, yr) or _s(rec_km.get("stockPrice"))
         yld    = _d(adj_ps, px)
 
         raw_hist.append({"adj_ps": adj_ps, "yld": yld})
@@ -440,33 +446,22 @@ def _fcf_hist(norm, raw, ins):
         "Adj. FCF Yield":  _f_pct(_avg_col("yld")),
     }
 
-    # CAGR row (from InsightsAgent)
+    # CAGR — InsightsAgent values kept for checklist; display row uses local formula
     cagr_data = ins.get_insights_cagr()
     fcf_c10 = next((r.get("10yr") for r in cagr_data if r["CAGR"] == "Adj. FCF"), None)
     fcf_c5  = next((r.get("5yr")  for r in cagr_data if r["CAGR"] == "Adj. FCF"), None)
 
-    cagr_disp = {
-        "Year":            "CAGR (10yr / 5yr)",
-        "FCF ($MM)":       "—",
-        "SBC ($MM)":       "—",
-        "Adj. FCF ($MM)":  f"{_f_pct(fcf_c10)} / {_f_pct(fcf_c5)}",
-        "Shares (MM)":     "—",
-        "Adj. FCF/s":      "—",
-        "Stock Price":     "—",
-        "Adj. FCF Yield":  "—",
-    }
-
-    # Local CAGR row
+    # Local CAGR for display: ((latest/earliest)**(1/(n-1)))-1
     n_hist = len(raw_hist)
     if n_hist >= 2:
         local_adj_cagr = _cagr_local(raw_hist[-1]["adj_ps"], raw_hist[0]["adj_ps"], n_hist - 1)
-        label = f"Table CAGR ({n_hist - 1}-yr)"
+        cagr_label = f"CAGR ({n_hist - 1}-yr)"
     else:
         local_adj_cagr = "N/M"
-        label = "Table CAGR"
+        cagr_label = "CAGR"
 
-    local_cagr_disp = {
-        "Year":            label,
+    cagr_disp = {
+        "Year":            cagr_label,
         "FCF ($MM)":       "—",
         "SBC ($MM)":       "—",
         "Adj. FCF ($MM)":  "—",
@@ -476,7 +471,7 @@ def _fcf_hist(norm, raw, ins):
         "Adj. FCF Yield":  "—",
     }
 
-    return (hist_disp, ttm_disp, avg_disp, cagr_disp, local_cagr_disp,
+    return (hist_disp, ttm_disp, avg_disp, cagr_disp,
             adj_ps_t, fcf_c10, fcf_c5)
 
 
@@ -486,11 +481,11 @@ def _fcf_hist(norm, raw, ins):
 
 def _ebitda_forecast_yoy(base_ebt, growth_rates, exit_mult, net_debt, shares, base_year):
     """
-    10-year EBITDA forecast using per-year growth rates.
+    9-year EBITDA forecast using per-year growth rates.
 
     Parameters
     ----------
-    growth_rates : list[float]  — YoY growth % for each of the 10 years (e.g. 8.5 for 8.5%)
+    growth_rates : list[float]  — YoY growth % for each of the 9 years (e.g. 8.5 for 8.5%)
 
     Returns list of dicts with columns suitable for st.data_editor.
     """
@@ -503,16 +498,14 @@ def _ebitda_forecast_yoy(base_ebt, growth_rates, exit_mult, net_debt, shares, ba
 
     rows = []
     ebt_running = ebt
-    for y in range(1, 11):
+    for y in range(1, 10):
         g = (growth_rates[y - 1] if growth_rates and y - 1 < len(growth_rates) else 10.0) / 100.0
         ebt_running = ebt_running * (1 + g)
         ev_y  = ebt_running * m
         fv_sh = _d(ev_y - nd, sh)
         rows.append({
             "Year":             str(base_year + y),
-            "YoY Growth (%)":   growth_rates[y - 1] if growth_rates and y - 1 < len(growth_rates) else 10.0,
-            "EBITDA ($MM)":     ebt_running / 1e6 if ebt_running is not None else None,
-            "EV ($MM)":         ev_y / 1e6 if ev_y is not None else None,
+            "Est. Growth Rate (%)": growth_rates[y - 1] if growth_rates and y - 1 < len(growth_rates) else 10.0,
             "Fair Value/share": fv_sh,
         })
     return rows
@@ -520,14 +513,14 @@ def _ebitda_forecast_yoy(base_ebt, growth_rates, exit_mult, net_debt, shares, ba
 
 def _fcf_forecast_yoy(base_adj_ps, growth_rates, exit_yield_pct, base_year):
     """
-    10-year Adj. FCF/s forecast using per-year growth rates.
+    9-year Adj. FCF/s forecast using per-year growth rates.
 
     Parameters
     ----------
     exit_yield_pct : float — Exit Adj. FCF Yield as a percentage (e.g. 4.0 for 4%)
 
     Returns (display_rows, irr_cashflows).
-    irr_cashflows[i] = FCF/s at year i+1; year 10 includes terminal value.
+    irr_cashflows[i] = FCF/s at year i+1; year 9 includes terminal value.
     """
     base = _s(base_adj_ps)
     if base is None:
@@ -539,18 +532,18 @@ def _fcf_forecast_yoy(base_adj_ps, growth_rates, exit_yield_pct, base_year):
     irr_cashflows = []
     adj_ps = base
 
-    for y in range(1, 11):
+    for y in range(1, 10):
         g = (growth_rates[y - 1] if growth_rates and y - 1 < len(growth_rates) else 10.0) / 100.0
         adj_ps = adj_ps * (1 + g)
-        if y == 10:
+        if y == 9:
             terminal = adj_ps / ey
             irr_cashflows.append(adj_ps + terminal)
         else:
             irr_cashflows.append(adj_ps)
         rows.append({
-            "Year":           str(base_year + y),
-            "YoY Growth (%)": growth_rates[y - 1] if growth_rates and y - 1 < len(growth_rates) else 10.0,
-            "Adj. FCF/s":     adj_ps,
+            "Year":                 str(base_year + y),
+            "Est. Growth Rate (%)": growth_rates[y - 1] if growth_rates and y - 1 < len(growth_rates) else 10.0,
+            "Adj. FCF/s":           adj_ps,
         })
     return rows, irr_cashflows
 
@@ -591,10 +584,10 @@ def _irr_sensitivity_yield(base_adj_ps, growth_rates, exit_yield_pct, current_pr
                 continue
             cfs   = []
             adj_ps = base
-            for i in range(10):
+            for i in range(9):
                 g = (growth_rates[i] if growth_rates and i < len(growth_rates) else 10.0) / 100.0
                 adj_ps = adj_ps * (1 + g)
-                if i < 9:
+                if i < 8:
                     cfs.append(adj_ps)
                 else:
                     terminal = adj_ps / y_here
@@ -716,11 +709,11 @@ def render_cf_irr_tab(norm, raw):
     w   = ins.get_wacc_components()
 
     # ── Build historical data ────────────────────────────────────────────────
-    (ebt_hist, ebt_ttm, ebt_avg, ebt_cagr, ebt_local_cagr,
+    (ebt_hist, ebt_ttm, ebt_avg, ebt_cagr,
      nd_ebt_ttm, rev_c10, ebt_c10, ebt_c5,
      ebt_avg_mult, base_ebitda) = _ebitda_hist(norm, raw, ins)
 
-    (fcf_hist, fcf_ttm, fcf_avg, fcf_cagr, fcf_local_cagr,
+    (fcf_hist, fcf_ttm, fcf_avg, fcf_cagr,
      adj_ps_ttm, fcf_c10, fcf_c5) = _fcf_hist(norm, raw, ins)
 
     # ── Pull profitability TTM (Adj. FCF margin) ─────────────────────────────
@@ -753,9 +746,11 @@ def render_cf_irr_tab(norm, raw):
         if key not in st.session_state:
             st.session_state[key] = val
 
-    _init("cfirr_ebitda_growth_yoy", [_pct_default(ebt_c5, 10.0)] * 10)
-    _init("cfirr_ebitda_exit",       round(ebt_avg_mult, 1) if ebt_avg_mult else 15.0)
-    _init("cfirr_fcf_growth_yoy",    [_pct_default(fcf_c5, 10.0)] * 10)
+    _init("cfirr_ebitda_growth_yoy",         [_pct_default(ebt_c5, 10.0)] * 9)
+    _init("cfirr_ebitda_global_growth",      _pct_default(ebt_c5, 10.0))
+    _init("cfirr_ebitda_exit",               round(ebt_avg_mult, 1) if ebt_avg_mult else 15.0)
+    _init("cfirr_fcf_growth_yoy",            [_pct_default(fcf_c5, 10.0)] * 9)
+    _init("cfirr_fcf_global_growth",         _pct_default(fcf_c5, 10.0))
     _init("cfirr_fcf_exit_yield",    4.0)
     _init("cfirr_mos",               25.0)
     _init("cfirr_wacc_override",     False)
@@ -792,9 +787,9 @@ def render_cf_irr_tab(norm, raw):
     ebitda_price_ss = _ebt_fc_ss[-1]["Fair Value/share"] if _ebt_fc_ss else None
     fcf_price_ss    = None
     if _fcf_fc_ss and exit_yield_pct > 0:
-        _adj_yr10 = _fcf_fc_ss[-1]["Adj. FCF/s"]
-        if _adj_yr10 is not None:
-            fcf_price_ss = _adj_yr10 / (exit_yield_pct / 100.0)
+        _adj_yr9 = _fcf_fc_ss[-1]["Adj. FCF/s"]
+        if _adj_yr9 is not None:
+            fcf_price_ss = _adj_yr9 / (exit_yield_pct / 100.0)
 
     avg_target_ss = None
     if ebitda_price_ss is not None and fcf_price_ss is not None:
@@ -804,7 +799,7 @@ def render_cf_irr_tab(norm, raw):
     buy_price  = None
     on_sale    = None
     if avg_target_ss is not None and wacc is not None and wacc > -1:
-        fair_value = avg_target_ss / (1 + wacc) ** 10
+        fair_value = avg_target_ss / (1 + wacc) ** 9
         buy_price  = fair_value * (1 - mos_pct / 100.0)
         if price_now is not None:
             on_sale = price_now < buy_price
@@ -971,22 +966,6 @@ def render_cf_irr_tab(norm, raw):
             unsafe_allow_html=True,
         )
 
-        # ON SALE badge
-        if on_sale is True:
-            sale_bg, sale_border, sale_txt, sale_lbl = "#22c55e", "none", "#fff", "ON SALE ✅"
-        elif on_sale is False:
-            sale_bg, sale_border, sale_txt, sale_lbl = "#ef4444", "none", "#fff", "NOT ON SALE ❌"
-        else:
-            sale_bg, sale_border, sale_txt, sale_lbl = "#f1f5f9", "2px dashed #94a3b8", "#94a3b8", "N/A"
-
-        st.markdown(
-            f"<div style='text-align:center;padding:14px 10px;border-radius:10px;"
-            f"background:{sale_bg};border:{sale_border};'>"
-            f"<div style='font-size:1.1em;font-weight:900;color:{sale_txt};'>{sale_lbl}</div>"
-            f"<div style='font-size:0.7em;color:{sale_txt};margin-top:3px;'>ON SALE STATUS</div>"
-            f"</div>",
-            unsafe_allow_html=True,
-        )
 
     # ══════════════════════════════════════════════════════════════════════════
     # SECTION 2 — EBITDA ANALYSIS
@@ -995,46 +974,28 @@ def render_cf_irr_tab(norm, raw):
 
     # ── Table 2.1: EV/EBITDA Historical ──────────────────────────────────────
     _sub("Table 2.1 · EV/EBITDA Historical  (values in $MM unless noted)")
-    all_ebt_rows = ebt_hist + [ebt_local_cagr, ebt_cagr, ebt_avg, ebt_ttm]
+    all_ebt_rows = ebt_hist + [ebt_cagr, ebt_avg, ebt_ttm]
     df_ebt = pd.DataFrame(all_ebt_rows).set_index("Year")
     st.dataframe(df_ebt, use_container_width=True)
 
-    # ── Table 2.2: EBITDA 10-Year Forecast (data_editor) ─────────────────────
-    _sub(f"Table 2.2 · EBITDA 10-Year Forecast  ({base_year + 1}–{base_year + 10})")
+    # ── Table 2.2: EBITDA 9-Year Forecast ────────────────────────────────────
+    _sub(f"Table 2.2 · EBITDA Forecast  ({base_year + 1}–{base_year + 9})")
 
-    ebt_fc_rows = _ebitda_forecast_yoy(
-        base_ebitda, ebt_growth_rates, exit_mult_val, net_debt_ttm, sh_ttm, base_year)
+    # Global growth rate — on_change resets all rows
+    def _apply_global_ebt():
+        rate = st.session_state.get("cfirr_ebitda_global_growth", 10.0)
+        st.session_state["cfirr_ebitda_growth_yoy"] = [rate] * 9
 
-    if ebt_fc_rows:
-        ebt_fc_df = pd.DataFrame(ebt_fc_rows)
-        edited_ebt_df = st.data_editor(
-            ebt_fc_df,
-            disabled=["Year", "EBITDA ($MM)", "EV ($MM)", "Fair Value/share"],
-            column_config={
-                "Year":             st.column_config.TextColumn("Year", width=70),
-                "YoY Growth (%)":   st.column_config.NumberColumn(
-                    "YoY Growth (%)", min_value=-50.0, max_value=200.0,
-                    step=0.5, format="%.1f"),
-                "EBITDA ($MM)":     st.column_config.NumberColumn("EBITDA ($MM)", format="%.1f"),
-                "EV ($MM)":         st.column_config.NumberColumn("EV ($MM)", format="%.1f"),
-                "Fair Value/share": st.column_config.NumberColumn("Fair Value/share", format="$%.2f"),
-            },
-            hide_index=True,
-            use_container_width=True,
-            num_rows="fixed",
+    g_col, _, exit_col, _ = st.columns([2, 1, 2, 3])
+    with g_col:
+        st.number_input(
+            "Global Est. Growth Rate (%)",
+            min_value=-50.0, max_value=200.0, step=0.5, format="%.1f",
+            key="cfirr_ebitda_global_growth",
+            on_change=_apply_global_ebt,
+            help="Sets the growth rate for all forecast years at once.",
         )
-        # Update growth rates in session state from edited df
-        new_ebt_rates = edited_ebt_df["YoY Growth (%)"].tolist()
-        st.session_state["cfirr_ebitda_growth_yoy"] = new_ebt_rates
-    else:
-        edited_ebt_df = None
-        new_ebt_rates = ebt_growth_rates
-        st.caption("Insufficient base data to generate forecast.")
-
-    # ── Exit EV/EBITDA Multiple ───────────────────────────────────────────────
-    st.markdown("<div style='height:6px;'></div>", unsafe_allow_html=True)
-    inp_a, _ = st.columns([2, 6])
-    with inp_a:
+    with exit_col:
         st.number_input(
             "Exit EV/EBITDA Multiple",
             min_value=1.0, max_value=100.0, step=0.5, format="%.1f",
@@ -1043,33 +1004,51 @@ def render_cf_irr_tab(norm, raw):
         )
     exit_mult_now = float(st.session_state["cfirr_ebitda_exit"])
 
-    # ── Recompute EBITDA rows from current (edited) rates + current exit mult ──
+    # Reload growth rates (may have been updated by on_change callback)
+    ebt_growth_rates = list(st.session_state["cfirr_ebitda_growth_yoy"])
+
+    ebt_fc_rows = _ebitda_forecast_yoy(
+        base_ebitda, ebt_growth_rates, exit_mult_now, net_debt_ttm, sh_ttm, base_year)
+
+    if ebt_fc_rows:
+        # Build unified table: base row + 9 forecast rows + average row
+        base_row = {"Year": str(base_year), "Est. Growth Rate (%)": float("nan"),
+                    "Fair Value/share": float("nan")}
+        fv_vals = [r["Fair Value/share"] for r in ebt_fc_rows if r["Fair Value/share"] is not None]
+        avg_fv_ebt = sum(fv_vals) / len(fv_vals) if fv_vals else None
+        avg_row = {"Year": "Average", "Est. Growth Rate (%)": float("nan"),
+                   "Fair Value/share": avg_fv_ebt}
+
+        ebt_all_rows = [base_row] + ebt_fc_rows + [avg_row]
+        ebt_fc_df = pd.DataFrame(ebt_all_rows)
+
+        edited_ebt_df = st.data_editor(
+            ebt_fc_df,
+            disabled=["Year", "Fair Value/share"],
+            column_config={
+                "Year":                 st.column_config.TextColumn("Year", width=80),
+                "Est. Growth Rate (%)": st.column_config.NumberColumn(
+                    "Est. Growth Rate (%)", min_value=-50.0, max_value=200.0,
+                    step=0.5, format="%.1f"),
+                "Fair Value/share":     st.column_config.NumberColumn(
+                    "Fair Value/share", format="$%.2f"),
+            },
+            hide_index=True,
+            use_container_width=True,
+            num_rows="fixed",
+        )
+        # Extract only the 9 forecast rows (indices 1 through 9), ignore base and average
+        new_ebt_rates = edited_ebt_df["Est. Growth Rate (%)"].iloc[1:10].tolist()
+        st.session_state["cfirr_ebitda_growth_yoy"] = new_ebt_rates
+    else:
+        new_ebt_rates = ebt_growth_rates
+        exit_mult_now = float(st.session_state["cfirr_ebitda_exit"])
+        st.caption("Insufficient base data to generate forecast.")
+
+    # Recompute with final rates
     ebt_fc_now = _ebitda_forecast_yoy(
         base_ebitda, new_ebt_rates, exit_mult_now, net_debt_ttm, sh_ttm, base_year)
     ebitda_price_yr10 = ebt_fc_now[-1]["Fair Value/share"] if ebt_fc_now else None
-
-    # ── EBITDA Summary ────────────────────────────────────────────────────────
-    if ebt_fc_now:
-        ebt_yr10    = (ebt_fc_now[-1]["EBITDA ($MM)"] or 0.0) * 1e6
-        ev_yr10     = ebt_yr10 * exit_mult_now
-        debt_ttm_v  = debt_ttm or 0.0
-        cash_ttm_v  = cash_ttm or 0.0
-        mktcap_yr10 = ev_yr10 - debt_ttm_v + cash_ttm_v
-        price_yr10  = mktcap_yr10 / sh_ttm if sh_ttm else None
-
-        _sub("EBITDA Model Summary")
-        summary_rows = [
-            ["Est. EV/EBITDA Multiple (Input)",          f"{exit_mult_now:.1f}x"],
-            [f"EV in {base_year + 10}",                  f"{_f_mm(ev_yr10)} $MM"],
-            ["Less: Debt (TTM)",                          f"{_f_mm(debt_ttm_v)} $MM"],
-            ["Plus: Cash (TTM)",                          f"{_f_mm(cash_ttm_v)} $MM"],
-            ["Est. Market Cap",                           f"{_f_mm(mktcap_yr10)} $MM"],
-            ["Shares Outstanding (TTM)",                  f"{_f_mm(sh_ttm)} MM" if sh_ttm else "N/A"],
-            [f"Est. Stock Price in {base_year + 10}",    _f_price(price_yr10)],
-        ]
-        df_ebt_sum = pd.DataFrame(summary_rows, columns=["Metric", "Value"]).set_index("Metric")
-        st.dataframe(df_ebt_sum, use_container_width=True,
-                     column_config={"Value": st.column_config.TextColumn("Value", width=160)})
 
     # ══════════════════════════════════════════════════════════════════════════
     # SECTION 3 — FREE CASH FLOW ANALYSIS
@@ -1078,74 +1057,85 @@ def render_cf_irr_tab(norm, raw):
 
     # ── Table 3.1: Adj. FCF/s Historical ─────────────────────────────────────
     _sub("Table 3.1 · Adj. FCF/s Historical  (values in $MM unless noted)")
-    all_fcf_rows = fcf_hist + [fcf_local_cagr, fcf_cagr, fcf_avg, fcf_ttm]
+    all_fcf_rows = fcf_hist + [fcf_cagr, fcf_avg, fcf_ttm]
     df_fcf = pd.DataFrame(all_fcf_rows).set_index("Year")
     st.dataframe(df_fcf, use_container_width=True)
 
-    # ── Table 3.2: Adj. FCF/s 10-Year Forecast (data_editor) ────────────────
-    _sub(f"Table 3.2 · Adj. FCF/s 10-Year Forecast  ({base_year + 1}–{base_year + 10})")
+    # ── Table 3.2: Adj. FCF/s 9-Year Forecast ───────────────────────────────
+    _sub(f"Table 3.2 · Adj. FCF/s Forecast  ({base_year + 1}–{base_year + 9})")
+
+    # Global growth rate — on_change resets all rows
+    def _apply_global_fcf():
+        rate = st.session_state.get("cfirr_fcf_global_growth", 10.0)
+        st.session_state["cfirr_fcf_growth_yoy"] = [rate] * 9
+
+    fg_col, _, yield_col, _ = st.columns([2, 1, 2, 3])
+    with fg_col:
+        st.number_input(
+            "Global Est. Growth Rate (%)",
+            min_value=-50.0, max_value=200.0, step=0.5, format="%.1f",
+            key="cfirr_fcf_global_growth",
+            on_change=_apply_global_fcf,
+            help="Sets the growth rate for all forecast years at once.",
+        )
+    with yield_col:
+        st.number_input(
+            "Est. Adj. FCF Yield (%)",
+            min_value=0.5, max_value=50.0, step=0.5, format="%.1f",
+            key="cfirr_fcf_exit_yield",
+            help="Exit FCF yield: Stock Price = Adj. FCF/s ÷ Yield.",
+        )
+    exit_yield_now = float(st.session_state["cfirr_fcf_exit_yield"])
+
+    # Reload growth rates (may have been updated by on_change callback)
+    fcf_growth_rates = list(st.session_state["cfirr_fcf_growth_yoy"])
 
     fcf_fc_rows_base, _ = _fcf_forecast_yoy(
-        adj_ps_ttm, fcf_growth_rates, exit_yield_pct, base_year)
+        adj_ps_ttm, fcf_growth_rates, exit_yield_now, base_year)
 
     if fcf_fc_rows_base:
-        fcf_fc_df_disp = pd.DataFrame([
-            {"Year": r["Year"], "YoY Growth (%)": r["YoY Growth (%)"],
-             "Adj. FCF/s": r["Adj. FCF/s"]}
-            for r in fcf_fc_rows_base
-        ])
+        # Build unified table: base row + 9 forecast rows + average row
+        fcf_base_row = {"Year": str(base_year), "Est. Growth Rate (%)": float("nan"),
+                        "Adj. FCF/s": adj_ps_ttm}
+        adj_vals = [r["Adj. FCF/s"] for r in fcf_fc_rows_base if r["Adj. FCF/s"] is not None]
+        avg_adj_ps = sum(adj_vals) / len(adj_vals) if adj_vals else None
+        fcf_avg_row = {"Year": "Average", "Est. Growth Rate (%)": float("nan"),
+                       "Adj. FCF/s": avg_adj_ps}
+
+        fcf_all_rows = [fcf_base_row] + fcf_fc_rows_base + [fcf_avg_row]
+        fcf_fc_df_disp = pd.DataFrame(fcf_all_rows)
+
         edited_fcf_df = st.data_editor(
             fcf_fc_df_disp,
             disabled=["Year", "Adj. FCF/s"],
             column_config={
-                "Year":           st.column_config.TextColumn("Year", width=70),
-                "YoY Growth (%)": st.column_config.NumberColumn(
-                    "YoY Growth (%)", min_value=-50.0, max_value=200.0,
+                "Year":                 st.column_config.TextColumn("Year", width=80),
+                "Est. Growth Rate (%)": st.column_config.NumberColumn(
+                    "Est. Growth Rate (%)", min_value=-50.0, max_value=200.0,
                     step=0.5, format="%.1f"),
-                "Adj. FCF/s":     st.column_config.NumberColumn("Adj. FCF/s", format="$%.2f"),
+                "Adj. FCF/s":           st.column_config.NumberColumn(
+                    "Adj. FCF/s", format="$%.2f"),
             },
             hide_index=True,
             use_container_width=True,
             num_rows="fixed",
         )
-        new_fcf_rates = edited_fcf_df["YoY Growth (%)"].tolist()
+        # Extract only the 9 forecast rows (indices 1 through 9), ignore base and average
+        new_fcf_rates = edited_fcf_df["Est. Growth Rate (%)"].iloc[1:10].tolist()
         st.session_state["cfirr_fcf_growth_yoy"] = new_fcf_rates
     else:
         new_fcf_rates = fcf_growth_rates
         st.caption("Insufficient base data to generate forecast.")
 
-    # ── Est. Adj. FCF Yield input ─────────────────────────────────────────────
-    st.markdown("<div style='height:6px;'></div>", unsafe_allow_html=True)
-    inp_c, _ = st.columns([2, 6])
-    with inp_c:
-        st.number_input(
-            "Est. Adj. FCF Yield (%)",
-            min_value=0.5, max_value=50.0, step=0.5, format="%.1f",
-            key="cfirr_fcf_exit_yield",
-            help="Exit FCF yield used to derive the implied stock price at year 10. "
-                 "Stock Price = Adj. FCF/s ÷ Yield.",
-        )
-    exit_yield_now = float(st.session_state["cfirr_fcf_exit_yield"])
-
-    # ── Recompute FCF rows from current (edited) rates + current yield ────────
+    # Recompute with final rates
     fcf_fc_now, fcf_cashflows_now = _fcf_forecast_yoy(
         adj_ps_ttm, new_fcf_rates, exit_yield_now, base_year)
 
     fcf_price_yr10 = None
     if fcf_fc_now and exit_yield_now > 0:
-        adj_fcf_ps_yr10 = fcf_fc_now[-1]["Adj. FCF/s"]
-        if adj_fcf_ps_yr10 is not None:
-            fcf_price_yr10 = adj_fcf_ps_yr10 / (exit_yield_now / 100.0)
-
-    # ── FCF Summary ───────────────────────────────────────────────────────────
-    _sub("FCF Model Summary")
-    fcf_sum_rows = [
-        ["Est. Adj. FCF Yield (Input)",              f"{exit_yield_now:.1f}%"],
-        [f"Est. Stock Price in {base_year + 10}",   _f_price(fcf_price_yr10)],
-    ]
-    df_fcf_sum = pd.DataFrame(fcf_sum_rows, columns=["Metric", "Value"]).set_index("Metric")
-    st.dataframe(df_fcf_sum, use_container_width=True,
-                 column_config={"Value": st.column_config.TextColumn("Value", width=160)})
+        adj_fcf_ps_yr9 = fcf_fc_now[-1]["Adj. FCF/s"]
+        if adj_fcf_ps_yr9 is not None:
+            fcf_price_yr10 = adj_fcf_ps_yr9 / (exit_yield_now / 100.0)
 
     # ══════════════════════════════════════════════════════════════════════════
     # COMPARISON TABLE
@@ -1179,7 +1169,7 @@ def render_cf_irr_tab(norm, raw):
         irr_rows = [{"Year": "0 (Entry)", "Cash Flow": _f_price(-price_now),
                      "Note": "Entry — Current Market Price"}]
         for idx, cf in enumerate(fcf_cashflows, start=1):
-            note = "Adj. FCF/s" if idx < 10 else "Adj. FCF/s + Terminal Value (Stock Price)"
+            note = "Adj. FCF/s" if idx < len(fcf_cashflows) else "Adj. FCF/s + Terminal Value (Stock Price)"
             irr_rows.append({"Year": str(base_year + idx),
                              "Cash Flow": _f_price(cf), "Note": note})
         df_irr = pd.DataFrame(irr_rows).set_index("Year")
@@ -1213,33 +1203,155 @@ def render_cf_irr_tab(norm, raw):
         st.caption("Insufficient data for sensitivity analysis.")
 
     # ══════════════════════════════════════════════════════════════════════════
-    # SECTION 5 — FINAL OUTPUT
+    # SECTION 5 — FINAL OUTPUT  (vertical list below comparison table)
     # ══════════════════════════════════════════════════════════════════════════
     _sec("5 · Final Output")
 
-    c1, c2, c3, c4 = st.columns(4)
-    with c1:
-        st.metric("Fair Value / Share", _f_price(fair_value),
-                  help="Average Target Price discounted at WACC for 10 years.")
-    with c2:
-        st.metric("Current Price", _f_price(price_now))
-    with c3:
-        st.number_input(
-            "Margin of Safety (%)",
-            min_value=0.0, max_value=80.0, step=1.0, format="%.0f",
-            key="cfirr_mos",
-            help="Discount applied to Fair Value to derive the Buy Price.",
-        )
-    with c4:
-        st.metric("Buy Price", _f_price(buy_price),
+    # Recalculate with live MoS (may have changed above)
+    mos_pct_now  = float(st.session_state.get("cfirr_mos", 25.0))
+    # Reuse avg_target_now computed just above the comparison table
+    fair_value_now = None
+    buy_price_now  = None
+    on_sale_now    = None
+    if avg_target_now is not None and wacc is not None and wacc > -1:
+        fair_value_now = avg_target_now / (1 + wacc) ** 9
+        buy_price_now  = fair_value_now * (1 - mos_pct_now / 100.0)
+        if price_now is not None:
+            on_sale_now = price_now < buy_price_now
+
+    # Upside / downside helpers
+    def _updown(target, current):
+        if target is None or current is None or current == 0:
+            return None, None
+        delta = (target / current) - 1.0
+        label = "Upside" if delta >= 0 else "Downside"
+        return delta, label
+
+    fv_delta,  fv_label  = _updown(fair_value_now, price_now)
+    bp_delta,  bp_label  = _updown(buy_price_now,  price_now)
+
+    # ── Left column: vertical list ────────────────────────────────────────────
+    out_col, badge_col = st.columns([3, 1])
+
+    with out_col:
+        # Row — WACC
+        wc1, wc2 = st.columns([5, 2])
+        with wc1:
+            st.metric("WACC", f"{wacc:.2%}",
+                      help="Weighted Average Cost of Capital used to discount the target price.")
+        with wc2:
+            st.markdown("<div style='height:20px;'></div>", unsafe_allow_html=True)
+            if st.button("Verify Source", key="cfirr_verify_wacc_final"):
+                st.session_state["cfirr_show_wacc_detail"] = not st.session_state.get(
+                    "cfirr_show_wacc_detail", False)
+
+        if st.session_state.get("cfirr_show_wacc_detail", False):
+            with st.expander("WACC Breakdown", expanded=True):
+                src_rf   = float(st.session_state.get("treasury_rate", 0.042))
+                src_beta = float(w["beta"])
+                src_erp  = 0.046
+                src_cod  = (src_rf + spread) * (1 - w["tax_rate"])
+                src_coe  = src_rf + src_beta * src_erp
+                src_wd   = w["debt_val"]   / tc if tc else 0.0
+                src_we   = w["equity_val"] / tc if tc else 0.0
+                src_wacc = src_wd * src_cod + src_we * src_coe
+                d_col2, e_col2 = st.columns(2)
+                with d_col2:
+                    st.caption("Cost of Debt")
+                    st.dataframe(pd.DataFrame([
+                        ["Interest Coverage", f"{w['int_coverage']:.2f}x"],
+                        ["Credit Spread",     f"{spread:.2%}"],
+                        ["Risk-Free Rate",    f"{src_rf:.2%}"],
+                        ["Tax Rate",          f"{w['tax_rate']:.2%}"],
+                        ["After-tax CoD",     f"{src_cod:.2%}"],
+                    ], columns=["Component", "Value"]).set_index("Component"),
+                    use_container_width=True)
+                with e_col2:
+                    st.caption("Cost of Equity")
+                    st.dataframe(pd.DataFrame([
+                        ["Risk-Free Rate", f"{src_rf:.2%}"],
+                        ["Beta",           f"{src_beta:.2f}"],
+                        ["ERP",            f"{src_erp:.2%}"],
+                        ["CoE (CAPM)",     f"{src_coe:.2%}"],
+                    ], columns=["Component", "Value"]).set_index("Component"),
+                    use_container_width=True)
+                st.caption(f"Sourced WACC: **{src_wacc:.2%}**  |  "
+                           f"Debt weight: {src_wd:.1%}  |  Equity weight: {src_we:.1%}")
+
+        st.divider()
+
+        # Row — Fair Value per share
+        st.metric("Fair Value per share  (Calculated)",
+                  _f_price(fair_value_now),
+                  help="Average Target Price discounted at WACC for 9 years.")
+
+        # Row — Margin of Safety (editable)
+        mos_inp_col, _ = st.columns([2, 5])
+        with mos_inp_col:
+            st.number_input(
+                "Margin of Safety (%)",
+                min_value=0.0, max_value=80.0, step=1.0, format="%.0f",
+                key="cfirr_mos",
+                help="Discount applied to Fair Value to derive the Buy Price.",
+            )
+
+        # Row — Buy Price
+        st.metric("Buy Price  (Calculated)",
+                  _f_price(buy_price_now),
                   help="Fair Value × (1 − Margin of Safety).")
 
-    if fair_value is None:
+        # Row — Current Stock Price
+        st.metric("Current Stock Price", _f_price(price_now))
+
+        st.divider()
+
+        # Status rows
+        def _status_pct(delta, label):
+            if delta is None:
+                return "N/A"
+            sign = "+" if delta >= 0 else ""
+            color = "#22c55e" if delta >= 0 else "#ef4444"
+            return (
+                f"<span style='color:{color};font-weight:700;'>"
+                f"{label} {sign}{delta * 100:.1f}%</span>"
+            )
+
+        st.markdown(
+            f"**Fair Value vs Current:** &nbsp; {_status_pct(fv_delta, fv_label)}",
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            f"**Buy Price vs Current:** &nbsp; {_status_pct(bp_delta, bp_label)}",
+            unsafe_allow_html=True,
+        )
+
+    # ── Right column: On-Sale badge ───────────────────────────────────────────
+    with badge_col:
+        st.markdown("<div style='height:14px;'></div>", unsafe_allow_html=True)
+
+        # Company on-sale badge
+        if on_sale_now is True:
+            sale_bg, sale_txt, sale_lbl, sale_sub = "#22c55e", "#fff", "ON SALE", "Price < Buy Price"
+        elif on_sale_now is False:
+            sale_bg, sale_txt, sale_lbl, sale_sub = "#ef4444", "#fff", "NOT ON SALE", "Price > Buy Price"
+        else:
+            sale_bg, sale_txt, sale_lbl, sale_sub = "#94a3b8", "#fff", "N/A", "Insufficient data"
+
+        st.markdown(
+            f"<div style='text-align:center;padding:22px 10px;border-radius:12px;"
+            f"background:{sale_bg};margin-bottom:10px;'>"
+            f"<div style='font-size:1.15em;font-weight:900;color:{sale_txt};'>{sale_lbl}</div>"
+            f"<div style='font-size:0.70em;color:{sale_txt};margin-top:5px;'>{sale_sub}</div>"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+
+    if fair_value_now is None:
         st.markdown(
             "<div style='margin-top:10px;padding:8px 14px;border-radius:6px;"
             "background:#fef9c3;color:#92400e;font-size:0.80em;'>"
             "⚠️  <strong>Fair Value</strong> and <strong>Buy Price</strong> require valid "
-            "10-year price estimates from both models. Ensure base EBITDA and Adj.FCF/s "
+            "9-year price estimates from both models. Ensure base EBITDA and Adj.FCF/s "
             "data are available and exit inputs are set.</div>",
             unsafe_allow_html=True,
         )
