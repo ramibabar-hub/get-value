@@ -305,8 +305,8 @@ else:
         """, unsafe_allow_html=True)
 
     # ── Tabs ──────────────────────────────────────────────────────────────────
-    tab_ov, tab_fin, tab_val, tab_ins = st.tabs(
-        ["📊 Overview", "📋 Financials", "💰 Valuations", "💡 Insights"]
+    tab_ov, tab_fin, tab_ins, tab_val = st.tabs(
+        ["📊 Overview", "📋 Financials", "💡 Insights", "💰 Valuations"]
     )
 
     # ── Tab 1: Overview — description only (metrics now live in the header) ──
@@ -325,17 +325,7 @@ else:
     with tab_fin:
         render_financials_tab(norm, raw)
 
-    # ── Tab 3: Valuations ─────────────────────────────────────────────────────
-    with tab_val:
-        from cf_irr_tab import render_cf_irr_tab
-        (sub_cf_irr,) = st.tabs(["📈 CF + IRR"])
-        with sub_cf_irr:
-            if norm:
-                render_cf_irr_tab(norm, raw)
-            else:
-                st.info("Load a ticker to see the valuation model.")
-
-    # ── Tab 4: Insights ───────────────────────────────────────────────────────
+    # ── Tab 3: Insights ───────────────────────────────────────────────────────
     with tab_ins:
         if norm:
             ins = InsightsAgent(norm.raw_data, raw)
@@ -452,3 +442,13 @@ else:
 
         else:
             st.info("Insights data is unavailable for this ticker.")
+
+    # ── Tab 4: Valuations ─────────────────────────────────────────────────────
+    with tab_val:
+        from cf_irr_tab import render_cf_irr_tab
+        (sub_cf_irr,) = st.tabs(["📈 CF + IRR"])
+        with sub_cf_irr:
+            if norm:
+                render_cf_irr_tab(norm, raw)
+            else:
+                st.info("Load a ticker to see the valuation model.")
