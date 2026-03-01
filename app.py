@@ -5,6 +5,7 @@ from agents.core_agent import DataNormalizer
 from agents.profile_agent import ProfileAgent
 from agents.insights_agent import InsightsAgent
 from financials_tab import render_financials_tab
+from cf_irr_tab import render_cf_irr_tab
 
 def _damodaran_spread(coverage: float) -> float:
     if coverage > 8.5:  return 0.0067
@@ -445,7 +446,6 @@ else:
 
     # ── Tab 4: Valuations ─────────────────────────────────────────────────────
     with tab_val:
-        from cf_irr_tab import render_cf_irr_tab
         (sub_cf_irr,) = st.tabs(["📈 CF + IRR"])
         with sub_cf_irr:
             if norm:
