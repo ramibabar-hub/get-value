@@ -757,14 +757,24 @@ def render_cf_irr_tab(norm, raw):
 
     price_now = _s(raw.get("price"))
 
+    # ── Ticker-based session state reset ─────────────────────────────────────
+    # Clear all cfirr_ keys whenever the active ticker changes so that new
+    # defaults (CAGR, TTM multiple, etc.) are always applied for each ticker.
+    _cfirr_ticker = str(raw.get("symbol") or st.session_state.get("active_ticker") or "")
+    if st.session_state.get("cfirr_ticker") != _cfirr_ticker:
+        for _k in list(st.session_state.keys()):
+            if _k.startswith("cfirr_"):
+                del st.session_state[_k]
+        st.session_state["cfirr_ticker"] = _cfirr_ticker
+
     # ── Session-state defaults (one-time init, prefixed cfirr_) ─────────────
     def _init(key, val):
         if key not in st.session_state:
             st.session_state[key] = val
 
-    # Use local 9-yr CAGRs as default growth rates; TTM EV/EBITDA as default exit multiple
-    _ebt_g_default = _pct_default(local_ebt_cagr_num, 10.0)
-    _fcf_g_default = _pct_default(local_adj_cagr_num, 10.0)
+    # Use InsightsAgent 10-yr CAGRs as default growth rates; TTM EV/EBITDA as default exit multiple
+    _ebt_g_default = _pct_default(ebt_c10, 10.0)
+    _fcf_g_default = _pct_default(fcf_c10, 10.0)
     _exit_mult_def = round(ev_ebt_ttm_numeric, 1) if ev_ebt_ttm_numeric else 15.0
 
     _init("cfirr_ebitda_growth_yoy",    [_ebt_g_default] * 9)
@@ -772,6 +782,7 @@ def render_cf_irr_tab(norm, raw):
     _init("cfirr_ebitda_exit",          _exit_mult_def)
     _init("cfirr_fcf_growth_yoy",       [_fcf_g_default] * 9)
     _init("cfirr_fcf_global_growth",    _fcf_g_default)
+    # Exit yield defaults to the 2034 (last-year) growth rate, which equals _fcf_g_default on first load
     _init("cfirr_fcf_exit_yield",       _fcf_g_default)
     _init("cfirr_mos",               25.0)
     _init("cfirr_wacc_override",     False)
@@ -976,7 +987,7 @@ def render_cf_irr_tab(norm, raw):
     ebt_fc_now = _ebitda_forecast_yoy(base_ebitda, new_ebt_rates, base_year)
 
     # ── EBITDA Est. Stock Price Table ─────────────────────────────────────────
-    _sub("EBITDA Estimated Stock Price")
+    _sub("Est. Stock Price (EBITDA Method)")
 
     em_col, _ = st.columns([2, 6])
     with em_col:
@@ -1076,12 +1087,16 @@ def render_cf_irr_tab(norm, raw):
         # Extract only the 9 forecast rows (indices 1 through 9), ignore base and average
         new_fcf_rates = edited_fcf_df["Est. Growth Rate (%)"].iloc[1:10].tolist()
         st.session_state["cfirr_fcf_growth_yoy"] = new_fcf_rates
+        # Sync exit yield to match 2034 growth rate if user hasn't manually changed it yet
+        _yr2034_rate = new_fcf_rates[-1] if new_fcf_rates else _fcf_g_default
+        if "cfirr_fcf_exit_yield" not in st.session_state:
+            st.session_state["cfirr_fcf_exit_yield"] = _yr2034_rate
     else:
         new_fcf_rates = fcf_growth_rates
         st.caption("Insufficient base data to generate forecast.")
 
     # ── FCF Est. Stock Price Table ────────────────────────────────────────────
-    _sub("FCF Estimated Stock Price")
+    _sub("Est. Stock Price (FCF Method)")
 
     lt_col, _ = st.columns([2, 6])
     with lt_col:
