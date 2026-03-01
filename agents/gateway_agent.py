@@ -127,14 +127,6 @@ class GatewayAgent:
         "EURONEXT": "🇪🇺",
     }
 
-    # Ticker suffix → canonical exchange short-name (for non-US lookup)
-    SUFFIX_TO_EXCHANGE = {
-        "TA": "TASE", "L": "LSE", "DE": "XETRA", "PA": "PAR",
-        "AS": "AMS", "MI": "BIT", "MC": "BME", "SW": "SIX",
-        "TO": "TSX", "AX": "ASX", "HK": "HKEX", "T": "TSE",
-        "KS": "KSE", "NS": "NSE", "BO": "BSE", "SI": "SGX",
-    }
-
     def __init__(self):
         self.api_key = _load_api_key()
         # FMP deprecated /api/v3 on Aug 31 2025 — use /stable
@@ -213,64 +205,60 @@ class GatewayAgent:
         }
 
     # ── autocomplete search ───────────────────────────────────────────────────
-    def search_ticker(self, query: str, limit: int = 20) -> list:
-        """Autocomplete: returns [{symbol, name, exchangeShortName, flag, ...}].
 
-        - If query contains '.' (e.g. NICE.TA), does a direct /profile lookup
-          first so the exact match always appears at the top of results.
-        - Falls back to trying .TA / .L / .DE suffixes if no results found.
+    # Exchange suffix → FMP exchangeShortName (used only when user explicitly
+    # types a suffix like NICE.TA or BMW.DE — NOT for fallback guessing)
+    SUFFIX_TO_EXCHANGE = {
+        "TA": "TASE", "L": "LSE", "DE": "XETRA", "PA": "PAR",
+        "AS": "AMS",  "MI": "BIT", "MC": "BME",  "SW": "SIX",
+        "TO": "TSX",  "AX": "ASX", "HK": "HKEX", "T":  "TSE",
+        "KS": "KSE",  "NS": "NSE", "BO": "BSE",  "SI": "SGX",
+    }
+
+    def search_ticker(self, query: str, limit: int = 20) -> list:
+        """
+        Autocomplete: returns [{symbol, name, exchangeShortName, flag}].
+        - If user typed an explicit suffix (e.g. NICE.TA): profile lookup first.
+        - Otherwise: plain FMP /search with limit=20. No suffix guessing —
+          that caused European-only results (AAPL.L, AAPL.DE) for US tickers.
         """
         if not self.api_key or not query.strip():
             return []
 
         results = []
-        seen_symbols = set()
-        q = query.strip()
+        seen    = set()
+        q       = query.strip()
 
-        def _add_items(items):
+        def _add(items):
             if not isinstance(items, list):
                 return
             for item in items:
                 sym = str(item.get("symbol", "")).upper()
-                if sym and sym not in seen_symbols:
-                    seen_symbols.add(sym)
-                    exch = str(item.get("exchangeShortName") or item.get("stockExchange") or "").upper()
+                if sym and sym not in seen:
+                    seen.add(sym)
+                    exch = str(item.get("exchangeShortName") or
+                               item.get("stockExchange") or "").upper()
                     item["flag"] = self.EXCHANGE_FLAGS.get(exch, "🏳️")
                     results.append(item)
 
-        # Direct profile lookup when the query looks like a suffixed symbol
+        # Step 1: explicit suffix (NICE.TA / BMW.DE) → profile lookup first
         if "." in q:
             suffix = q.rsplit(".", 1)[-1].upper()
             if suffix in self.SUFFIX_TO_EXCHANGE:
                 profile = self._get("profile", {"symbol": q.upper()})
                 if isinstance(profile, list) and profile:
                     p = profile[0]
-                    _add_items([{
+                    _add([{
                         "symbol":            p.get("symbol", q.upper()),
                         "name":              p.get("companyName", ""),
                         "exchangeShortName": p.get("exchangeShortName",
-                                                   self.SUFFIX_TO_EXCHANGE.get(suffix, "")),
+                                                self.SUFFIX_TO_EXCHANGE[suffix]),
                         "stockExchange":     p.get("exchange", ""),
-                        "currency":          p.get("currency", ""),
+                        "currency":         p.get("currency", ""),
                     }])
 
-        # Standard search
-        body = self._get("search", {"query": q, "limit": limit})
-        _add_items(body if isinstance(body, list) else [])
-
-        # Auto-try common suffixes when bare query returns nothing
-        if len(results) == 0 and "." not in q:
-            for suffix, exch in [("TA", "TASE"), ("L", "LSE"), ("DE", "XETRA")]:
-                profile = self._get("profile", {"symbol": f"{q.upper()}.{suffix}"})
-                if isinstance(profile, list) and profile:
-                    p = profile[0]
-                    _add_items([{
-                        "symbol":            p.get("symbol", f"{q.upper()}.{suffix}"),
-                        "name":              p.get("companyName", ""),
-                        "exchangeShortName": p.get("exchangeShortName", exch),
-                        "stockExchange":     p.get("exchange", ""),
-                        "currency":          p.get("currency", ""),
-                    }])
+        # Step 2: general FMP search — US first, then global
+        _add(self._get("search", {"query": q, "limit": limit}))
 
         return results
 
