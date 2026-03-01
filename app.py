@@ -374,19 +374,46 @@ else:
                 st.dataframe(df.set_index(df.columns[0]),
                              use_container_width=True, column_config=ins_col_cfg)
             # ── WACC ──────────────────────────────────────────────────────────
-            ERP     = 0.046
-            rf_rate = st.session_state.get("treasury_rate", 0.042)
-            w       = ins.get_wacc_components()
+            w = ins.get_wacc_components()
+
+            st.markdown("<div class='section-header'>WACC</div>", unsafe_allow_html=True)
+
+            # Sensitivity Analysis — lets the user override live inputs
+            with st.expander("⚙️ Sensitivity Analysis — Adjust Inputs"):
+                sa_col1, sa_col2, sa_col3 = st.columns(3)
+                with sa_col1:
+                    rf_rate = st.number_input(
+                        "Risk-Free Rate (10y Treasury)",
+                        min_value=0.0, max_value=0.20,
+                        value=float(st.session_state.get("treasury_rate", 0.042)),
+                        step=0.001, format="%.3f",
+                        key="wacc_rf_rate",
+                    )
+                with sa_col2:
+                    beta_adj = st.number_input(
+                        "Beta",
+                        min_value=0.0, max_value=5.0,
+                        value=float(w["beta"]),
+                        step=0.01, format="%.2f",
+                        key="wacc_beta",
+                    )
+                with sa_col3:
+                    erp_adj = st.number_input(
+                        "Equity Risk Premium (ERP)",
+                        min_value=0.0, max_value=0.20,
+                        value=0.046,
+                        step=0.001, format="%.3f",
+                        key="wacc_erp",
+                    )
 
             spread = _damodaran_spread(w["int_coverage"])
             cod    = (rf_rate + spread) * (1 - w["tax_rate"])
-            coe    = rf_rate + (w["beta"] * ERP)
+            coe    = rf_rate + (beta_adj * erp_adj)
             tc     = w["equity_val"] + w["debt_val"]
             wd     = w["debt_val"]   / tc if tc else 0.0
             we     = w["equity_val"] / tc if tc else 0.0
             wacc   = wd * cod + we * coe
 
-            st.markdown("<div class='section-header'>WACC</div>", unsafe_allow_html=True)
             col_d, col_e = st.columns(2)
 
             with col_d:
@@ -406,8 +433,8 @@ else:
                 st.caption("Cost of Equity (CAPM)")
                 coe_df = pd.DataFrame([
                     ["Risk-Free Rate (10y)", f"{rf_rate:.2%}"],
-                    ["Beta",                 f"{w['beta']:.2f}"],
-                    ["Equity Risk Premium",  f"{ERP:.2%}"],
+                    ["Beta",                 f"{beta_adj:.2f}"],
+                    ["Equity Risk Premium",  f"{erp_adj:.2%}"],
                     ["Cost of Equity",       f"{coe:.2%}"],
                 ], columns=["Component", "Value"])
                 st.dataframe(coe_df.set_index("Component"), use_container_width=True,
