@@ -127,20 +127,21 @@ def _ss_default(key, val):
 
 # ── Shared: build search suggestions and return chosen ticker ─────────────────
 def _search_widget(input_key: str, select_key: str, placeholder: str) -> str:
+    """
+    Renders text_input + optional selectbox. Returns the resolved ticker string.
+    on_change fires when the user stops typing (Enter / focus-loss) and stores
+    search results in session_state so the dropdown appears on the next render.
+    Reading the query directly from st.session_state[input_key] (the widget
+    value) avoids the stale-key bug where a separate query_key stayed "".
+    """
     results_key = f"_hits_{input_key}"
-    query_key   = f"_q_{input_key}"
 
     def _on_change():
         q = st.session_state.get(input_key, "").strip()
-        st.session_state[query_key] = q
-        if len(q) >= 1:
-            st.session_state[results_key] = _search(q)
-        else:
-            st.session_state[results_key] = []
+        st.session_state[results_key] = _search(q) if q else []
 
     _ss_default(input_key, "")
     _ss_default(results_key, [])
-    _ss_default(query_key, "")
 
     st.text_input(
         input_key,
@@ -150,8 +151,8 @@ def _search_widget(input_key: str, select_key: str, placeholder: str) -> str:
         on_change=_on_change,
     )
 
-    query  = st.session_state.get(query_key, "").strip()
-    hits   = st.session_state.get(results_key, [])
+    query = st.session_state.get(input_key, "").strip()
+    hits  = st.session_state.get(results_key, [])
     candidate = query.upper()
 
     if query:
