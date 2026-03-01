@@ -54,81 +54,73 @@ def _fmt(v, fmt_type, div):
     return f"{f:,.2f}"          # "ratio" — plain 2dp number
 
 
-def _filing_url_fallback(ticker: str, exchange: str, col_label: str,
-                         period_type: str) -> str:
+def _filing_url_fallback(ticker: str, exchange: str, col_label: str, period_type: str) -> str:
     """
-    Return a best-effort filing portal URL when FMP's finalLink/link are absent.
-
-    ticker      : FMP symbol, e.g. "AAPL", "TEVA"
-    exchange    : FMP exchangeShortName, e.g. "NASDAQ", "TASE", "LSE"
-    col_label   : column header, e.g. "2023" or "2023 Q3"
-    period_type : "annual" | "quarterly"
-
-    Returns "" when the exchange has no supported mapping.
+    Returns the most direct URL to the official filing document.
+    Priority: EDGAR XBRL viewer (US) > Magna/Maya (IL) > exchange portal.
+    col_label examples: "2022", "2023 Q3"
     """
     exch = (exchange or "").upper().strip()
-    tkr  = (ticker  or "").strip()
-    if not tkr:
+    t    = (ticker  or "").upper().strip()
+    if not t:
         return ""
+    parts = col_label.strip().split()
+    year  = parts[0] if parts else ""
+    qpart = parts[1] if len(parts) > 1 else ""   # e.g. "Q3", "Q4"
 
-    # Extract 4-digit year ("2023" → 2023, "2023 Q3" → 2023)
-    try:
-        year = int(col_label.strip()[:4])
-    except (ValueError, IndexError):
-        year = None
-
-    # ── US exchanges → SEC EDGAR EFTS full-text search ───────────────────
-    _US = {
-        "NASDAQ", "NYSE", "AMEX", "NYSE ARCA", "NYSEARCA", "NYSEMKT",
-        "BATS", "OTC", "OTCQB", "OTCQX", "PINK", "CBOE",
-    }
-    if not exch or exch in _US:
-        form = "10-K" if period_type == "annual" else "10-Q"
-        if year:
+    US_EXCHANGES = {"NASDAQ","NYSE","AMEX","NYSEARCA","NYSEMKT","OTC","OTCBB","PINK","CBOE","US"}
+    if exch in US_EXCHANGES or not exch:
+        # Annual → 10-K, Quarterly → 10-Q
+        form = "10-Q" if (period_type == "quarterly" and qpart.upper().startswith("Q")) else "10-K"
+        if year.isdigit():
+            # EDGAR full-text search → lands on the filing index page for that exact year
+            # From the index page the user can open the XBRL inline viewer in one click
             return (
-                f"https://efts.sec.gov/LATEST/search-index"
-                f"?q=%22{tkr}%22&forms={form}"
-                f"&dateRange=custom&startdt={year}-01-01&enddt={year}-12-31"
+                f"https://efts.sec.gov/LATEST/search-index?q=%22{t}%22"
+                f"&forms={form}"
+                f"&dateRange=custom"
+                f"&startdt={year}-01-01"
+                f"&enddt={year}-12-31"
             )
-        return f"https://efts.sec.gov/LATEST/search-index?q=%22{tkr}%22&forms={form}"
+        # Fallback: company filing list filtered by form type
+        return (
+            f"https://www.sec.gov/cgi-bin/browse-edgar"
+            f"?action=getcompany&CIK={t}&type={form}&owner=include&count=10"
+        )
 
-    # ── Israel / TASE ─────────────────────────────────────────────────────
-    if exch in {"TASE", "TLV", "TA", "TAL"}:
-        return f"https://maya.tase.co.il/reports/company?q={tkr}"
+    if exch in ("TASE", "IL"):
+        # Magna (Maya) – official TASE filing portal, filtered by company name/ticker
+        return f"https://maya.tase.co.il/reports/company?q={t}"
 
-    # ── London Stock Exchange / AIM ────────────────────────────────────────
-    if exch in {"LSE", "LON", "AIM", "XLON"}:
-        return f"https://www.londonstockexchange.com/stock/{tkr.upper()}/company-page"
+    if exch in ("LSE", "AIM", "GB"):
+        return f"https://www.londonstockexchange.com/stock/{t}/company-page"
 
-    # ── Toronto Stock Exchange ─────────────────────────────────────────────
-    if exch in {"TSX", "TSXV", "TSX-V", "CVE"}:
+    if exch in ("TSX", "TSXV", "CNQ", "CA"):
         return "https://www.sedar.com/search/search_form_pc_en.htm"
 
-    # ── Australian Securities Exchange ────────────────────────────────────
-    if exch in {"ASX", "XASX"}:
-        return f"https://www.asx.com.au/asx/1/company/{tkr.upper()}/announcements"
+    if exch in ("ASX", "AU"):
+        return f"https://www.asx.com.au/asx/1/company/{t}/announcements"
 
-    # ── Default: FMP financial statements page ────────────────────────────
-    return f"https://financialmodelingprep.com/financial-statements/{tkr}"
+    # Generic fallback
+    return f"https://financialmodelingprep.com/financial-statements/{t}"
 
 
-def _build_link_map(src_list, hist_col_headers,
-                    ticker="", exchange="", period_type="annual"):
+def _build_link_map(src_list, hist_col_headers, ticker="", exchange="", period_type="annual"):
     """
-    Build {col_label: url} for historical columns only.
-    Primary  : FMP 'finalLink' or 'link' field from the statement record.
-    Fallback : _filing_url_fallback() when both primary fields are absent.
-    hist_col_headers: hdrs[2:] — the year/quarter labels in order.
+    {col_label: url} for historical columns.
+    Priority: FMP finalLink (direct XBRL doc) → FMP link → exchange-based fallback.
+    finalLink example: https://www.sec.gov/ix?doc=/Archives/edgar/data/320193/…/aapl-20210925.htm
     """
     link_map = {}
     for i, label in enumerate(hist_col_headers):
+        url = ""
         if i < len(src_list) and isinstance(src_list[i], dict):
             rec = src_list[i]
             url = rec.get("finalLink") or rec.get("link") or ""
-            if not url:
-                url = _filing_url_fallback(ticker, exchange, label, period_type)
-            if url:
-                link_map[label] = url
+        if not url:
+            url = _filing_url_fallback(ticker, exchange, label, period_type)
+        if url:
+            link_map[label] = url
     return link_map
 
 
@@ -177,18 +169,29 @@ def _inject_df_tooltips(link_map: dict, anchor_id: str) -> None:
             + 'color:#e8f0fe;border-radius:8px;padding:10px 14px;'
             + 'box-shadow:0 4px 20px rgba(0,0,0,.4);min-width:190px;'
             + 'font-family:-apple-system,sans-serif;pointer-events:none;';
-        t.innerHTML =
-            '<div id="_gv_tip_period" style="font-size:.72em;text-transform:uppercase;'
-            + 'letter-spacing:.08em;color:#7a9dc0;margin-bottom:3px;"></div>'
-            + '<div id="_gv_tip_type" style="font-size:.84em;font-weight:600;'
-            + 'color:#e8f0fe;margin-bottom:10px;"></div>'
-            + '<a id="_gv_tip_a" href="#" target="_blank" rel="noopener noreferrer"'
-            + ' style="display:inline-block;background:#007bff;color:#fff;'
-            + 'text-decoration:none;padding:5px 12px;border-radius:5px;'
-            + 'font-size:.78em;font-weight:700;pointer-events:auto;'
-            + 'cursor:pointer;">Open Filing \u2197</a>';
+        t.innerHTML=
+            '<div id="_gv_tip_period" style="font-size:13px;font-weight:700;color:#fff;margin-bottom:2px;"></div>'
+            +'<div id="_gv_tip_type" style="font-size:10.5px;opacity:.75;letter-spacing:.04em;margin-bottom:9px;"></div>'
+            +'<a id="_gv_tip_a" href="#" target="_blank" rel="noopener" '
+            +'style="display:inline-block;background:rgba(144,191,255,.15);'
+            +'border:1px solid rgba(144,191,255,.35);color:#90bfff;text-decoration:none;'
+            +'font-weight:600;padding:5px 12px;border-radius:5px;font-size:12px;">&#128196; Open Filing</a>';
         doc.body.appendChild(t);
         return t;
+    }}
+
+    function filingLabel(url){{
+        if(!url) return 'Official Filing';
+        if(/10-K/i.test(url))  return 'Annual Report \u2022 10-K';
+        if(/10-Q/i.test(url))  return 'Quarterly Report \u2022 10-Q';
+        if(/20-F/i.test(url))  return 'Annual Report \u2022 20-F (Foreign)';
+        if(/6-K/i.test(url))   return 'Interim Report \u2022 6-K';
+        if(/maya\\.tase/i.test(url))  return 'TASE \u2022 Magna Filing Portal';
+        if(/sedar/i.test(url)) return 'SEDAR \u2022 Canadian Filing Portal';
+        if(/asx\\.com/i.test(url))    return 'ASX \u2022 Australian Filing Portal';
+        if(/londonstockexchange/i.test(url)) return 'LSE \u2022 UK Filing Portal';
+        if(/sec\\.gov/i.test(url)||/efts\\.sec/i.test(url)) return 'SEC EDGAR \u2022 XBRL Filing';
+        return 'Official Filing';
     }}
 
     function showTip(doc, cx, cy, period, url) {{
@@ -250,7 +253,14 @@ def _inject_df_tooltips(link_map: dict, anchor_id: str) -> None:
                 var lbl = hs[ci] ? hs[ci].textContent.trim() : '';
                 var url = LM[lbl];
                 if (!url) {{ schedHide(doc); return; }}
-                showTip(doc, e.clientX, e.clientY, lbl, url);
+                if(url){{
+                    var d2=window.parent.document;
+                    var elP=d2.getElementById('_gv_tip_period');
+                    var elT=d2.getElementById('_gv_tip_type');
+                    if(elP) elP.textContent=lbl;
+                    if(elT) elT.textContent=filingLabel(url);
+                    showTip(doc, e.clientX, e.clientY, lbl, url);return;
+                }}
             }}, {{passive: true}});
 
             cv.addEventListener('mouseleave', function() {{
@@ -916,6 +926,7 @@ def render_financials_tab(norm, raw):
 
     # ── Original 4 tables ─────────────────────────────────────────────────────
     ticker_sym = raw.get("symbol", "?")
+    exchange   = raw.get("exchangeShortName") or raw.get("exchange") or ""
 
     # Source lists for building SEC filing link maps (annual vs quarterly)
     stmt_src = {
@@ -930,17 +941,12 @@ def render_financials_tab(norm, raw):
         ("Balance Sheet",    norm.get_balance_sheet),
         ("Debt",             norm.get_debt_table),
     ]:
-        lmap = {}  # reset for each table
         st.markdown(f"<div class='section-header'>{title}</div>",
                     unsafe_allow_html=True)
+        lmap = {}
         if title != "Debt":
             src  = stmt_src[title]
-            lmap = _build_link_map(
-                src, hdrs[2:],
-                ticker=ticker_sym,
-                exchange=raw.get("exchangeShortName") or raw.get("exchange", ""),
-                period_type=p,
-            )
+            lmap = _build_link_map(src, hdrs[2:], ticker=ticker_sym, exchange=exchange, period_type=p)
 
         rows_data = method(p)
 
