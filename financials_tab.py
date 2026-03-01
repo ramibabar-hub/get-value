@@ -242,7 +242,7 @@ def _inject_df_tooltips(link_map: dict, anchor_id: str) -> None:
                 var r  = cv.getBoundingClientRect();
                 var lx = e.clientX - r.left;
                 var ly = e.clientY - r.top;
-                if (ly > 36) {{ schedHide(doc); return; }}
+                if (ly > 52) {{ schedHide(doc); return; }}
 
                 var hs  = Array.from(tgt.querySelectorAll('[role="columnheader"]'));
                 var cx2 = 0, ci = -1;
@@ -250,7 +250,7 @@ def _inject_df_tooltips(link_map: dict, anchor_id: str) -> None:
                     cx2 += (hs[j].offsetWidth || 120);
                     if (lx < cx2) {{ ci = j; break; }}
                 }}
-                if (ci <= 1) {{ schedHide(doc); return; }}
+                if (ci <= 0) {{ schedHide(doc); return; }}
 
                 var lbl = hs[ci] ? hs[ci].textContent.trim() : '';
                 var url = LM[lbl];
