@@ -168,7 +168,9 @@ def _inject_df_tooltips(link_map: dict, anchor_id: str) -> None:
         t.style.cssText = 'position:fixed;display:none;z-index:99999;background:#1c2b46;'
             + 'color:#e8f0fe;border-radius:8px;padding:10px 14px;'
             + 'box-shadow:0 4px 20px rgba(0,0,0,.4);min-width:190px;'
-            + 'font-family:-apple-system,sans-serif;pointer-events:none;';
+            + 'font-family:-apple-system,sans-serif;pointer-events:auto;';
+        t.addEventListener('mouseenter', function() {{ clearTimeout(window.parent._gvHT); }});
+        t.addEventListener('mouseleave', function() {{ schedHide(doc); }});
         t.innerHTML=
             '<div id="_gv_tip_period" style="font-size:13px;font-weight:700;color:#fff;margin-bottom:2px;"></div>'
             +'<div id="_gv_tip_type" style="font-size:10.5px;opacity:.75;letter-spacing:.04em;margin-bottom:9px;"></div>'
