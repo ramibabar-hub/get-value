@@ -716,3 +716,33 @@ class InsightsAgent:
             {"Efficiency": "SBC / FCF",                               "TTM": sbc_fcf,    "Avg. 5yr": None,                                  "Avg. 10yr": None},
             {"Efficiency": "Revenue / Employee",                      "TTM": rev_emp,    "Avg. 5yr": None,                                  "Avg. 10yr": None},
         ]
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # 8. WACC Inputs
+    # ══════════════════════════════════════════════════════════════════════════
+
+    def get_wacc_components(self) -> dict:
+        """Returns raw WACC inputs from already-loaded annual/TTM data."""
+        int_expense = self._ann(self.is_l, "interestExpense", 0) or 0.0
+        ebitda_ann  = self._ann(self.is_l, "ebitda", 0)
+        int_coverage = (
+            abs(ebitda_ann / int_expense)
+            if (ebitda_ann and int_expense and int_expense != 0) else 0.0
+        )
+        ebt      = self._ann(self.is_l, "incomeBeforeTax", 0)
+        tax      = self._ann(self.is_l, "incomeTaxExpense", 0)
+        tax_rate = (
+            max(0.0, min(tax / ebt, 0.5))
+            if (ebt and ebt > 0 and tax is not None) else 0.25
+        )
+        beta       = self._safe(self.ov.get("beta")) or 1.0
+        equity_val = self._safe(self.ov.get("mktCap")) or 0.0
+        debt_val   = self._ttm_bs("totalDebt") or 0.0
+        return {
+            "int_expense":  int_expense,
+            "int_coverage": int_coverage,
+            "tax_rate":     tax_rate,
+            "beta":         beta,
+            "equity_val":   equity_val,
+            "debt_val":     debt_val,
+        }

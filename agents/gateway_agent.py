@@ -242,6 +242,18 @@ class GatewayAgent:
         return self._first(self._get("shares-float", {"symbol": ticker}))
 
     # ── combined overview fetch (parallel) ────────────────────────────────────
+    def fetch_treasury_rate(self) -> float:
+        """Fetch 10-year Treasury yield (^TNX). Returns decimal (e.g. 0.042). Defaults to 4.2%."""
+        body = self._get("quote", {"symbol": "^TNX"})
+        if isinstance(body, list) and body:
+            try:
+                price = float(body[0].get("price") or 0)
+                if price > 0:
+                    return price / 100
+            except (TypeError, ValueError):
+                pass
+        return 0.042
+
     def fetch_overview(self, ticker: str) -> dict:
         """
         Merges 5 FMP endpoints in parallel to minimise N/A values:

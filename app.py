@@ -6,6 +6,23 @@ from agents.profile_agent import ProfileAgent
 from agents.insights_agent import InsightsAgent
 from financials_tab import render_financials_tab
 
+def _damodaran_spread(coverage: float) -> float:
+    if coverage > 8.5:  return 0.0067
+    if coverage > 6.5:  return 0.0082
+    if coverage > 5.5:  return 0.0103
+    if coverage > 4.25: return 0.0114
+    if coverage > 3.0:  return 0.0129
+    if coverage > 2.5:  return 0.0159
+    if coverage > 2.25: return 0.0193
+    if coverage > 2.0:  return 0.0223
+    if coverage > 1.75: return 0.0330
+    if coverage > 1.5:  return 0.0405
+    if coverage > 1.25: return 0.0486
+    if coverage > 0.8:  return 0.0632
+    if coverage > 0.65: return 0.0801
+    return 0.1000
+
+
 st.set_page_config(
     page_title="getValue | Financial Analysis",
     layout="wide",
@@ -83,7 +100,7 @@ def fmt(v, is_pct=False):
 # ── Session-state bootstrap ───────────────────────────────────────────────────
 for k, v in [("active_ticker", None), ("overview_data", None),
               ("norm", None), ("norm_ticker", None), ("view_type", "Annual"),
-              ("fin_scale", "MM")]:
+              ("fin_scale", "MM"), ("treasury_rate", 0.042)]:
     if k not in st.session_state:
         st.session_state[k] = v
 
@@ -135,6 +152,7 @@ def _load_ticker(ticker: str):
     st.session_state["norm_ticker"]   = ticker
     st.session_state["overview_data"] = gw.fetch_overview(ticker)
     st.session_state["norm"]          = DataNormalizer(gw.fetch_all(ticker), ticker)
+    st.session_state["treasury_rate"] = gw.fetch_treasury_rate()
 
 # ═════════════════════════════════════════════════════════════════════════════
 # LANDING PAGE  (active_ticker is None)
@@ -287,7 +305,9 @@ else:
         """, unsafe_allow_html=True)
 
     # ── Tabs ──────────────────────────────────────────────────────────────────
-    tab_ov, tab_fin, tab_ins = st.tabs(["📊 Overview", "📋 Financials", "💡 Insights"])
+    tab_ov, tab_fin, tab_val, tab_ins = st.tabs(
+        ["📊 Overview", "📋 Financials", "💰 Valuations", "💡 Insights"]
+    )
 
     # ── Tab 1: Overview — description only (metrics now live in the header) ──
     with tab_ov:
@@ -305,7 +325,17 @@ else:
     with tab_fin:
         render_financials_tab(norm, raw)
 
-    # ── Tab 3: Insights ───────────────────────────────────────────────────────
+    # ── Tab 3: Valuations ─────────────────────────────────────────────────────
+    with tab_val:
+        from cf_irr_tab import render_cf_irr_tab
+        (sub_cf_irr,) = st.tabs(["📈 CF + IRR"])
+        with sub_cf_irr:
+            if norm:
+                render_cf_irr_tab(norm, raw)
+            else:
+                st.info("Load a ticker to see the valuation model.")
+
+    # ── Tab 4: Insights ───────────────────────────────────────────────────────
     with tab_ins:
         if norm:
             ins = InsightsAgent(norm.raw_data, raw)
@@ -343,5 +373,55 @@ else:
                                for col in cols}
                 st.dataframe(df.set_index(df.columns[0]),
                              use_container_width=True, column_config=ins_col_cfg)
+            # ── WACC ──────────────────────────────────────────────────────────
+            ERP     = 0.046
+            rf_rate = st.session_state.get("treasury_rate", 0.042)
+            w       = ins.get_wacc_components()
+
+            spread = _damodaran_spread(w["int_coverage"])
+            cod    = (rf_rate + spread) * (1 - w["tax_rate"])
+            coe    = rf_rate + (w["beta"] * ERP)
+            tc     = w["equity_val"] + w["debt_val"]
+            wd     = w["debt_val"]   / tc if tc else 0.0
+            we     = w["equity_val"] / tc if tc else 0.0
+            wacc   = wd * cod + we * coe
+
+            st.markdown("<div class='section-header'>WACC</div>", unsafe_allow_html=True)
+            col_d, col_e = st.columns(2)
+
+            with col_d:
+                st.caption("Cost of Debt")
+                cod_df = pd.DataFrame([
+                    ["Interest Expense",         fmt(w["int_expense"])],
+                    ["Interest Coverage",        f"{w['int_coverage']:.2f}x"],
+                    ["Credit Spread",            f"{spread:.2%}"],
+                    ["Risk-Free Rate (10y)",     f"{rf_rate:.2%}"],
+                    ["Corporate Tax Rate",       f"{w['tax_rate']:.2%}"],
+                    ["Cost of Debt (after-tax)", f"{cod:.2%}"],
+                ], columns=["Component", "Value"])
+                st.dataframe(cod_df.set_index("Component"), use_container_width=True,
+                             column_config={"Value": st.column_config.TextColumn("Value", width=120)})
+
+            with col_e:
+                st.caption("Cost of Equity (CAPM)")
+                coe_df = pd.DataFrame([
+                    ["Risk-Free Rate (10y)", f"{rf_rate:.2%}"],
+                    ["Beta",                 f"{w['beta']:.2f}"],
+                    ["Equity Risk Premium",  f"{ERP:.2%}"],
+                    ["Cost of Equity",       f"{coe:.2%}"],
+                ], columns=["Component", "Value"])
+                st.dataframe(coe_df.set_index("Component"), use_container_width=True,
+                             column_config={"Value": st.column_config.TextColumn("Value", width=120)})
+
+            st.caption("Capital Structure & WACC")
+            cap_df = pd.DataFrame({
+                "":              ["Value", "Weight", "Cost", "WACC Contribution"],
+                "Debt":          [fmt(w["debt_val"]),   f"{wd:.2%}", f"{cod:.2%}", f"{wd*cod:.2%}"],
+                "Equity":        [fmt(w["equity_val"]), f"{we:.2%}", f"{coe:.2%}", f"{we*coe:.2%}"],
+                "Total Capital": [fmt(tc),              "100.00%",   "—",          f"{wacc:.2%}"],
+            }).set_index("")
+            col_cfg = {c: st.column_config.TextColumn(c, width=120) for c in cap_df.columns}
+            st.dataframe(cap_df, use_container_width=True, column_config=col_cfg)
+
         else:
             st.info("Insights data is unavailable for this ticker.")

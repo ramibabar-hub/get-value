@@ -3,9 +3,11 @@ financials_tab.py
 Renders the full Financials tab: existing 4 tables + 7 new metric groups appended after Debt.
 Reacts to the Period (Annual/Quarterly) and Scale (B/MM/K) selectors already in session state.
 """
+import json
 import math
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 
 # ── module-level helpers ──────────────────────────────────────────────────────
 
@@ -75,24 +77,24 @@ def _filing_url_fallback(ticker: str, exchange: str, col_label: str,
     except (ValueError, IndexError):
         year = None
 
-    # ── US exchanges → SEC EDGAR ──────────────────────────────────────────
+    # ── US exchanges → SEC EDGAR EFTS full-text search ───────────────────
     _US = {
         "NASDAQ", "NYSE", "AMEX", "NYSE ARCA", "NYSEARCA", "NYSEMKT",
         "BATS", "OTC", "OTCQB", "OTCQX", "PINK", "CBOE",
     }
     if not exch or exch in _US:
         form = "10-K" if period_type == "annual" else "10-Q"
-        # dateb = first day of the *next* year so the target filing appears at top
-        dateb_param = f"&dateb={year + 1}0101" if year else ""
-        return (
-            f"https://www.sec.gov/cgi-bin/browse-edgar"
-            f"?action=getcompany&CIK={tkr}&type={form}"
-            f"{dateb_param}&owner=include&count=10"
-        )
+        if year:
+            return (
+                f"https://efts.sec.gov/LATEST/search-index"
+                f"?q=%22{tkr}%22&forms={form}"
+                f"&dateRange=custom&startdt={year}-01-01&enddt={year}-12-31"
+            )
+        return f"https://efts.sec.gov/LATEST/search-index?q=%22{tkr}%22&forms={form}"
 
     # ── Israel / TASE ─────────────────────────────────────────────────────
     if exch in {"TASE", "TLV", "TA", "TAL"}:
-        return f"https://maya.tase.co.il/company/{tkr}/reports"
+        return f"https://maya.tase.co.il/reports/company?q={tkr}"
 
     # ── London Stock Exchange / AIM ────────────────────────────────────────
     if exch in {"LSE", "LON", "AIM", "XLON"}:
@@ -100,16 +102,14 @@ def _filing_url_fallback(ticker: str, exchange: str, col_label: str,
 
     # ── Toronto Stock Exchange ─────────────────────────────────────────────
     if exch in {"TSX", "TSXV", "TSX-V", "CVE"}:
-        return (
-            f"https://www.sedar.com/FindCompany.do"
-            f"?lang=EN&company_search={tkr}&SEARCH_BUTTON=Search+Now&bprofile=y"
-        )
+        return "https://www.sedar.com/search/search_form_pc_en.htm"
 
     # ── Australian Securities Exchange ────────────────────────────────────
     if exch in {"ASX", "XASX"}:
-        return f"https://www.asx.com.au/markets/company/{tkr.lower()}"
+        return f"https://www.asx.com.au/asx/1/company/{tkr.upper()}/announcements"
 
-    return ""
+    # ── Default: FMP financial statements page ────────────────────────────
+    return f"https://financialmodelingprep.com/financial-statements/{tkr}"
 
 
 def _build_link_map(src_list, hist_col_headers,
@@ -132,37 +132,138 @@ def _build_link_map(src_list, hist_col_headers,
     return link_map
 
 
-def _render_filing_row(link_map: dict, hdrs: list) -> None:
+def _inject_df_tooltips(link_map: dict, anchor_id: str) -> None:
     """
-    Render a compact 1-row st.dataframe whose year/quarter cells are
-    st.column_config.LinkColumn links to SEC filings.
+    Inject a 1-pixel iframe whose JS attaches a non-intercepting mousemove
+    listener to the glide-data-grid canvas of the first stDataFrame element
+    that follows *anchor_id* in the DOM.
 
-    Columns with a URL  → LinkColumn(display_text="📄 View Report")
-    TTM and columns without URL → TextColumn (empty cell, no link)
-    Shown only when at least one filing URL exists.
+    On year/quarter column-header hover a rich tooltip appears:
+      _gv_tip_period  — the year / quarter label
+      _gv_tip_type    — human-readable filing category
+      _gv_tip_a       — "Open Filing ↗" link (pointer-events:auto → clickable)
+
+    The 600 ms hide delay lets users move from the canvas to the link and click.
     """
     if not link_map:
         return
+    lm_json = json.dumps(link_map, ensure_ascii=False)
+    html = f"""<script>
+(function(){{
+    var LM  = {lm_json};
+    var AID = "{anchor_id}";
 
-    row = {"Item": "📄 SEC Filing"}
-    col_cfg = {}
+    function ftype(u) {{
+        if (!u) return 'Filing';
+        if (/10-K/.test(u))  return 'Annual Report | 10-K';
+        if (/10-Q/.test(u))  return 'Quarterly Report | 10-Q';
+        if (/20-F/.test(u))  return 'Annual Report | 20-F';
+        if (/6-K/.test(u))   return 'Interim Report | 6-K';
+        if (/maya\\.tase/.test(u)) return 'TASE Filing | Magna';
+        if (/sec\\.gov/.test(u))   return 'SEC Filing';
+        if (/londonstockexchange/.test(u)) return 'LSE Filing';
+        if (/sedar/.test(u)) return 'SEDAR Filing';
+        if (/asx\\.com\\.au/.test(u)) return 'ASX Filing';
+        if (/financialmodelingprep/.test(u)) return 'FMP Filing';
+        return 'Filing';
+    }}
 
-    # TTM — never a filing link
-    row["TTM"] = None
-    col_cfg["TTM"] = st.column_config.TextColumn("TTM", width=120)
+    function ensureTip(doc) {{
+        var t = doc.getElementById('_gv_tip');
+        if (t) return t;
+        t = doc.createElement('div');
+        t.id = '_gv_tip';
+        t.style.cssText = 'position:fixed;display:none;z-index:99999;background:#1c2b46;'
+            + 'color:#e8f0fe;border-radius:8px;padding:10px 14px;'
+            + 'box-shadow:0 4px 20px rgba(0,0,0,.4);min-width:190px;'
+            + 'font-family:-apple-system,sans-serif;pointer-events:none;';
+        t.innerHTML =
+            '<div id="_gv_tip_period" style="font-size:.72em;text-transform:uppercase;'
+            + 'letter-spacing:.08em;color:#7a9dc0;margin-bottom:3px;"></div>'
+            + '<div id="_gv_tip_type" style="font-size:.84em;font-weight:600;'
+            + 'color:#e8f0fe;margin-bottom:10px;"></div>'
+            + '<a id="_gv_tip_a" href="#" target="_blank" rel="noopener noreferrer"'
+            + ' style="display:inline-block;background:#007bff;color:#fff;'
+            + 'text-decoration:none;padding:5px 12px;border-radius:5px;'
+            + 'font-size:.78em;font-weight:700;pointer-events:auto;'
+            + 'cursor:pointer;">Open Filing \u2197</a>';
+        doc.body.appendChild(t);
+        return t;
+    }}
 
-    for col in hdrs[2:]:
-        url = link_map.get(col)
-        row[col] = url or None
-        if url:
-            col_cfg[col] = st.column_config.LinkColumn(
-                col, display_text="📄 View Report", width=120
-            )
-        else:
-            col_cfg[col] = st.column_config.TextColumn(col, width=120)
+    function showTip(doc, cx, cy, period, url) {{
+        clearTimeout(window.parent._gvHT);
+        var t = ensureTip(doc);
+        t.querySelector('#_gv_tip_period').textContent = period;
+        t.querySelector('#_gv_tip_type').textContent   = ftype(url);
+        t.querySelector('#_gv_tip_a').href = url;
+        var vw = window.parent.innerWidth, vh = window.parent.innerHeight;
+        t.style.left = Math.min(cx + 14, vw - 220) + 'px';
+        t.style.top  = Math.min(cy + 22, vh - 100) + 'px';
+        t.style.display = 'block';
+    }}
 
-    df = pd.DataFrame([row]).set_index("Item")
-    st.dataframe(df, use_container_width=True, column_config=col_cfg, height=80)
+    function hideTip(doc) {{
+        var t = doc.getElementById('_gv_tip');
+        if (t) t.style.display = 'none';
+    }}
+
+    function schedHide(doc) {{
+        window.parent._gvHT = setTimeout(function() {{ hideTip(doc); }}, 600);
+    }}
+
+    function init() {{
+        try {{
+            var doc = window.parent.document;
+            var anc = doc.getElementById(AID);
+            if (!anc) {{ setTimeout(init, 300); return; }}
+
+            var frs = Array.from(doc.querySelectorAll('[data-testid="stDataFrame"]'));
+            var tgt = null;
+            for (var i = 0; i < frs.length; i++) {{
+                if (anc.compareDocumentPosition(frs[i]) & Node.DOCUMENT_POSITION_FOLLOWING) {{
+                    tgt = frs[i]; break;
+                }}
+            }}
+            if (!tgt) {{ setTimeout(init, 300); return; }}
+
+            var cv = tgt.querySelector('canvas');
+            if (!cv) {{ setTimeout(init, 300); return; }}
+
+            if (cv.dataset.gvTipBound === AID) return;
+            cv.dataset.gvTipBound = AID;
+
+            cv.addEventListener('mousemove', function(e) {{
+                var r  = cv.getBoundingClientRect();
+                var lx = e.clientX - r.left;
+                var ly = e.clientY - r.top;
+                if (ly > 36) {{ schedHide(doc); return; }}
+
+                var hs  = Array.from(tgt.querySelectorAll('[role="columnheader"]'));
+                var cx2 = 0, ci = -1;
+                for (var j = 0; j < hs.length; j++) {{
+                    cx2 += (hs[j].offsetWidth || 120);
+                    if (lx < cx2) {{ ci = j; break; }}
+                }}
+                if (ci <= 1) {{ schedHide(doc); return; }}
+
+                var lbl = hs[ci] ? hs[ci].textContent.trim() : '';
+                var url = LM[lbl];
+                if (!url) {{ schedHide(doc); return; }}
+                showTip(doc, e.clientX, e.clientY, lbl, url);
+            }}, {{passive: true}});
+
+            cv.addEventListener('mouseleave', function() {{
+                schedHide(doc);
+            }}, {{passive: true}});
+
+        }} catch (err) {{}}
+    }}
+
+    if (document.readyState !== 'loading') {{ init(); }}
+    else {{ document.addEventListener('DOMContentLoaded', init); }}
+}})();</script>"""
+    components.html(html, height=1, scrolling=False)
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -865,10 +966,13 @@ def render_financials_tab(norm, raw):
             table_rows.append(record)
 
         df = pd.DataFrame(table_rows)
+        anchor_id = f"_gv_anchor_{title.lower().replace(' ', '_')}"
         if title != "Debt":
-            _render_filing_row(lmap, hdrs)
+            st.markdown(f"<div id='{anchor_id}'></div>", unsafe_allow_html=True)
         st.dataframe(df.set_index("Item"),
                      use_container_width=True, column_config=fin_col_cfg)
+        if title != "Debt":
+            _inject_df_tooltips(lmap, anchor_id)
 
     # ── 7 new metric groups — appended strictly after Debt ────────────────────
     fe = FinancialExtras(norm, raw)
