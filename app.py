@@ -71,18 +71,10 @@ st.markdown("""
 
 # ── Search helper — session-state cache that never stores empty results ────────
 def _search(query: str) -> list:
-    """
-    Caches non-empty results in session_state for the lifetime of the session.
-    Empty / error results are NOT cached so the next keystroke retries live.
-    """
-    key = f"_srch_{query.strip().lower()}"
-    if key not in st.session_state:
-        results = GatewayAgent().search_ticker(query.strip())
-        if results:
-            st.session_state[key] = results
-        else:
-            return []
-    return st.session_state[key]
+    q = query.strip()
+    if not q:
+        return []
+    return GatewayAgent().search_ticker(q)
 
 # ── Number formatter ──────────────────────────────────────────────────────────
 def fmt(v, is_pct=False):
@@ -128,28 +120,45 @@ for k, v in [
     if k not in st.session_state:
         st.session_state[k] = v
 
+# ── Shared: session-state default helper ─────────────────────────────────────
+def _ss_default(key, val):
+    if key not in st.session_state:
+        st.session_state[key] = val
+
 # ── Shared: build search suggestions and return chosen ticker ─────────────────
 def _search_widget(input_key: str, select_key: str, placeholder: str) -> str:
-    """
-    Renders text_input + optional selectbox. Returns the resolved ticker string.
-    The selectbox key includes a query-derived suffix so Streamlit renders a
-    fresh widget (index 0) whenever the search text changes — fixing the stale
-    selection bug that prevented the dropdown from updating dynamically.
-    """
-    query = st.text_input(
+    results_key = f"_hits_{input_key}"
+    query_key   = f"_q_{input_key}"
+
+    def _on_change():
+        q = st.session_state.get(input_key, "").strip()
+        st.session_state[query_key] = q
+        if len(q) >= 1:
+            st.session_state[results_key] = _search(q)
+        else:
+            st.session_state[results_key] = []
+
+    _ss_default(input_key, "")
+    _ss_default(results_key, [])
+    _ss_default(query_key, "")
+
+    st.text_input(
         input_key,
         key=input_key,
         placeholder=placeholder,
         label_visibility="collapsed",
+        on_change=_on_change,
     )
-    candidate = query.strip().upper()
-    if len(query.strip()) >= 1:
-        hits = _search(query.strip())
+
+    query  = st.session_state.get(query_key, "").strip()
+    hits   = st.session_state.get(results_key, [])
+    candidate = query.upper()
+
+    if query:
         if hits:
             labels = []
-            for s in hits[:10]:
+            for s in hits[:15]:
                 exch = s.get('exchangeShortName', s.get('stockExchange', ''))
-                # Replace bare ISO-2 country codes with their flag emoji
                 exch_display = (
                     ProfileAgent.COUNTRY_FLAGS.get(exch.upper(), exch)
                     if len(exch) <= 2 else exch
@@ -158,14 +167,18 @@ def _search_widget(input_key: str, select_key: str, placeholder: str) -> str:
                     f"{s.get('flag','🏳️')} {s.get('symbol','')} — "
                     f"{s.get('name','')} ({exch_display})"
                 )
-            # Dynamic key: changes with every new query string, forcing the
-            # selectbox to reset to index 0 and show fresh suggestions.
-            safe_q  = query.strip()[:24].replace(" ", "_")
+            safe_q  = query[:24].replace(" ", "_")
             dyn_key = f"{select_key}__{safe_q}"
             chosen  = st.selectbox(
                 select_key, labels, key=dyn_key, label_visibility="collapsed"
             )
             candidate = chosen.split(" — ")[0].split()[-1].strip()
+        else:
+            st.caption(
+                "⚠️ לא נמצאו תוצאות. "
+                "לבורסות מחוץ לארה\"ב הוסף suffix: "
+                "**NICE.TA** (ישראל) · **BMW.DE** (גרמניה) · **VOD.L** (לונדון)"
+            )
     return candidate
 
 # ── Shared: fetch all data and store in session state ─────────────────────────

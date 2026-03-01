@@ -127,6 +127,14 @@ class GatewayAgent:
         "EURONEXT": "🇪🇺",
     }
 
+    # Ticker suffix → canonical exchange short-name (for non-US lookup)
+    SUFFIX_TO_EXCHANGE = {
+        "TA": "TASE", "L": "LSE", "DE": "XETRA", "PA": "PAR",
+        "AS": "AMS", "MI": "BIT", "MC": "BME", "SW": "SIX",
+        "TO": "TSX", "AX": "ASX", "HK": "HKEX", "T": "TSE",
+        "KS": "KSE", "NS": "NSE", "BO": "BSE", "SI": "SGX",
+    }
+
     def __init__(self):
         self.api_key = _load_api_key()
         # FMP deprecated /api/v3 on Aug 31 2025 — use /stable
@@ -205,17 +213,66 @@ class GatewayAgent:
         }
 
     # ── autocomplete search ───────────────────────────────────────────────────
-    def search_ticker(self, query: str, limit: int = 10) -> list:
-        """Autocomplete: returns [{symbol, name, exchangeShortName, flag, ...}]."""
+    def search_ticker(self, query: str, limit: int = 20) -> list:
+        """Autocomplete: returns [{symbol, name, exchangeShortName, flag, ...}].
+
+        - If query contains '.' (e.g. NICE.TA), does a direct /profile lookup
+          first so the exact match always appears at the top of results.
+        - Falls back to trying .TA / .L / .DE suffixes if no results found.
+        """
         if not self.api_key or not query.strip():
             return []
-        body = self._get("search", {"query": query.strip(), "limit": limit})
-        if not isinstance(body, list):
-            return []
-        for item in body:
-            exch = str(item.get("exchangeShortName") or item.get("stockExchange") or "").upper()
-            item["flag"] = self.EXCHANGE_FLAGS.get(exch, "🏳️")
-        return body
+
+        results = []
+        seen_symbols = set()
+        q = query.strip()
+
+        def _add_items(items):
+            if not isinstance(items, list):
+                return
+            for item in items:
+                sym = str(item.get("symbol", "")).upper()
+                if sym and sym not in seen_symbols:
+                    seen_symbols.add(sym)
+                    exch = str(item.get("exchangeShortName") or item.get("stockExchange") or "").upper()
+                    item["flag"] = self.EXCHANGE_FLAGS.get(exch, "🏳️")
+                    results.append(item)
+
+        # Direct profile lookup when the query looks like a suffixed symbol
+        if "." in q:
+            suffix = q.rsplit(".", 1)[-1].upper()
+            if suffix in self.SUFFIX_TO_EXCHANGE:
+                profile = self._get("profile", {"symbol": q.upper()})
+                if isinstance(profile, list) and profile:
+                    p = profile[0]
+                    _add_items([{
+                        "symbol":            p.get("symbol", q.upper()),
+                        "name":              p.get("companyName", ""),
+                        "exchangeShortName": p.get("exchangeShortName",
+                                                   self.SUFFIX_TO_EXCHANGE.get(suffix, "")),
+                        "stockExchange":     p.get("exchange", ""),
+                        "currency":          p.get("currency", ""),
+                    }])
+
+        # Standard search
+        body = self._get("search", {"query": q, "limit": limit})
+        _add_items(body if isinstance(body, list) else [])
+
+        # Auto-try common suffixes when bare query returns nothing
+        if len(results) == 0 and "." not in q:
+            for suffix, exch in [("TA", "TASE"), ("L", "LSE"), ("DE", "XETRA")]:
+                profile = self._get("profile", {"symbol": f"{q.upper()}.{suffix}"})
+                if isinstance(profile, list) and profile:
+                    p = profile[0]
+                    _add_items([{
+                        "symbol":            p.get("symbol", f"{q.upper()}.{suffix}"),
+                        "name":              p.get("companyName", ""),
+                        "exchangeShortName": p.get("exchangeShortName", exch),
+                        "stockExchange":     p.get("exchange", ""),
+                        "currency":          p.get("currency", ""),
+                    }])
+
+        return results
 
     # ── single-endpoint fetchers (used by fetch_overview) ────────────────────
     def fetch_profile(self, ticker: str) -> dict:
