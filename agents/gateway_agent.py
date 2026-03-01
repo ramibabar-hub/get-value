@@ -257,8 +257,22 @@ class GatewayAgent:
                         "currency":         p.get("currency", ""),
                     }])
 
-        # Step 2: general FMP search — US first, then global
-        _add(self._get("search", {"query": q, "limit": limit}))
+        # Step 2: general FMP search — try stable endpoint, fallback to v3
+        body = self._get("search", {"query": q, "limit": limit})
+        if not isinstance(body, list) or len(body) == 0:
+            body = self._get("search-ticker", {"query": q, "limit": limit})
+        if not isinstance(body, list) or len(body) == 0:
+            try:
+                import requests as _req
+                res = _req.get(
+                    "https://financialmodelingprep.com/api/v3/search",
+                    params={"query": q, "limit": limit, "apikey": self.api_key},
+                    timeout=8,
+                )
+                body = res.json()
+            except Exception:
+                body = []
+        _add(body if isinstance(body, list) else [])
 
         return results
 
