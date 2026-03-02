@@ -351,9 +351,10 @@ def _ebitda_hist(norm, raw, ins):
         "Net Debt/EBITDA":   _f_pct(local_nd_ebt_cagr),
     }
 
-    # TTM EV/EBITDA (for default exit multiple) and local CAGR (for default growth rate)
+    # TTM EV/EBITDA (for default exit multiple) and local CAGRs (for checklist + growth defaults)
     ev_ebt_ttm_numeric = _d(ev_t, ebt_t)
     local_ebt_cagr_num = local_ebt_cagr     # float or "N/M"
+    local_rev_cagr_num = local_rev_cagr     # float or "N/M"
 
     ebt_avg_mult = avg_ev_ebt
     base_ebitda  = (_s(is_l[0].get("ebitda"))
@@ -361,7 +362,7 @@ def _ebitda_hist(norm, raw, ins):
 
     return (hist_disp, ttm_disp, avg_disp, cagr_disp,
             nd_ebt_t, rev_c10, ebt_c10, ebt_c5, ebt_avg_mult, base_ebitda,
-            ev_ebt_ttm_numeric, local_ebt_cagr_num)
+            ev_ebt_ttm_numeric, local_ebt_cagr_num, local_rev_cagr_num)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -488,10 +489,11 @@ def _fcf_hist(norm, raw, ins):
         "Adj. FCF Yield":  _f_pct(local_yld_cagr),
     }
 
-    local_adj_cagr_num = local_adjps_cagr   # float or "N/M"
+    local_adj_cagr_num = local_adjps_cagr   # Adj. FCF/s CAGR — float or "N/M"
+    local_fcf_cagr_num = local_fcf_cagr    # FCF ($MM) CAGR for checklist — float or "N/M"
 
     return (hist_disp, ttm_disp, avg_disp, cagr_disp,
-            adj_ps_t, fcf_c10, fcf_c5, local_adj_cagr_num)
+            adj_ps_t, fcf_c10, fcf_c5, local_adj_cagr_num, local_fcf_cagr_num)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -651,7 +653,7 @@ def _checklist_html(checklist):
         "<thead><tr style='background:#1c2b46;'>"
         "<th style='padding:8px 12px;color:#fff;font-size:0.78em;text-align:left;'>Metric</th>"
         "<th style='padding:8px 12px;color:#fff;font-size:0.78em;text-align:center;'>Threshold</th>"
-        "<th style='padding:8px 12px;color:#fff;font-size:0.78em;text-align:center;'>Value (10yr CAGR / TTM)</th>"
+        "<th style='padding:8px 12px;color:#fff;font-size:0.78em;text-align:center;'>Value</th>"
         "<th style='padding:8px 12px;color:#fff;font-size:0.78em;text-align:center;'>Status</th>"
         "</tr></thead>"
         f"<tbody>{rows_html}</tbody>"
@@ -727,10 +729,12 @@ def render_cf_irr_tab(norm, raw):
     (ebt_hist, ebt_ttm, ebt_avg, ebt_cagr,
      nd_ebt_ttm, rev_c10, ebt_c10, ebt_c5,
      ebt_avg_mult, base_ebitda,
-     ev_ebt_ttm_numeric, local_ebt_cagr_num) = _ebitda_hist(norm, raw, ins)
+     ev_ebt_ttm_numeric, local_ebt_cagr_num,
+     local_rev_cagr_num) = _ebitda_hist(norm, raw, ins)
 
     (fcf_hist, fcf_ttm, fcf_avg, fcf_cagr,
-     adj_ps_ttm, fcf_c10, fcf_c5, local_adj_cagr_num) = _fcf_hist(norm, raw, ins)
+     adj_ps_ttm, fcf_c10, fcf_c5, local_adj_cagr_num,
+     local_fcf_cagr_num) = _fcf_hist(norm, raw, ins)
 
     # ── Pull profitability TTM (Adj. FCF margin) ─────────────────────────────
     prof_rows    = ins.get_insights_profitability()
@@ -784,7 +788,7 @@ def render_cf_irr_tab(norm, raw):
     _init("cfirr_fcf_global_growth",    _fcf_g_default)
     # Exit yield defaults to the 2034 (last-year) growth rate, which equals _fcf_g_default on first load
     _init("cfirr_fcf_exit_yield",       _fcf_g_default)
-    _init("cfirr_mos",               25.0)
+    _init("cfirr_mos",               10.0)
     _init("cfirr_wacc_override",     False)
     _init("cfirr_wacc_rf_rate",      float(st.session_state.get("treasury_rate", 0.042)))
     _init("cfirr_wacc_beta",         float(w["beta"]))
@@ -846,12 +850,13 @@ def render_cf_irr_tab(norm, raw):
         passed = (f < threshold) if lower_is_better else (f >= threshold)
         return _f_pct(f), passed
 
-    rev_disp, rev_p  = _check(rev_c10,      0.07)
-    ebt_disp, ebt_p  = _check(ebt_c10,      0.10)
-    fcf_disp, fcf_p  = _check(fcf_c10,      0.10)
-    fcm_disp, fcm_p  = _check(fcf_margin_t, 0.10)
-    nd_disp,  nd_p   = _check(nd_ebt_ttm,   3.0,  lower_is_better=True)
-    irr_disp, irr_p  = _check(irr_val,      0.12)
+    # Checklist uses local 9-yr CAGRs from Tables 2.1 / 3.1 (not InsightsAgent)
+    rev_disp, rev_p  = _check(local_rev_cagr_num, 0.07)
+    ebt_disp, ebt_p  = _check(local_ebt_cagr_num, 0.10)
+    fcf_disp, fcf_p  = _check(local_fcf_cagr_num, 0.10)
+    fcm_disp, fcm_p  = _check(fcf_margin_t,       0.10)
+    nd_disp,  nd_p   = _check(nd_ebt_ttm,         3.0, lower_is_better=True)
+    irr_disp, irr_p  = _check(irr_val,            0.12)
 
     if nd_ebt_ttm is not None and not isinstance(nd_ebt_ttm, str):
         nd_disp = _f_x(nd_ebt_ttm)
@@ -862,7 +867,7 @@ def render_cf_irr_tab(norm, raw):
         ("FCF Growth (10yr CAGR)",        fcf_disp,  fcf_p,  "> 10%"),
         ("Adj. FCF Margin (TTM)",         fcm_disp,  fcm_p,  "> 10%"),
         ("Net Debt / EBITDA (TTM)",       nd_disp,   nd_p,   "< 3x"),
-        ("IRR — 10yr FCF Model",          irr_disp,  irr_p,  "> 12%"),
+        ("IRR",                           irr_disp,  irr_p,  "> 12%"),
     ]
 
     all_pass = all(p is True  for _, _, p, _ in checklist)
@@ -882,36 +887,67 @@ def render_cf_irr_tab(norm, raw):
     )
 
     # ══════════════════════════════════════════════════════════════════════════
-    # SECTION 1 — CHECKLIST & RESULT
+    # SECTION 1 — QUALITY CHECKLIST  +  FINAL OUTPUT (side-by-side)
     # ══════════════════════════════════════════════════════════════════════════
     _sec("1 · Quality Checklist")
 
-    chk_col, badge_col = st.columns([3, 1])
+    chk_col, fout_col = st.columns([2, 1])
     with chk_col:
         st.markdown(_checklist_html(checklist), unsafe_allow_html=True)
 
-    with badge_col:
-        st.markdown("<div style='height:12px;'></div>", unsafe_allow_html=True)
+    with fout_col:
+        _sub("5 · Final Output")
 
-        # PASS / FAIL badge
-        if all_pass:
-            res_bg, res_txt, res_lbl = "#22c55e", "#fff", "PASS"
-            res_sub = "All criteria met"
-        elif any_fail:
-            res_bg, res_txt, res_lbl = "#ef4444", "#fff", "FAIL"
-            res_sub = "One or more criteria not met"
-        else:
-            res_bg, res_txt, res_lbl = "#94a3b8", "#fff", "INCOMPLETE"
-            res_sub = "Insufficient data"
-
-        st.markdown(
-            f"<div style='text-align:center;padding:18px 10px;border-radius:10px;"
-            f"background:{res_bg};margin-bottom:10px;'>"
-            f"<div style='font-size:1.6em;font-weight:900;color:{res_txt};'>{res_lbl}</div>"
-            f"<div style='font-size:0.75em;color:{res_txt};margin-top:4px;'>{res_sub}</div>"
-            f"</div>",
-            unsafe_allow_html=True,
+        # MoS input — reads/writes cfirr_mos in session state
+        st.number_input(
+            "Margin of Safety (%)",
+            min_value=0.0, max_value=80.0, step=1.0, format="%.0f",
+            key="cfirr_mos",
+            help="Discount applied to Fair Value to derive the Buy Price.",
         )
+        mos_pct_live = float(st.session_state.get("cfirr_mos", 10.0))
+
+        # Compute live values from session-state avg_target (previous render)
+        fair_value_now = None
+        buy_price_now  = None
+        on_sale_now    = None
+        if avg_target_ss is not None and wacc is not None and wacc > -1:
+            fair_value_now = avg_target_ss / (1 + wacc) ** 9
+            buy_price_now  = fair_value_now * (1 - mos_pct_live / 100.0)
+            if price_now is not None:
+                on_sale_now = fair_value_now > price_now  # ON SALE if FV > current price
+
+        def _fmt_delta(target, current):
+            """Gap as % of target: 1 - (current / target), labelled Upside or Downside."""
+            if target is None or current is None or target == 0:
+                return "N/A"
+            pct = (1.0 - current / target) * 100.0
+            direction = "Upside" if pct >= 0 else "Downside"
+            sign = "+" if pct >= 0 else ""
+            return f"{direction}  {sign}{pct:.1f}%"
+
+        on_sale_str = (
+            "✅ ON SALE"     if on_sale_now is True  else
+            "❌ NOT ON SALE" if on_sale_now is False else
+            "N/A"
+        )
+
+        final_rows = [
+            ["Average Target Price",  _f_price(avg_target_ss)],
+            ["WACC",                  f"{wacc * 100:.2f}%" if wacc is not None else "N/A"],
+            ["Fair Value per share",  _f_price(fair_value_now)],
+            ["Margin of Safety (%)",  f"{mos_pct_live:.0f}%"],
+            ["Buy Price",             _f_price(buy_price_now)],
+            ["Current Stock Price",   _f_price(price_now)],
+            ["Company on-sale?",      on_sale_str],
+            ["To Fair Value",         _fmt_delta(fair_value_now, price_now)],
+            ["To Buy Price",          _fmt_delta(buy_price_now,  price_now)],
+        ]
+        df_final = pd.DataFrame(final_rows, columns=["Metric", "Value"]).set_index("Metric")
+        st.dataframe(df_final, use_container_width=True,
+                     column_config={"Value": st.column_config.TextColumn("Value", width=180)})
+        if fair_value_now is None:
+            st.caption("Fair Value requires valid estimates from both models.")
 
 
     # ══════════════════════════════════════════════════════════════════════════
@@ -1145,60 +1181,6 @@ def render_cf_irr_tab(norm, raw):
                      "Est. Stock Price (Year 10)": st.column_config.TextColumn(
                          "Est. Stock Price (Year 10)", width=200)
                  })
-
-    # ══════════════════════════════════════════════════════════════════════════
-    # SECTION 5 — FINAL OUTPUT  (immediately after Comparison table)
-    # ══════════════════════════════════════════════════════════════════════════
-    _sec("5 · Final Output")
-
-    # Editable Margin of Safety — above the summary table
-    mos_inp_col, _ = st.columns([2, 6])
-    with mos_inp_col:
-        st.number_input(
-            "Margin of Safety (%)",
-            min_value=0.0, max_value=80.0, step=1.0, format="%.0f",
-            key="cfirr_mos",
-            help="Discount applied to Fair Value to derive the Buy Price.",
-        )
-    mos_pct_live = float(st.session_state.get("cfirr_mos", 25.0))
-
-    # Compute live values
-    fair_value_now = None
-    buy_price_now  = None
-    on_sale_now    = None
-    if avg_target_now is not None and wacc is not None and wacc > -1:
-        fair_value_now = avg_target_now / (1 + wacc) ** 9
-        buy_price_now  = fair_value_now * (1 - mos_pct_live / 100.0)
-        if price_now is not None:
-            on_sale_now = price_now < buy_price_now
-
-    def _fmt_delta(target, current):
-        if target is None or current is None or current == 0:
-            return "N/A"
-        delta = (target / current - 1.0) * 100.0
-        direction = "Upside" if delta >= 0 else "Downside"
-        sign = "+" if delta >= 0 else ""
-        return f"{direction}  {sign}{delta:.1f}%"
-
-    on_sale_str = ("ON SALE" if on_sale_now is True
-                   else "NOT ON SALE" if on_sale_now is False
-                   else "N/A")
-
-    final_rows = [
-        ["Fair Value per share",  _f_price(fair_value_now)],
-        ["Margin of Safety (%)",  f"{mos_pct_live:.0f}%"],
-        ["Buy Price",             _f_price(buy_price_now)],
-        ["Current Stock Price",   _f_price(price_now)],
-        ["Company on Sale?",      on_sale_str],
-        ["To Fair Value",         _fmt_delta(fair_value_now, price_now)],
-        ["To Buy Price",          _fmt_delta(buy_price_now,  price_now)],
-    ]
-    df_final = pd.DataFrame(final_rows, columns=["Metric", "Value"]).set_index("Metric")
-    st.dataframe(df_final, use_container_width=True,
-                 column_config={"Value": st.column_config.TextColumn("Value", width=220)})
-
-    if fair_value_now is None:
-        st.warning("Fair Value requires valid estimates from both models.")
 
     # ══════════════════════════════════════════════════════════════════════════
     # SECTION 4 — IRR CALCULATION & SENSITIVITY
