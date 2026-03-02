@@ -806,6 +806,8 @@ def render_cf_irr_tab(norm, raw):
     wd     = w["debt_val"]   / tc if tc else 0.0
     we     = w["equity_val"] / tc if tc else 0.0
     wacc   = wd * cod + we * coe
+    # Init manual WACC override to model value (re-init on each ticker load)
+    _init("cfirr_wacc_manual_pct", round(wacc * 100, 2) if wacc is not None else 10.0)
 
     # ── Read current growth rates / exit inputs from session state ────────────
     ebt_growth_rates = list(st.session_state["cfirr_ebitda_growth_yoy"])
@@ -896,26 +898,42 @@ def render_cf_irr_tab(norm, raw):
         st.markdown(_checklist_html(checklist), unsafe_allow_html=True)
 
     with fout_col:
-        _sub("5 · Final Output")
-
-        # MoS input — reads/writes cfirr_mos in session state
-        st.number_input(
-            "Margin of Safety (%)",
-            min_value=0.0, max_value=80.0, step=1.0, format="%.0f",
-            key="cfirr_mos",
-            help="Discount applied to Fair Value to derive the Buy Price.",
+        # Header matching _sec style
+        st.markdown(
+            "<div style='font-size:1.05em;font-weight:bold;color:#ffffff;"
+            "background:#1c2b46;padding:6px 15px;border-radius:4px;"
+            "margin-top:0px;margin-bottom:6px;'>5 · Final Output</div>",
+            unsafe_allow_html=True,
         )
+
+        # WACC override input + Reset button
+        wacc_inp_col, reset_col = st.columns([3, 2])
+        with wacc_inp_col:
+            st.number_input(
+                "WACC (%)", min_value=1.0, max_value=50.0,
+                step=0.1, format="%.2f", key="cfirr_wacc_manual_pct",
+                help="Weighted Average Cost of Capital. Edit to override the model value.",
+            )
+        with reset_col:
+            st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
+            if st.button("↺ Reset", key="cfirr_wacc_reset", use_container_width=True,
+                         help="Reset WACC to the model-calculated value."):
+                del st.session_state["cfirr_wacc_manual_pct"]
+                st.rerun()
+
+        wacc_live = st.session_state.get("cfirr_wacc_manual_pct",
+                                         (wacc * 100) if wacc is not None else 10.0) / 100.0
         mos_pct_live = float(st.session_state.get("cfirr_mos", 10.0))
 
         # Compute live values from session-state avg_target (previous render)
         fair_value_now = None
         buy_price_now  = None
         on_sale_now    = None
-        if avg_target_ss is not None and wacc is not None and wacc > -1:
-            fair_value_now = avg_target_ss / (1 + wacc) ** 9
+        if avg_target_ss is not None and wacc_live > 0:
+            fair_value_now = avg_target_ss / (1 + wacc_live) ** 9
             buy_price_now  = fair_value_now * (1 - mos_pct_live / 100.0)
             if price_now is not None:
-                on_sale_now = fair_value_now > price_now  # ON SALE if FV > current price
+                on_sale_now = fair_value_now > price_now
 
         def _fmt_delta(target, current):
             """Gap as % of target: 1 - (current / target), labelled Upside or Downside."""
@@ -933,21 +951,56 @@ def render_cf_irr_tab(norm, raw):
         )
 
         final_rows = [
-            ["Average Target Price",  _f_price(avg_target_ss)],
-            ["WACC",                  f"{wacc * 100:.2f}%" if wacc is not None else "N/A"],
-            ["Fair Value per share",  _f_price(fair_value_now)],
-            ["Margin of Safety (%)",  f"{mos_pct_live:.0f}%"],
-            ["Buy Price",             _f_price(buy_price_now)],
-            ["Current Stock Price",   _f_price(price_now)],
-            ["Company on-sale?",      on_sale_str],
-            ["To Fair Value",         _fmt_delta(fair_value_now, price_now)],
-            ["To Buy Price",          _fmt_delta(buy_price_now,  price_now)],
+            ("Average Target Price", _f_price(avg_target_ss),       False),
+            ("WACC",                 f"{wacc_live * 100:.2f}%",      False),
+            ("Fair Value per share", _f_price(fair_value_now),       False),
+            ("Buy Price",            _f_price(buy_price_now),        False),
+            ("Current Stock Price",  _f_price(price_now),            False),
+            ("To Fair Value",        _fmt_delta(fair_value_now, price_now), False),
+            ("To Buy Price",         _fmt_delta(buy_price_now,  price_now), False),
+            ("Company on-sale?",     on_sale_str,                    True),
         ]
-        df_final = pd.DataFrame(final_rows, columns=["Metric", "Value"]).set_index("Metric")
-        st.dataframe(df_final, use_container_width=True,
-                     column_config={"Value": st.column_config.TextColumn("Value", width=180)})
+
+        # Build color-coded HTML table
+        rows_html = ""
+        for metric, value, is_verdict in final_rows:
+            if is_verdict:
+                if on_sale_now is True:
+                    row_style = "background:#1a3a2a;color:#4caf87;font-weight:bold;"
+                elif on_sale_now is False:
+                    row_style = "background:#3a1a1a;color:#e07070;font-weight:bold;"
+                else:
+                    row_style = ""
+            else:
+                row_style = ""
+            rows_html += (
+                f"<tr style='{row_style}'>"
+                f"<td style='padding:5px 10px;border-bottom:1px solid #2a3a4a;'>{metric}</td>"
+                f"<td style='padding:5px 10px;border-bottom:1px solid #2a3a4a;text-align:right;'>{value}</td>"
+                f"</tr>"
+            )
+
+        table_html = (
+            "<table style='width:100%;border-collapse:collapse;font-size:0.88em;"
+            "background:#111d2e;border-radius:6px;overflow:hidden;'>"
+            "<thead><tr style='background:#1c2b46;color:#aab8cc;font-size:0.82em;'>"
+            "<th style='padding:5px 10px;text-align:left;'>Metric</th>"
+            "<th style='padding:5px 10px;text-align:right;'>Value</th>"
+            "</tr></thead>"
+            f"<tbody>{rows_html}</tbody></table>"
+        )
+        st.markdown(table_html, unsafe_allow_html=True)
+
         if fair_value_now is None:
             st.caption("Fair Value requires valid estimates from both models.")
+
+        # MoS input — below the table
+        st.number_input(
+            "Margin of Safety (%)",
+            min_value=0.0, max_value=80.0, step=1.0, format="%.0f",
+            key="cfirr_mos",
+            help="Discount applied to Fair Value to derive the Buy Price.",
+        )
 
 
     # ══════════════════════════════════════════════════════════════════════════
