@@ -140,11 +140,15 @@ class GatewayAgent:
     def _get(self, path: str, params: dict, timeout: int = 8):
         """Raw GET, returns parsed JSON or None on error."""
         try:
+            full_url = f"{self.base_url}/{path}"
+            safe_params = {k: v for k, v in params.items() if k != "apikey"}
+            print(f"[GatewayAgent] GET {full_url} params={safe_params}")
             res = requests.get(
-                f"{self.base_url}/{path}",
+                full_url,
                 params={**params, "apikey": self.api_key},
                 timeout=timeout,
             )
+            print(f"[GatewayAgent] RESPONSE status={res.status_code} body_preview={str(res.text)[:200]}")
             return res.json()
         except Exception as e:
             print(f"[GatewayAgent] GET /{path} ERROR: {e}")
