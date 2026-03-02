@@ -906,23 +906,9 @@ def render_cf_irr_tab(norm, raw):
             unsafe_allow_html=True,
         )
 
-        # WACC override input + Reset button
-        wacc_inp_col, reset_col = st.columns([3, 2])
-        with wacc_inp_col:
-            st.number_input(
-                "WACC (%)", min_value=1.0, max_value=50.0,
-                step=0.1, format="%.2f", key="cfirr_wacc_manual_pct",
-                help="Weighted Average Cost of Capital. Edit to override the model value.",
-            )
-        with reset_col:
-            st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
-            if st.button("↺ Reset", key="cfirr_wacc_reset", use_container_width=True,
-                         help="Reset WACC to the model-calculated value."):
-                del st.session_state["cfirr_wacc_manual_pct"]
-                st.rerun()
-
-        wacc_live = st.session_state.get("cfirr_wacc_manual_pct",
-                                         (wacc * 100) if wacc is not None else 10.0) / 100.0
+        # Read live values from session state (set by widgets on previous render)
+        wacc_live    = st.session_state.get("cfirr_wacc_manual_pct",
+                                            (wacc * 100) if wacc is not None else 10.0) / 100.0
         mos_pct_live = float(st.session_state.get("cfirr_mos", 10.0))
 
         # Compute live values from session-state avg_target (previous render)
@@ -951,50 +937,69 @@ def render_cf_irr_tab(norm, raw):
         )
 
         final_rows = [
-            ("Average Target Price", _f_price(avg_target_ss),       False),
-            ("WACC",                 f"{wacc_live * 100:.2f}%",      False),
-            ("Fair Value per share", _f_price(fair_value_now),       False),
-            ("Buy Price",            _f_price(buy_price_now),        False),
-            ("Current Stock Price",  _f_price(price_now),            False),
-            ("To Fair Value",        _fmt_delta(fair_value_now, price_now), False),
-            ("To Buy Price",         _fmt_delta(buy_price_now,  price_now), False),
-            ("Company on-sale?",     on_sale_str,                    True),
+            ("Average Target Price", _f_price(avg_target_ss),                  None),
+            ("WACC",                 f"{wacc_live * 100:.2f}%",                 None),
+            ("Fair Value per share", _f_price(fair_value_now),                  None),
+            ("Buy Price",            _f_price(buy_price_now),                   None),
+            ("Current Stock Price",  _f_price(price_now),                       None),
+            ("To Fair Value",        _fmt_delta(fair_value_now, price_now),     None),
+            ("To Buy Price",         _fmt_delta(buy_price_now,  price_now),     None),
+            ("Company on-sale?",     on_sale_str,                               on_sale_now),
         ]
 
-        # Build color-coded HTML table
+        # Build HTML table — same style as _checklist_html
         rows_html = ""
-        for metric, value, is_verdict in final_rows:
-            if is_verdict:
-                if on_sale_now is True:
-                    row_style = "background:#1a3a2a;color:#4caf87;font-weight:bold;"
-                elif on_sale_now is False:
-                    row_style = "background:#3a1a1a;color:#e07070;font-weight:bold;"
-                else:
-                    row_style = ""
+        for metric, value, verdict in final_rows:
+            if verdict is True:
+                row_bg = f"background:{_CLR_PASS};"
+                td_clr = f"color:{_CLR_TEXT_PASS};font-weight:700;"
+            elif verdict is False:
+                row_bg = f"background:{_CLR_FAIL};"
+                td_clr = f"color:{_CLR_TEXT_FAIL};font-weight:700;"
             else:
-                row_style = ""
+                row_bg = ""
+                td_clr = ""
             rows_html += (
-                f"<tr style='{row_style}'>"
-                f"<td style='padding:5px 10px;border-bottom:1px solid #2a3a4a;'>{metric}</td>"
-                f"<td style='padding:5px 10px;border-bottom:1px solid #2a3a4a;text-align:right;'>{value}</td>"
+                f"<tr style='{row_bg}'>"
+                f"<td style='padding:6px 12px;font-size:0.85em;font-weight:600;{td_clr}'>{metric}</td>"
+                f"<td style='padding:6px 12px;font-size:0.85em;text-align:right;{td_clr}'>{value}</td>"
                 f"</tr>"
             )
 
         table_html = (
-            "<table style='width:100%;border-collapse:collapse;font-size:0.88em;"
-            "background:#111d2e;border-radius:6px;overflow:hidden;'>"
-            "<thead><tr style='background:#1c2b46;color:#aab8cc;font-size:0.82em;'>"
-            "<th style='padding:5px 10px;text-align:left;'>Metric</th>"
-            "<th style='padding:5px 10px;text-align:right;'>Value</th>"
+            "<div style='overflow-x:auto;'>"
+            "<table style='width:100%;border-collapse:collapse;border-radius:8px;overflow:hidden;'>"
+            "<thead><tr style='background:#1c2b46;'>"
+            "<th style='padding:8px 12px;color:#fff;font-size:0.78em;text-align:left;'>Metric</th>"
+            "<th style='padding:8px 12px;color:#fff;font-size:0.78em;text-align:right;'>Value</th>"
             "</tr></thead>"
-            f"<tbody>{rows_html}</tbody></table>"
+            f"<tbody>{rows_html}</tbody>"
+            "</table></div>"
         )
         st.markdown(table_html, unsafe_allow_html=True)
 
         if fair_value_now is None:
             st.caption("Fair Value requires valid estimates from both models.")
 
-        # MoS input — below the table
+        # Gap between table and controls
+        st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
+
+        # WACC override input + Reset button — below the table
+        wacc_inp_col, reset_col = st.columns([3, 2])
+        with wacc_inp_col:
+            st.number_input(
+                "WACC (%)", min_value=1.0, max_value=50.0,
+                step=0.1, format="%.2f", key="cfirr_wacc_manual_pct",
+                help="Weighted Average Cost of Capital. Edit to override the model value.",
+            )
+        with reset_col:
+            st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
+            if st.button("↺ Reset", key="cfirr_wacc_reset", use_container_width=True,
+                         help="Reset WACC to the model-calculated value."):
+                del st.session_state["cfirr_wacc_manual_pct"]
+                st.rerun()
+
+        # MoS input — below WACC
         st.number_input(
             "Margin of Safety (%)",
             min_value=0.0, max_value=80.0, step=1.0, format="%.0f",
