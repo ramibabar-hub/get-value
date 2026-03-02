@@ -426,8 +426,15 @@ def _fcf_hist(norm, raw, ins):
         sh     = (_s(rec_is.get("weightedAverageShsOutDil"))
                   or _s(rec_is.get("weightedAverageShsOut")))
         adj_ps = _d(adj, sh)
-        # Use Dec 31 closing price from historical_prices; fall back to key metrics price
-        px     = _dec31_price(raw, yr) or _s(rec_km.get("stockPrice"))
+        # 1. Dec-31 price from fetched history (most accurate)
+        px = _dec31_price(raw, yr)
+        # 2. Key-metrics stockPrice / price field
+        if px is None:
+            px = _s(rec_km.get("stockPrice")) or _s(rec_km.get("price"))
+        # 3. Derive from marketCap ÷ shares (always available if FMP has mktcap data)
+        mkt_yr = _s(rec_km.get("marketCap"))
+        if px is None and mkt_yr is not None and sh is not None and sh > 0:
+            px = mkt_yr / sh
         yld    = _d(adj_ps, px)
 
         raw_hist.append({"adj_ps": adj_ps, "yld": yld,
@@ -801,10 +808,9 @@ def render_cf_irr_tab(norm, raw):
         if key not in st.session_state:
             st.session_state[key] = val
 
-    # Use InsightsAgent 10-yr CAGRs as default growth rates; TTM EV/EBITDA as default exit multiple
-    # Fallback is 5% (conservative) when no CAGR data is available
-    _ebt_g_default = _pct_default(ebt_c10, 5.0)
-    _fcf_g_default = _pct_default(fcf_c10, 5.0)
+    # Default growth: strictly 5% — conservative starting point, user overrides per-year
+    _ebt_g_default = 5.0
+    _fcf_g_default = 5.0
     _exit_mult_def = round(ev_ebt_ttm_numeric, 1) if ev_ebt_ttm_numeric else 15.0
 
     _init("cfirr_ebitda_growth_yoy",    [_ebt_g_default] * 9)
@@ -1106,17 +1112,29 @@ def render_cf_irr_tab(norm, raw):
         ebt_fc_rows      = _ebitda_forecast_yoy(base_ebitda, ebt_growth_rates, base_year)
 
         if ebt_fc_rows:
-            base_ebt_val = (base_ebitda / 1e6) if base_ebitda else float("nan")
-            base_row = {"Year": str(base_year), "Est. Growth Rate (%)": float("nan"),
-                        "Est. EBITDA ($MM)": base_ebt_val}
             ebt_vals   = [r["Est. EBITDA ($MM)"] for r in ebt_fc_rows
                           if r["Est. EBITDA ($MM)"] is not None]
             avg_ebt_mm = sum(ebt_vals) / len(ebt_vals) if ebt_vals else None
             avg_row    = {"Year": "Average", "Est. Growth Rate (%)": float("nan"),
                           "Est. EBITDA ($MM)": avg_ebt_mm}
 
-            ebt_all_rows = [base_row] + ebt_fc_rows + [avg_row]
-            ebt_fc_df    = pd.DataFrame(ebt_all_rows)
+            # No base row — forecast starts cleanly at base_year + 1
+            ebt_all_rows = ebt_fc_rows + [avg_row]
+
+            # Pre-format EBITDA as comma-separated strings; Streamlit NumberColumn
+            # does not support Python {:,.1f} format — use TextColumn instead.
+            def _fmt_ebt(v):
+                if v is None or (isinstance(v, float) and math.isnan(v)):
+                    return ""
+                return f"{v:,.1f}"
+
+            ebt_disp_rows = [
+                {"Year": r["Year"],
+                 "Est. Growth Rate (%)": r["Est. Growth Rate (%)"],
+                 "Est. EBITDA ($MM)":    _fmt_ebt(r["Est. EBITDA ($MM)"])}
+                for r in ebt_all_rows
+            ]
+            ebt_fc_df = pd.DataFrame(ebt_disp_rows)
 
             edited_ebt_df = st.data_editor(
                 ebt_fc_df,
@@ -1126,15 +1144,14 @@ def render_cf_irr_tab(norm, raw):
                     "Est. Growth Rate (%)": st.column_config.NumberColumn(
                         "Est. Growth Rate (%)", min_value=-50.0, max_value=200.0,
                         step=0.5, format="%.1f"),
-                    "Est. EBITDA ($MM)":    st.column_config.NumberColumn(
-                        "Est. EBITDA ($MM)", format="{:,.1f}"),
+                    "Est. EBITDA ($MM)":    st.column_config.TextColumn("Est. EBITDA ($MM)"),
                 },
                 hide_index=True,
                 use_container_width=True,
                 num_rows="fixed",
             )
-            # Extract only the 9 forecast rows (indices 1–9), ignore base and average
-            new_ebt_rates = edited_ebt_df["Est. Growth Rate (%)"].iloc[1:10].tolist()
+            # Extract the 9 forecast rows; skip the final Average row
+            new_ebt_rates = edited_ebt_df["Est. Growth Rate (%)"].iloc[0:9].tolist()
             st.session_state["cfirr_ebitda_growth_yoy"] = new_ebt_rates
         else:
             st.caption("Insufficient base data to generate forecast.")
@@ -1205,15 +1222,14 @@ def render_cf_irr_tab(norm, raw):
             adj_ps_ttm, fcf_growth_rates, exit_yield_now, base_year)
 
         if fcf_fc_rows_base:
-            fcf_base_row = {"Year": str(base_year), "Est. Growth Rate (%)": float("nan"),
-                            "Est. Adj. FCF/s": adj_ps_ttm}
             adj_vals   = [r["Est. Adj. FCF/s"] for r in fcf_fc_rows_base
                           if r["Est. Adj. FCF/s"] is not None]
             avg_adj_ps = sum(adj_vals) / len(adj_vals) if adj_vals else None
             fcf_avg_row = {"Year": "Average", "Est. Growth Rate (%)": float("nan"),
                            "Est. Adj. FCF/s": avg_adj_ps}
 
-            fcf_all_rows   = [fcf_base_row] + fcf_fc_rows_base + [fcf_avg_row]
+            # No base row — forecast starts cleanly at base_year + 1
+            fcf_all_rows   = fcf_fc_rows_base + [fcf_avg_row]
             fcf_fc_df_disp = pd.DataFrame(fcf_all_rows)
 
             edited_fcf_df = st.data_editor(
@@ -1231,8 +1247,8 @@ def render_cf_irr_tab(norm, raw):
                 use_container_width=True,
                 num_rows="fixed",
             )
-            # Extract only the 9 forecast rows (indices 1–9), ignore base and average
-            new_fcf_rates = edited_fcf_df["Est. Growth Rate (%)"].iloc[1:10].tolist()
+            # Extract the 9 forecast rows; skip the final Average row
+            new_fcf_rates = edited_fcf_df["Est. Growth Rate (%)"].iloc[0:9].tolist()
             st.session_state["cfirr_fcf_growth_yoy"] = new_fcf_rates
             # Sync exit yield to last year's growth rate on first load
             if "cfirr_fcf_exit_yield" not in st.session_state:
