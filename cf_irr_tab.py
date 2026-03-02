@@ -173,22 +173,37 @@ def _cagr_local(end_val, start_val, n_years):
 
 
 def _dec31_price(raw, year_str):
-    """Return closing price closest to Dec 31 for the given year from historical_prices."""
+    """Return closing price for the last trading day of the given year.
+
+    Filters to dates within the year that are on or before Dec 31, then
+    picks the latest one (handles weekends/holidays with no explicit fallback needed).
+    """
     import datetime
     hist = raw.get("historical_prices", [])
     if not hist:
         return None
     yr = str(year_str)
-    year_prices = [p for p in hist if isinstance(p, dict) and str(p.get("date", ""))[:4] == yr]
-    if not year_prices:
-        return None
     try:
-        target = datetime.date(int(yr), 12, 31)
-        closest = min(year_prices,
-                      key=lambda p: abs((datetime.date.fromisoformat(str(p["date"])) - target).days))
-        return _s(closest.get("adjClose") or closest.get("close"))
-    except Exception:
+        dec31 = datetime.date(int(yr), 12, 31)
+    except (ValueError, TypeError):
         return None
+    candidates = []
+    for p in hist:
+        if not isinstance(p, dict):
+            continue
+        d_str = str(p.get("date", ""))
+        if not d_str:
+            continue
+        try:
+            d = datetime.date.fromisoformat(d_str[:10])
+        except ValueError:
+            continue
+        if d.year == int(yr) and d <= dec31:
+            candidates.append((d, p))
+    if not candidates:
+        return None
+    _, best = max(candidates, key=lambda x: x[0])
+    return _s(best.get("adjClose") or best.get("close"))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1019,100 +1034,99 @@ def render_cf_irr_tab(norm, raw):
     df_ebt = pd.DataFrame(all_ebt_rows).set_index("Year")
     st.dataframe(df_ebt, use_container_width=True)
 
-    # ── Table 2.2: EBITDA 9-Year Forecast ────────────────────────────────────
-    _sub(f"Table 2.2 · EBITDA Forecast  ({base_year + 1}–{base_year + 9})")
-
-    # Global growth rate — on_change resets all rows
-    def _apply_global_ebt():
-        rate = st.session_state.get("cfirr_ebitda_global_growth", 10.0)
-        st.session_state["cfirr_ebitda_growth_yoy"] = [rate] * 9
-
-    g_col2, _ = st.columns([2, 6])
-    with g_col2:
-        st.number_input(
-            "Global Est. Growth Rate (%)",
-            min_value=-50.0, max_value=200.0, step=0.5, format="%.1f",
-            key="cfirr_ebitda_global_growth",
-            on_change=_apply_global_ebt,
-            help="Sets the growth rate for all forecast years at once.",
-        )
-
-    # Reload growth rates (may have been updated by on_change callback)
+    # ── Table 2.2 + Est. Stock Price — side-by-side ──────────────────────────
+    # Pre-compute from session state so the left column renders with current values.
     ebt_growth_rates = list(st.session_state["cfirr_ebitda_growth_yoy"])
+    exit_mult_now    = float(st.session_state.get("cfirr_ebitda_exit", 15.0))
+    _ebt_fc_pre      = _ebitda_forecast_yoy(base_ebitda, ebt_growth_rates, base_year)
+    final_yr_ebt     = base_year + 9
+    _ebt_yr9_mm      = _ebt_fc_pre[-1]["Est. EBITDA ($MM)"] if _ebt_fc_pre else None
+    _ev_yr9          = (_ebt_yr9_mm * 1e6 * exit_mult_now) if _ebt_yr9_mm is not None else None
+    _debt_v          = debt_ttm or 0.0
+    _cash_v          = cash_ttm or 0.0
+    _mktcap_yr9      = (_ev_yr9 - _debt_v + _cash_v) if _ev_yr9 is not None else None
+    ebitda_price_yr10 = _d(_mktcap_yr9, sh_ttm)
 
-    ebt_fc_rows = _ebitda_forecast_yoy(base_ebitda, ebt_growth_rates, base_year)
+    ebt_price_col, ebt_table_col = st.columns([1, 2])
 
-    if ebt_fc_rows:
-        # Build unified table: base row + 9 forecast rows + average row
-        base_ebt_val = (base_ebitda / 1e6) if base_ebitda else float("nan")
-        base_row = {"Year": str(base_year), "Est. Growth Rate (%)": float("nan"),
-                    "Est. EBITDA ($MM)": base_ebt_val}
-        ebt_vals = [r["Est. EBITDA ($MM)"] for r in ebt_fc_rows if r["Est. EBITDA ($MM)"] is not None]
-        avg_ebt_mm = sum(ebt_vals) / len(ebt_vals) if ebt_vals else None
-        avg_row = {"Year": "Average", "Est. Growth Rate (%)": float("nan"),
-                   "Est. EBITDA ($MM)": avg_ebt_mm}
-
-        ebt_all_rows = [base_row] + ebt_fc_rows + [avg_row]
-        ebt_fc_df = pd.DataFrame(ebt_all_rows)
-
-        edited_ebt_df = st.data_editor(
-            ebt_fc_df,
-            disabled=["Year", "Est. EBITDA ($MM)"],
-            column_config={
-                "Year":                 st.column_config.TextColumn("Year", width=80),
-                "Est. Growth Rate (%)": st.column_config.NumberColumn(
-                    "Est. Growth Rate (%)", min_value=-50.0, max_value=200.0,
-                    step=0.5, format="%.1f"),
-                "Est. EBITDA ($MM)":    st.column_config.NumberColumn(
-                    "Est. EBITDA ($MM)", format="%.1f"),
-            },
-            hide_index=True,
-            use_container_width=True,
-            num_rows="fixed",
-        )
-        # Extract only the 9 forecast rows (indices 1 through 9), ignore base and average
-        new_ebt_rates = edited_ebt_df["Est. Growth Rate (%)"].iloc[1:10].tolist()
-        st.session_state["cfirr_ebitda_growth_yoy"] = new_ebt_rates
-    else:
-        new_ebt_rates = ebt_growth_rates
-        st.caption("Insufficient base data to generate forecast.")
-
-    # Recompute with final rates to get year-9 EBITDA
-    ebt_fc_now = _ebitda_forecast_yoy(base_ebitda, new_ebt_rates, base_year)
-
-    # ── EBITDA Est. Stock Price Table ─────────────────────────────────────────
-    _sub("Est. Stock Price (EBITDA Method)")
-
-    em_col, _ = st.columns([2, 6])
-    with em_col:
+    with ebt_price_col:
+        _sub("Est. Stock Price (EBITDA Method)")
         st.number_input(
             "Est. EV/EBITDA Multiple",
             min_value=1.0, max_value=100.0, step=0.5, format="%.1f",
             key="cfirr_ebitda_exit",
             help="EV/EBITDA multiple at the end of the forecast. Default = TTM.",
         )
-    exit_mult_now = float(st.session_state["cfirr_ebitda_exit"])
+        ebt_sum_rows = [
+            ["Est. EV/EBITDA Multiple",            f"{exit_mult_now:.1f}x"],
+            [f"EV in {final_yr_ebt} ($MM)",        _f_mm(_ev_yr9)],
+            ["Less: Debt (TTM) ($MM)",             _f_mm(_debt_v)],
+            ["Plus: Cash (TTM) ($MM)",             _f_mm(_cash_v)],
+            ["Est. Market Cap ($MM)",              _f_mm(_mktcap_yr9)],
+            ["Shares Outstanding — TTM (MM)",      f"{sh_ttm / 1e6:,.1f}" if sh_ttm else "N/A"],
+            [f"Est. Stock Price in {final_yr_ebt}", _f_price(ebitda_price_yr10)],
+        ]
+        df_ebt_sum = pd.DataFrame(ebt_sum_rows, columns=["Metric", "Value"]).set_index("Metric")
+        st.dataframe(df_ebt_sum, use_container_width=True,
+                     column_config={"Value": st.column_config.TextColumn("Value", width=160)})
 
-    final_yr_ebt = base_year + 9
-    ebt_yr9_mm   = ebt_fc_now[-1]["Est. EBITDA ($MM)"] if ebt_fc_now else None
-    ev_yr9       = (ebt_yr9_mm * 1e6 * exit_mult_now) if ebt_yr9_mm is not None else None
-    debt_v       = debt_ttm or 0.0
-    cash_v       = cash_ttm or 0.0
-    mktcap_yr9   = (ev_yr9 - debt_v + cash_v) if ev_yr9 is not None else None
-    ebitda_price_yr10 = _d(mktcap_yr9, sh_ttm)
+    with ebt_table_col:
+        _sub(f"Table 2.2 · EBITDA Forecast  ({base_year + 1}–{base_year + 9})")
 
-    ebt_sum_rows = [
-        ["Est. EV/EBITDA Multiple",                   f"{exit_mult_now:.1f}x"],
-        [f"EV in {final_yr_ebt} ($MM)",               _f_mm(ev_yr9)],
-        ["Less: Debt (TTM) ($MM)",                    _f_mm(debt_v)],
-        ["Plus: Cash (TTM) ($MM)",                    _f_mm(cash_v)],
-        ["Est. Market Cap ($MM)",                     _f_mm(mktcap_yr9)],
-        ["Shares Outstanding — TTM (MM)",             f"{sh_ttm / 1e6:,.1f}" if sh_ttm else "N/A"],
-        [f"Est. Stock Price in {final_yr_ebt}",       _f_price(ebitda_price_yr10)],
-    ]
-    df_ebt_sum = pd.DataFrame(ebt_sum_rows, columns=["Metric", "Value"]).set_index("Metric")
-    st.dataframe(df_ebt_sum, use_container_width=True,
-                 column_config={"Value": st.column_config.TextColumn("Value", width=200)})
+        # Global growth — only initialises the first forecast year (base_year+1)
+        def _apply_global_ebt():
+            rate    = st.session_state.get("cfirr_ebitda_global_growth", 10.0)
+            current = list(st.session_state.get("cfirr_ebitda_growth_yoy", [rate] * 9))
+            current[0] = rate
+            st.session_state["cfirr_ebitda_growth_yoy"] = current
+
+        g_col2, _ = st.columns([1, 2])
+        with g_col2:
+            st.number_input(
+                "Global Est. Growth Rate (%)",
+                min_value=-50.0, max_value=200.0, step=0.5, format="%.1f",
+                key="cfirr_ebitda_global_growth",
+                on_change=_apply_global_ebt,
+                help=f"Sets the growth rate for {base_year + 1} only.",
+            )
+
+        # Reload after possible on_change update
+        ebt_growth_rates = list(st.session_state["cfirr_ebitda_growth_yoy"])
+        ebt_fc_rows      = _ebitda_forecast_yoy(base_ebitda, ebt_growth_rates, base_year)
+
+        if ebt_fc_rows:
+            base_ebt_val = (base_ebitda / 1e6) if base_ebitda else float("nan")
+            base_row = {"Year": str(base_year), "Est. Growth Rate (%)": float("nan"),
+                        "Est. EBITDA ($MM)": base_ebt_val}
+            ebt_vals   = [r["Est. EBITDA ($MM)"] for r in ebt_fc_rows
+                          if r["Est. EBITDA ($MM)"] is not None]
+            avg_ebt_mm = sum(ebt_vals) / len(ebt_vals) if ebt_vals else None
+            avg_row    = {"Year": "Average", "Est. Growth Rate (%)": float("nan"),
+                          "Est. EBITDA ($MM)": avg_ebt_mm}
+
+            ebt_all_rows = [base_row] + ebt_fc_rows + [avg_row]
+            ebt_fc_df    = pd.DataFrame(ebt_all_rows)
+
+            edited_ebt_df = st.data_editor(
+                ebt_fc_df,
+                disabled=["Year", "Est. EBITDA ($MM)"],
+                column_config={
+                    "Year":                 st.column_config.TextColumn("Year", width=80),
+                    "Est. Growth Rate (%)": st.column_config.NumberColumn(
+                        "Est. Growth Rate (%)", min_value=-50.0, max_value=200.0,
+                        step=0.5, format="%.1f"),
+                    "Est. EBITDA ($MM)":    st.column_config.NumberColumn(
+                        "Est. EBITDA ($MM)", format="{:,.1f}"),
+                },
+                hide_index=True,
+                use_container_width=True,
+                num_rows="fixed",
+            )
+            # Extract only the 9 forecast rows (indices 1–9), ignore base and average
+            new_ebt_rates = edited_ebt_df["Est. Growth Rate (%)"].iloc[1:10].tolist()
+            st.session_state["cfirr_ebitda_growth_yoy"] = new_ebt_rates
+        else:
+            st.caption("Insufficient base data to generate forecast.")
 
     # ══════════════════════════════════════════════════════════════════════════
     # SECTION 3 — FREE CASH FLOW ANALYSIS
@@ -1125,75 +1139,20 @@ def render_cf_irr_tab(norm, raw):
     df_fcf = pd.DataFrame(all_fcf_rows).set_index("Year")
     st.dataframe(df_fcf, use_container_width=True)
 
-    # ── Table 3.2: Est. Adj. FCF/s 9-Year Forecast ──────────────────────────
-    _sub(f"Table 3.2 · Est. Adj. FCF/s Forecast  ({base_year + 1}–{base_year + 9})")
-
-    # Global growth rate — on_change resets all rows
-    def _apply_global_fcf():
-        rate = st.session_state.get("cfirr_fcf_global_growth", 10.0)
-        st.session_state["cfirr_fcf_growth_yoy"] = [rate] * 9
-
-    fg_col2, _ = st.columns([2, 6])
-    with fg_col2:
-        st.number_input(
-            "Global Est. Growth Rate (%)",
-            min_value=-50.0, max_value=200.0, step=0.5, format="%.1f",
-            key="cfirr_fcf_global_growth",
-            on_change=_apply_global_fcf,
-            help="Sets the growth rate for all forecast years at once.",
-        )
-
-    # Reload growth rates (may have been updated by on_change callback)
+    # ── Table 3.2 + Est. Stock Price — side-by-side ──────────────────────────
+    # Pre-compute from session state so the left column renders with current values.
     fcf_growth_rates = list(st.session_state["cfirr_fcf_growth_yoy"])
-    # Use session exit yield for cashflow calculations (updated below)
-    exit_yield_now = float(st.session_state["cfirr_fcf_exit_yield"])
+    exit_yield_now   = float(st.session_state["cfirr_fcf_exit_yield"])
+    _fcf_fc_pre, _   = _fcf_forecast_yoy(adj_ps_ttm, fcf_growth_rates, exit_yield_now, base_year)
+    final_yr_fcf     = base_year + 9
+    _adj_ps_yr9      = _fcf_fc_pre[-1]["Est. Adj. FCF/s"] if _fcf_fc_pre else None
+    fcf_price_yr10   = (_d(_adj_ps_yr9, exit_yield_now / 100.0)
+                        if _adj_ps_yr9 and exit_yield_now > 0 else None)
 
-    fcf_fc_rows_base, _ = _fcf_forecast_yoy(
-        adj_ps_ttm, fcf_growth_rates, exit_yield_now, base_year)
+    fcf_price_col, fcf_table_col = st.columns([1, 2])
 
-    if fcf_fc_rows_base:
-        # Build unified table: base row + 9 forecast rows + average row
-        fcf_base_row = {"Year": str(base_year), "Est. Growth Rate (%)": float("nan"),
-                        "Est. Adj. FCF/s": adj_ps_ttm}
-        adj_vals = [r["Est. Adj. FCF/s"] for r in fcf_fc_rows_base if r["Est. Adj. FCF/s"] is not None]
-        avg_adj_ps = sum(adj_vals) / len(adj_vals) if adj_vals else None
-        fcf_avg_row = {"Year": "Average", "Est. Growth Rate (%)": float("nan"),
-                       "Est. Adj. FCF/s": avg_adj_ps}
-
-        fcf_all_rows = [fcf_base_row] + fcf_fc_rows_base + [fcf_avg_row]
-        fcf_fc_df_disp = pd.DataFrame(fcf_all_rows)
-
-        edited_fcf_df = st.data_editor(
-            fcf_fc_df_disp,
-            disabled=["Year", "Est. Adj. FCF/s"],
-            column_config={
-                "Year":                 st.column_config.TextColumn("Year", width=80),
-                "Est. Growth Rate (%)": st.column_config.NumberColumn(
-                    "Est. Growth Rate (%)", min_value=-50.0, max_value=200.0,
-                    step=0.5, format="%.1f"),
-                "Est. Adj. FCF/s":      st.column_config.NumberColumn(
-                    "Est. Adj. FCF/s", format="$%.2f"),
-            },
-            hide_index=True,
-            use_container_width=True,
-            num_rows="fixed",
-        )
-        # Extract only the 9 forecast rows (indices 1 through 9), ignore base and average
-        new_fcf_rates = edited_fcf_df["Est. Growth Rate (%)"].iloc[1:10].tolist()
-        st.session_state["cfirr_fcf_growth_yoy"] = new_fcf_rates
-        # Sync exit yield to match 2034 growth rate if user hasn't manually changed it yet
-        _yr2034_rate = new_fcf_rates[-1] if new_fcf_rates else _fcf_g_default
-        if "cfirr_fcf_exit_yield" not in st.session_state:
-            st.session_state["cfirr_fcf_exit_yield"] = _yr2034_rate
-    else:
-        new_fcf_rates = fcf_growth_rates
-        st.caption("Insufficient base data to generate forecast.")
-
-    # ── FCF Est. Stock Price Table ────────────────────────────────────────────
-    _sub("Est. Stock Price (FCF Method)")
-
-    lt_col, _ = st.columns([2, 6])
-    with lt_col:
+    with fcf_price_col:
+        _sub("Est. Stock Price (FCF Method)")
         st.number_input(
             "Long Term FCF/s Yield (%)",
             min_value=0.5, max_value=50.0, step=0.5, format="%.1f",
@@ -1201,23 +1160,75 @@ def render_cf_irr_tab(norm, raw):
             help="Est. Stock Price = Est. Adj. FCF/s ÷ Yield.  "
                  "Default = 9-yr CAGR of Adj. FCF/s.",
         )
-    exit_yield_now = float(st.session_state["cfirr_fcf_exit_yield"])
+        fcf_sum_rows = [
+            ["Long Term FCF/s Yield",               f"{exit_yield_now:.1f}%"],
+            [f"Est. Stock Price in {final_yr_fcf}", _f_price(fcf_price_yr10)],
+        ]
+        df_fcf_sum = pd.DataFrame(fcf_sum_rows, columns=["Metric", "Value"]).set_index("Metric")
+        st.dataframe(df_fcf_sum, use_container_width=True,
+                     column_config={"Value": st.column_config.TextColumn("Value", width=160)})
 
-    # Recompute with final rates and current yield
-    fcf_fc_now, _ = _fcf_forecast_yoy(
-        adj_ps_ttm, new_fcf_rates, exit_yield_now, base_year)
+    with fcf_table_col:
+        _sub(f"Table 3.2 · Est. Adj. FCF/s Forecast  ({base_year + 1}–{base_year + 9})")
 
-    final_yr_fcf = base_year + 9
-    adj_ps_yr9   = fcf_fc_now[-1]["Est. Adj. FCF/s"] if fcf_fc_now else None
-    fcf_price_yr10 = _d(adj_ps_yr9, exit_yield_now / 100.0) if adj_ps_yr9 and exit_yield_now > 0 else None
+        # Global growth — only initialises the first forecast year (base_year+1)
+        def _apply_global_fcf():
+            rate    = st.session_state.get("cfirr_fcf_global_growth", 10.0)
+            current = list(st.session_state.get("cfirr_fcf_growth_yoy", [rate] * 9))
+            current[0] = rate
+            st.session_state["cfirr_fcf_growth_yoy"] = current
 
-    fcf_sum_rows = [
-        ["Long Term FCF/s Yield",                   f"{exit_yield_now:.1f}%"],
-        [f"Est. Stock Price in {final_yr_fcf}",     _f_price(fcf_price_yr10)],
-    ]
-    df_fcf_sum = pd.DataFrame(fcf_sum_rows, columns=["Metric", "Value"]).set_index("Metric")
-    st.dataframe(df_fcf_sum, use_container_width=True,
-                 column_config={"Value": st.column_config.TextColumn("Value", width=200)})
+        fg_col2, _ = st.columns([1, 2])
+        with fg_col2:
+            st.number_input(
+                "Global Est. Growth Rate (%)",
+                min_value=-50.0, max_value=200.0, step=0.5, format="%.1f",
+                key="cfirr_fcf_global_growth",
+                on_change=_apply_global_fcf,
+                help=f"Sets the growth rate for {base_year + 1} only.",
+            )
+
+        # Reload after possible on_change update
+        fcf_growth_rates      = list(st.session_state["cfirr_fcf_growth_yoy"])
+        fcf_fc_rows_base, _   = _fcf_forecast_yoy(
+            adj_ps_ttm, fcf_growth_rates, exit_yield_now, base_year)
+
+        if fcf_fc_rows_base:
+            fcf_base_row = {"Year": str(base_year), "Est. Growth Rate (%)": float("nan"),
+                            "Est. Adj. FCF/s": adj_ps_ttm}
+            adj_vals   = [r["Est. Adj. FCF/s"] for r in fcf_fc_rows_base
+                          if r["Est. Adj. FCF/s"] is not None]
+            avg_adj_ps = sum(adj_vals) / len(adj_vals) if adj_vals else None
+            fcf_avg_row = {"Year": "Average", "Est. Growth Rate (%)": float("nan"),
+                           "Est. Adj. FCF/s": avg_adj_ps}
+
+            fcf_all_rows   = [fcf_base_row] + fcf_fc_rows_base + [fcf_avg_row]
+            fcf_fc_df_disp = pd.DataFrame(fcf_all_rows)
+
+            edited_fcf_df = st.data_editor(
+                fcf_fc_df_disp,
+                disabled=["Year", "Est. Adj. FCF/s"],
+                column_config={
+                    "Year":                 st.column_config.TextColumn("Year", width=80),
+                    "Est. Growth Rate (%)": st.column_config.NumberColumn(
+                        "Est. Growth Rate (%)", min_value=-50.0, max_value=200.0,
+                        step=0.5, format="%.1f"),
+                    "Est. Adj. FCF/s":      st.column_config.NumberColumn(
+                        "Est. Adj. FCF/s", format="$%.2f"),
+                },
+                hide_index=True,
+                use_container_width=True,
+                num_rows="fixed",
+            )
+            # Extract only the 9 forecast rows (indices 1–9), ignore base and average
+            new_fcf_rates = edited_fcf_df["Est. Growth Rate (%)"].iloc[1:10].tolist()
+            st.session_state["cfirr_fcf_growth_yoy"] = new_fcf_rates
+            # Sync exit yield to last year's growth rate on first load
+            if "cfirr_fcf_exit_yield" not in st.session_state:
+                st.session_state["cfirr_fcf_exit_yield"] = (
+                    new_fcf_rates[-1] if new_fcf_rates else _fcf_g_default)
+        else:
+            st.caption("Insufficient base data to generate forecast.")
 
     # ══════════════════════════════════════════════════════════════════════════
     # COMPARISON TABLE
