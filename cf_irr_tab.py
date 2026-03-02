@@ -969,14 +969,15 @@ def render_cf_irr_tab(norm, raw):
         )
 
         final_rows = [
-            ("Average Target Price", _f_price(avg_target_ss),                  None),
-            ("WACC",                 f"{wacc_live * 100:.2f}%",                 None),
-            ("Fair Value per share", _f_price(fair_value_now),                  None),
-            ("Buy Price",            _f_price(buy_price_now),                   None),
-            ("Current Stock Price",  _f_price(price_now),                       None),
-            ("To Fair Value",        _fmt_delta(fair_value_now, price_now),     None),
-            ("To Buy Price",         _fmt_delta(buy_price_now,  price_now),     None),
-            ("Company on-sale?",     on_sale_str,                               on_sale_now),
+            ("Average Target Price",           _f_price(avg_target_ss),               None),
+            ("WACC",                           f"{wacc_live * 100:.2f}%",             None),
+            ("Fair Value per share",           _f_price(fair_value_now),              None),
+            ("Margin of Safety (%)",           f"{mos_pct_live:.0f}%",               None),
+            ("Buy Price",                      _f_price(buy_price_now),              None),
+            ("Current Stock Price",            _f_price(price_now),                  None),
+            ("Company on-sale?",               on_sale_str,                          on_sale_now),
+            ("Upside/Downside (Based on FV)",  _fmt_delta(fair_value_now, price_now), None),
+            ("Upside/Downside (Based on Buy)", _fmt_delta(buy_price_now,  price_now), None),
         ]
 
         # Build HTML table — same style as _checklist_html
@@ -1286,12 +1287,37 @@ def render_cf_irr_tab(norm, raw):
     # Use the session-state cashflows (irr_val was computed at top)
     _sub("IRR Cash Flow Schedule")
     if price_now and fcf_cashflows:
-        irr_rows = [{"Year": "0 (Entry)", "Cash Flow": _f_price(-price_now),
-                     "Note": "Entry — Current Market Price"}]
-        for idx, cf in enumerate(fcf_cashflows, start=1):
-            note = "Adj. FCF/s" if idx < len(fcf_cashflows) else "Adj. FCF/s + Terminal Value (Stock Price)"
-            irr_rows.append({"Year": str(base_year + idx),
-                             "Cash Flow": _f_price(cf), "Note": note})
+        # Decompose year-9 cash flow into FCF/s + terminal price components
+        _irr_adj_ps_yr9 = _fcf_fc_ss[-1]["Est. Adj. FCF/s"] if _fcf_fc_ss else None
+        _irr_exit_yield  = float(st.session_state.get("cfirr_fcf_exit_yield", 10.0)) / 100.0
+        _irr_terminal    = (_irr_adj_ps_yr9 / _irr_exit_yield
+                            if _irr_adj_ps_yr9 and _irr_exit_yield > 0 else None)
+
+        irr_rows = []
+        # Year 0: entry outflow
+        irr_rows.append({
+            "Year":            f"0  ({base_year})",
+            "price":           _f_price(-price_now),
+            "Est. FCF/s":      "",
+            "Total Cash Flow": _f_price(-price_now),
+        })
+        # Years 1–8: annual FCF/s only
+        for idx in range(1, 9):
+            cf = fcf_cashflows[idx - 1]
+            irr_rows.append({
+                "Year":            str(base_year + idx),
+                "price":           "",
+                "Est. FCF/s":      _f_price(cf),
+                "Total Cash Flow": _f_price(cf),
+            })
+        # Year 9: FCF/s + terminal price
+        irr_rows.append({
+            "Year":            str(base_year + 9),
+            "price":           _f_price(_irr_terminal),
+            "Est. FCF/s":      _f_price(_irr_adj_ps_yr9),
+            "Total Cash Flow": _f_price(fcf_cashflows[-1]),
+        })
+
         df_irr = pd.DataFrame(irr_rows).set_index("Year")
         st.dataframe(df_irr, use_container_width=True)
 
