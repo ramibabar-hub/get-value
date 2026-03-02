@@ -127,35 +127,15 @@ def _ss_default(key, val):
 
 # ── Shared: build search suggestions and return chosen ticker ─────────────────
 def _search_widget(input_key: str, select_key: str, placeholder: str) -> str:
-    """
-    Renders text_input + optional selectbox. Returns the resolved ticker string.
-    on_change fires when the user stops typing (Enter / focus-loss) and stores
-    search results in session_state so the dropdown appears on the next render.
-    Reading the query directly from st.session_state[input_key] (the widget
-    value) avoids the stale-key bug where a separate query_key stayed "".
-    """
-    results_key = f"_hits_{input_key}"
-
-    def _on_change():
-        q = st.session_state.get(input_key, "").strip()
-        st.session_state[results_key] = _search(q) if q else []
-
-    _ss_default(input_key, "")
-    _ss_default(results_key, [])
-
-    st.text_input(
+    query = st.text_input(
         input_key,
         key=input_key,
         placeholder=placeholder,
         label_visibility="collapsed",
-        on_change=_on_change,
     )
-
-    query = st.session_state.get(input_key, "").strip()
-    hits  = st.session_state.get(results_key, [])
-    candidate = query.upper()
-
-    if query:
+    candidate = query.strip().upper()
+    if len(query.strip()) >= 1:
+        hits = _search(query.strip())
         if hits:
             labels = []
             for s in hits[:15]:
@@ -168,7 +148,7 @@ def _search_widget(input_key: str, select_key: str, placeholder: str) -> str:
                     f"{s.get('flag','🏳️')} {s.get('symbol','')} — "
                     f"{s.get('name','')} ({exch_display})"
                 )
-            safe_q  = query[:24].replace(" ", "_")
+            safe_q  = query.strip()[:24].replace(" ", "_")
             dyn_key = f"{select_key}__{safe_q}"
             chosen  = st.selectbox(
                 select_key, labels, key=dyn_key, label_visibility="collapsed"
@@ -176,9 +156,8 @@ def _search_widget(input_key: str, select_key: str, placeholder: str) -> str:
             candidate = chosen.split(" — ")[0].split()[-1].strip()
         else:
             st.caption(
-                "⚠️ לא נמצאו תוצאות. "
-                "לבורסות מחוץ לארה\"ב הוסף suffix: "
-                "**NICE.TA** (ישראל) · **BMW.DE** (גרמניה) · **VOD.L** (לונדון)"
+                "⚠️ לא נמצאו תוצאות. לבורסות מחוץ לארה\"ב הוסף suffix: "
+                "NICE.TA (ישראל) · BMW.DE (גרמניה) · VOD.L (לונדון)"
             )
     return candidate
 
