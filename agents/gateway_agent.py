@@ -175,29 +175,29 @@ class GatewayAgent:
 
         # Try 1: /stable endpoint
         url = f"{self.base_url}/{path}"
-        print(f"[GatewayAgent] GET {url} symbol={ticker}")
+        print(f"[GatewayAgent] FETCH {label} via stable")
         try:
             res = requests.get(url, params=params, timeout=10)
             body = res.json()
             if isinstance(body, list) and body:
-                print(f"[GatewayAgent] OK {label}: {len(body)} records")
+                print(f"[GatewayAgent] OK stable {label}: {len(body)} records")
                 return body
-            print(f"[GatewayAgent] EMPTY from stable {label} — trying v3 fallback")
+            print(f"[GatewayAgent] EMPTY stable {label} status={res.status_code} — trying v3")
         except Exception as e:
-            print(f"[GatewayAgent] EXCEPTION stable {label}: {e}")
+            print(f"[GatewayAgent] ERROR stable {label}: {e}")
 
-        # Try 2: /api/v3 fallback (better support for non-US tickers like .TA, .L)
+        # Try 2: /api/v3 fallback — required for non-US tickers (.TA, .L, .DE etc.)
         try:
             v3_url = f"https://financialmodelingprep.com/api/v3/{path}"
-            print(f"[GatewayAgent] GET v3 {v3_url} symbol={ticker}")
+            print(f"[GatewayAgent] FETCH {label} via v3")
             res = requests.get(v3_url, params=params, timeout=10)
             body = res.json()
             if isinstance(body, list) and body:
                 print(f"[GatewayAgent] OK v3 {label}: {len(body)} records")
                 return body
-            print(f"[GatewayAgent] EMPTY v3 {label}: status={res.status_code}")
+            print(f"[GatewayAgent] EMPTY v3 {label} status={res.status_code}")
         except Exception as e:
-            print(f"[GatewayAgent] EXCEPTION v3 {label}: {e}")
+            print(f"[GatewayAgent] ERROR v3 {label}: {e}")
 
         return []
 
