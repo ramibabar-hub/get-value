@@ -168,32 +168,38 @@ class GatewayAgent:
         if not self.api_key:
             print(f"[GatewayAgent] No API key — skipping {path}/{ticker}")
             return []
-        url = f"{self.base_url}/{path}"
         params = {"symbol": ticker, "apikey": self.api_key, "limit": 15}
         if is_quarterly:
             params["period"] = "quarter"
         label = f"{'Q' if is_quarterly else 'A'}/{path}/{ticker}"
-        print(f"[GatewayAgent] GET {url} limit=15")
+
+        # Try 1: /stable endpoint
+        url = f"{self.base_url}/{path}"
+        print(f"[GatewayAgent] GET {url} symbol={ticker}")
         try:
             res = requests.get(url, params=params, timeout=10)
             body = res.json()
-            if not isinstance(body, list):
-                print(f"[GatewayAgent] ERROR {label} status={res.status_code}: {body}")
-                return []
-            if not body:
-                print(f"[GatewayAgent] EMPTY {label} (0 records)")
-                return []
-            first = body[0]
-            print(f"[GatewayAgent] OK {label}: {len(body)} records | "
-                  f"fiscalYear={first.get('fiscalYear')} calendarYear={first.get('calendarYear')} "
-                  f"period={first.get('period')}")
-            if not first.get('fiscalYear') and not first.get('calendarYear'):
-                print(f"[GatewayAgent] DIAGNOSTIC — first record keys: {list(first.keys())}")
-                print(f"[GatewayAgent] DIAGNOSTIC — first record: {json.dumps(first, default=str)}")
-            return body
+            if isinstance(body, list) and body:
+                print(f"[GatewayAgent] OK {label}: {len(body)} records")
+                return body
+            print(f"[GatewayAgent] EMPTY from stable {label} — trying v3 fallback")
         except Exception as e:
-            print(f"[GatewayAgent] EXCEPTION {label}: {e}")
-            return []
+            print(f"[GatewayAgent] EXCEPTION stable {label}: {e}")
+
+        # Try 2: /api/v3 fallback (better support for non-US tickers like .TA, .L)
+        try:
+            v3_url = f"https://financialmodelingprep.com/api/v3/{path}"
+            print(f"[GatewayAgent] GET v3 {v3_url} symbol={ticker}")
+            res = requests.get(v3_url, params=params, timeout=10)
+            body = res.json()
+            if isinstance(body, list) and body:
+                print(f"[GatewayAgent] OK v3 {label}: {len(body)} records")
+                return body
+            print(f"[GatewayAgent] EMPTY v3 {label}: status={res.status_code}")
+        except Exception as e:
+            print(f"[GatewayAgent] EXCEPTION v3 {label}: {e}")
+
+        return []
 
     def fetch_all(self, ticker):
         return {
