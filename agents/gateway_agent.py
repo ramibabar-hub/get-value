@@ -201,6 +201,52 @@ class GatewayAgent:
 
         return []
 
+    def fetch_historical_prices(self, ticker: str) -> list:
+        """Fetch daily historical prices for a ticker.
+
+        Returns a flat list of dicts: [{date, open, high, low, close, adjClose, ...}].
+        FMP wraps the list under {"historical": [...]} — this method unwraps it.
+        Tries the /stable endpoint first, falls back to /api/v3.
+        """
+        if not self.api_key:
+            return []
+
+        def _extract(body):
+            if isinstance(body, list) and body:
+                return body
+            if isinstance(body, dict):
+                hist = body.get("historical") or body.get("historicalStockList", [])
+                if isinstance(hist, list) and hist:
+                    return hist
+            return []
+
+        # Try 1: stable
+        try:
+            url  = f"{self.base_url}/historical-price-full"
+            res  = requests.get(url, params={"symbol": ticker, "apikey": self.api_key},
+                                timeout=15)
+            data = _extract(res.json())
+            if data:
+                print(f"[GatewayAgent] historical-prices stable {ticker}: {len(data)} records")
+                return data
+            print(f"[GatewayAgent] historical-prices stable {ticker}: empty — trying v3")
+        except Exception as e:
+            print(f"[GatewayAgent] historical-prices stable {ticker} ERROR: {e}")
+
+        # Try 2: v3 (ticker in path)
+        try:
+            url  = f"https://financialmodelingprep.com/api/v3/historical-price-full/{ticker}"
+            res  = requests.get(url, params={"apikey": self.api_key}, timeout=15)
+            data = _extract(res.json())
+            if data:
+                print(f"[GatewayAgent] historical-prices v3 {ticker}: {len(data)} records")
+                return data
+            print(f"[GatewayAgent] historical-prices v3 {ticker}: empty")
+        except Exception as e:
+            print(f"[GatewayAgent] historical-prices v3 {ticker} ERROR: {e}")
+
+        return []
+
     def fetch_all(self, ticker):
         return {
             "annual_income_statement":    self.fetch_data("income-statement",       ticker),
@@ -213,6 +259,8 @@ class GatewayAgent:
             # key-metrics: per-period price, market cap, employees, and pre-computed multiples
             "annual_key_metrics":         self.fetch_data("key-metrics",            ticker),
             "quarterly_key_metrics":      self.fetch_data("key-metrics",            ticker, True),
+            # daily price history — used by cf_irr_tab for Dec-31 stock prices in Table 3.1
+            "historical_prices":          self.fetch_historical_prices(ticker),
         }
 
     # ── autocomplete search ───────────────────────────────────────────────────

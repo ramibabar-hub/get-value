@@ -175,35 +175,45 @@ def _cagr_local(end_val, start_val, n_years):
 def _dec31_price(raw, year_str):
     """Return closing price for the last trading day of the given year.
 
-    Filters to dates within the year that are on or before Dec 31, then
-    picks the latest one (handles weekends/holidays with no explicit fallback needed).
+    Strategy:
+    1. Pull price history from raw — checks both "historical_prices" (our key after
+       fetch_all) and "historical" (raw FMP response key) so either storage works.
+    2. Filters to dates on or before Dec 31 of the target year (handles weekends,
+       Israeli Sundays, and any other non-US holiday schedules automatically).
+    3. Picks the latest such date — that is the last trading day of the year.
+    4. Prefers adjClose over close; falls back to close.
     """
     import datetime
-    hist = raw.get("historical_prices", [])
+    hist = (raw.get("historical_prices")
+            or raw.get("historical")
+            or [])
     if not hist:
         return None
     yr = str(year_str)
     try:
-        dec31 = datetime.date(int(yr), 12, 31)
+        yr_int = int(yr)
+        dec31  = datetime.date(yr_int, 12, 31)
     except (ValueError, TypeError):
         return None
     candidates = []
     for p in hist:
         if not isinstance(p, dict):
             continue
-        d_str = str(p.get("date", ""))
-        if not d_str:
+        d_str = str(p.get("date") or "")
+        if len(d_str) < 4:
             continue
         try:
             d = datetime.date.fromisoformat(d_str[:10])
         except ValueError:
             continue
-        if d.year == int(yr) and d <= dec31:
-            candidates.append((d, p))
+        if d.year == yr_int and d <= dec31:
+            px = _s(p.get("adjClose") or p.get("close"))
+            if px is not None:
+                candidates.append((d, px))
     if not candidates:
         return None
-    _, best = max(candidates, key=lambda x: x[0])
-    return _s(best.get("adjClose") or best.get("close"))
+    _, best_px = max(candidates, key=lambda x: x[0])
+    return best_px
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -792,8 +802,9 @@ def render_cf_irr_tab(norm, raw):
             st.session_state[key] = val
 
     # Use InsightsAgent 10-yr CAGRs as default growth rates; TTM EV/EBITDA as default exit multiple
-    _ebt_g_default = _pct_default(ebt_c10, 10.0)
-    _fcf_g_default = _pct_default(fcf_c10, 10.0)
+    # Fallback is 5% (conservative) when no CAGR data is available
+    _ebt_g_default = _pct_default(ebt_c10, 5.0)
+    _fcf_g_default = _pct_default(fcf_c10, 5.0)
     _exit_mult_def = round(ev_ebt_ttm_numeric, 1) if ev_ebt_ttm_numeric else 15.0
 
     _init("cfirr_ebitda_growth_yoy",    [_ebt_g_default] * 9)
