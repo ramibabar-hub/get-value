@@ -131,6 +131,7 @@ class GatewayAgent:
         self.api_key = _load_api_key()
         # FMP deprecated /api/v3 on Aug 31 2025 — use /stable
         self.base_url = "https://financialmodelingprep.com/stable"
+        print(f"[GatewayAgent] base_url={self.base_url}")
         if not self.api_key:
             print("[GatewayAgent] WARNING: FMP_API_KEY not found in secrets, env, or .env")
         else:
@@ -261,21 +262,12 @@ class GatewayAgent:
                         "currency":         p.get("currency", ""),
                     }])
 
-        # Step 2: general FMP search — try stable endpoint, fallback to v3
-        body = self._get("search", {"query": q, "limit": limit})
+        # Step 2: FMP stable uses "search-ticker" not "search"
+        body = self._get("search-ticker", {"query": q, "limit": limit})
+        print(f"[DEBUG] search-ticker result count: {len(body) if isinstance(body, list) else body}")
         if not isinstance(body, list) or len(body) == 0:
-            body = self._get("search-ticker", {"query": q, "limit": limit})
-        if not isinstance(body, list) or len(body) == 0:
-            try:
-                import requests as _req
-                res = _req.get(
-                    "https://financialmodelingprep.com/api/v3/search",
-                    params={"query": q, "limit": limit, "apikey": self.api_key},
-                    timeout=8,
-                )
-                body = res.json()
-            except Exception:
-                body = []
+            body = self._get("search", {"query": q, "limit": limit})
+            print(f"[DEBUG] search fallback result count: {len(body) if isinstance(body, list) else body}")
         _add(body if isinstance(body, list) else [])
 
         return results
