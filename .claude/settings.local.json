@@ -3,7 +3,10 @@
     "allow": [
       "Bash(python:*)",
       "Bash(mkdir:*)",
-      "Bash(python3:*)"
+      "Bash(python3:*)",
+      "Bash(find .:*)",
+      "Bash(pip install:*)",
+      "Bash(npm run:*)"
     ]
   }
 }
