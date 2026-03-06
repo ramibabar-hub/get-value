@@ -178,6 +178,21 @@ def _normalize_statements(period_dict: dict, field_map: dict,
     return records
 
 
+def _next_earnings_date(fund: dict) -> str | None:
+    """
+    Return the nearest future earnings date from EODHD's Earnings section,
+    or None if not found.
+    """
+    try:
+        from datetime import date as _date
+        today = str(_date.today())
+        history = (fund.get("Earnings") or {}).get("History") or {}
+        future = [d for d in history if isinstance(d, str) and d >= today]
+        return min(future) if future else None
+    except Exception:
+        return None
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 #  EODHDService
 # ─────────────────────────────────────────────────────────────────────────────
@@ -204,8 +219,12 @@ class EODHDService:
             )
             res.raise_for_status()
             return res.json()
+        except requests.HTTPError as exc:
+            status = exc.response.status_code if exc.response is not None else "?"
+            print(f"[EODHDService] ERROR {status} GET {path}: {exc}", flush=True)
+            return None
         except Exception as exc:
-            print(f"[EODHDService] GET {path} ERROR: {exc}")
+            print(f"[EODHDService] ERROR {type(exc).__name__} GET {path}: {exc}", flush=True)
             return None
 
     # ── raw fetchers ─────────────────────────────────────────────────────────
@@ -228,11 +247,47 @@ class EODHDService:
         """
         Fetch real-time quote.
         Returns dict with keys: close, open, high, low, change, change_p, volume, …
+        Returns {} when EODHD returns "NA" sentinel values (unknown ticker).
         """
         if not self.api_key:
             return {}
         data = self._get(f"real-time/{ticker}.{exchange}")
-        return data if isinstance(data, dict) else {}
+        if not isinstance(data, dict):
+            return {}
+        # EODHD returns "NA" strings for tickers with no live feed
+        if data.get("close") in (None, "NA", "N/A", ""):
+            print(f"[EODHDService] real-time {ticker}.{exchange}: no live price, trying EOD", flush=True)
+            return {}
+        return data
+
+    def fetch_eod_latest(self, ticker: str, exchange: str) -> dict:
+        """
+        Fetch the most recent end-of-day bar as a price fallback when real-time fails.
+        Returns a dict with the same keys as fetch_real_time (close, volume, change_p).
+        """
+        if not self.api_key:
+            return {}
+        data = self._get(f"eod/{ticker}.{exchange}", {"order": "d", "limit": 1})
+        if not isinstance(data, list) or not data:
+            return {}
+        bar = data[0]
+        prev = data[1].get("adjusted_close") if len(data) > 1 else None
+        close = _safe_float(bar.get("adjusted_close") or bar.get("close"))
+        change_p = None
+        if close and prev:
+            try:
+                change_p = (close - float(prev)) / float(prev) * 100
+            except (TypeError, ZeroDivisionError):
+                pass
+        return {
+            "close":    close,
+            "open":     _safe_float(bar.get("open")),
+            "high":     _safe_float(bar.get("high")),
+            "low":      _safe_float(bar.get("low")),
+            "volume":   bar.get("volume"),
+            "change_p": change_p,
+            "_eod_date": bar.get("date"),   # flag: price is from EOD, not live
+        }
 
     def fetch_historical_prices(self, ticker: str, exchange: str,
                                 limit: int = 2000) -> list:
@@ -365,7 +420,12 @@ class EODHDService:
                                         sh.get("ShortPercentOutstanding")
                                         or sh.get("ShortPercentFloat")
                                     ),
-            "volAvg":               _safe_float(rt.get("volume")),
+            "volAvg":               _safe_float(
+                                        rt.get("average_volume")
+                                        or rt.get("avgVolume")
+                                        or rt.get("volume")
+                                    ),
+            "earningsAnnouncement": _next_earnings_date(fund),
         }
 
     # ── public interface ──────────────────────────────────────────────────────
@@ -392,9 +452,16 @@ class EODHDService:
     def fetch_overview(self, ticker: str, exchange: str) -> dict:
         """
         Fetch real-time + fundamentals and return an FMP-compatible overview dict.
+        Falls back to EOD historical price when real-time returns no live data.
         """
         fund = self.fetch_fundamentals(ticker, exchange)
         rt   = self.fetch_real_time(ticker, exchange)
+        if not rt:
+            # Real-time unavailable — try EOD historical as price fallback
+            eod = self.fetch_eod_latest(ticker, exchange)
+            if eod:
+                print(f"[EODHDService] using EOD fallback price for {ticker}.{exchange}: {eod.get('close')}", flush=True)
+                rt = eod
         if not fund and not rt:
             return {}
         return self._normalize_overview(fund, rt, ticker, exchange)

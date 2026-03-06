@@ -442,8 +442,8 @@ export default function StockDashboard({ ticker, onSearch }: StockDashboardProps
     const load = <T,>(url: string, set: (d: T) => void, setErr: (e: string | null) => void, setLoading: (b: boolean) => void) =>
       fetch(url)
         .then((r) => { if (!r.ok) return r.json().then((b) => Promise.reject(b.detail ?? `HTTP ${r.status}`)); return r.json(); })
-        .then((d: T) => set(d))
-        .catch((e: unknown) => setErr(typeof e === "string" ? e : "Failed to load"))
+        .then((d: T) => { console.log(`[API] ${url}`, d); set(d); })
+        .catch((e: unknown) => { console.error(`[API] ${url} FAILED:`, e); setErr(typeof e === "string" ? e : "Failed to load"); })
         .finally(() => setLoading(false));
 
     load<OverviewData>          (`/api/overview/${ticker}`,                          setOv,    setOvErr,  setOvLoad);

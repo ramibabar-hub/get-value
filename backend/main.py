@@ -209,6 +209,50 @@ def _reit_prof_rows(norm, real_cols: list[str]) -> list[dict]:
     return [row]
 
 
+def _reit_mval_rows(norm, raw_data: dict, real_cols: list[str], ov: dict) -> list[dict]:
+    """
+    Build 2 REIT Market & Valuation rows: P/FFO and FFO Payout Ratio.
+    Injected after 'P/Adj. FCF' in the Market & Valuation table.
+    """
+    km_l    = raw_data.get("annual_key_metrics") or []
+    mkt_ttm = _sf(ov.get("mktCap"))
+
+    def _ffo(is_recs, cf_recs):
+        ni = _ssum(is_recs, "netIncome")
+        da = _reit_da(is_recs, cf_recs)
+        return (ni + da) if (ni is not None and da is not None) else None
+
+    ffo_ttm   = _ffo((norm.q_is or [])[:4], (norm.q_cf or [])[:4])
+    div_ttm   = _ssum((norm.q_cf or [])[:4], "commonDividendsPaid")
+    div_abs   = abs(div_ttm) if div_ttm is not None else None
+
+    p_ffo_row: dict = {
+        "label": "P/FFO",
+        "fmt": "ratio",
+        "TTM": _strip_nan((mkt_ttm / ffo_ttm) if (mkt_ttm and ffo_ttm and ffo_ttm > 0) else None),
+    }
+    payout_row: dict = {
+        "label": "FFO Payout Ratio",
+        "fmt": "pct",
+        "TTM": _strip_nan((div_abs / ffo_ttm) if (div_abs is not None and ffo_ttm and ffo_ttm > 0) else None),
+    }
+
+    for col in real_cols:
+        if col == "TTM" or col.startswith("N/A"):
+            continue
+        yr_idx = real_cols.index(col) - 1
+        is_rec = [norm.is_l[yr_idx]] if yr_idx < len(norm.is_l) else []
+        cf_rec = [norm.cf_l[yr_idx]] if yr_idx < len(norm.cf_l) else []
+        ffo_yr = _ffo(is_rec, cf_rec)
+        mkt_yr = _sf(km_l[yr_idx].get("marketCap")) if (yr_idx < len(km_l) and isinstance(km_l[yr_idx], dict)) else None
+        div_yr = _ssum(cf_rec, "commonDividendsPaid")
+        div_abs_yr = abs(div_yr) if div_yr is not None else None
+        p_ffo_row[col]  = _strip_nan((mkt_yr / ffo_yr) if (mkt_yr and ffo_yr and ffo_yr > 0) else None)
+        payout_row[col] = _strip_nan((div_abs_yr / ffo_yr) if (div_abs_yr is not None and ffo_yr and ffo_yr > 0) else None)
+
+    return [p_ffo_row, payout_row]
+
+
 def _reit_capstruct_row(norm, real_cols: list[str]) -> list[dict]:
     """
     Build 1 REIT capital-structure row: FFO Interest Coverage.
@@ -235,6 +279,58 @@ def _reit_capstruct_row(norm, real_cols: list[str]) -> list[dict]:
         row[col] = _strip_nan(_compute(is_rec, cf_rec))
 
     return [row]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Skeleton data (zero-filled 10-year statements when no source has data)
+# ─────────────────────────────────────────────────────────────────────────────
+
+_SKELETON_YEARS = list(range(2025, 2015, -1))   # newest-first: 2025 … 2016
+
+
+def _skeleton_raw_data() -> dict:
+    """
+    Return a zero-filled 10-year financial dataset in FMP canonical format.
+    Used when both EODHD and FMP are blocked by subscription limits.
+    Keeps FinancialsTab columns visible instead of showing a 404 error.
+    """
+    def _recs(fields: list) -> list:
+        rows = []
+        for yr in _SKELETON_YEARS:
+            rec: dict = {
+                "date": f"{yr}-12-31",
+                "fiscalYear": str(yr), "calendarYear": str(yr), "period": "FY",
+            }
+            for f in fields:
+                rec[f] = 0
+            rows.append(rec)
+        return rows
+
+    return {
+        "annual_income_statement": _recs([
+            "revenue", "grossProfit", "costOfRevenue", "operatingIncome",
+            "netIncome", "ebitda", "eps", "epsDiluted",
+            "weightedAverageShsOut", "weightedAverageShsOutDil", "interestExpense",
+        ]),
+        "quarterly_income_statement": [],
+        "annual_balance_sheet": _recs([
+            "totalAssets", "totalCurrentAssets", "totalLiabilities",
+            "totalCurrentLiabilities", "totalStockholdersEquity",
+            "cashAndCashEquivalents", "totalDebt", "longTermDebt",
+            "commonStockSharesOutstanding", "netReceivables", "inventory",
+        ]),
+        "quarterly_balance_sheet": [],
+        "annual_cash_flow": _recs([
+            "operatingCashFlow", "capitalExpenditure", "freeCashFlow",
+            "stockBasedCompensation", "commonDividendsPaid",
+        ]),
+        "quarterly_cash_flow": [],
+        "annual_ratios":         [],
+        "annual_key_metrics":    [],
+        "quarterly_key_metrics": [],
+        "historical_prices":     [],
+        "_is_skeleton":          True,   # flag for downstream logging
+    }
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -341,7 +437,8 @@ def financials(
 
     if not raw_data.get("annual_income_statement") and \
        not raw_data.get("quarterly_income_statement"):
-        raise HTTPException(status_code=404, detail=f"No financial data found for '{ticker}'.")
+        print(f"[financials] No data for {ticker} — using skeleton", flush=True)
+        raw_data = _skeleton_raw_data()
 
     norm        = DataNormalizer(raw_data, ticker)
     all_headers = norm.get_column_headers(p)
@@ -562,6 +659,11 @@ def financials_extended(
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Data fetch failed: {exc}")
 
+    if not raw_data.get("annual_income_statement") and \
+       not raw_data.get("quarterly_income_statement"):
+        print(f"[financials_extended] No data for {ticker} — using skeleton", flush=True)
+        raw_data = _skeleton_raw_data()
+
     # Late import to avoid streamlit at module-load time
     try:
         from financials_tab import FinancialExtras
@@ -599,8 +701,19 @@ def financials_extended(
     prof_rows   = _clean_ext(profitab)
     capst_rows  = _clean_ext(cap_struct)
 
-    # Inject REIT-specific rows into Profitability and Capital Structure
+    # Inject REIT-specific rows
     if _is_reit(ov):
+        # Market & Valuation: P/FFO and FFO Payout Ratio after "P/Adj. FCF"
+        reit_mval = _reit_mval_rows(norm, raw_data, real_cols, ov)
+        padj_idx = next(
+            (i for i, r in enumerate(mval_rows) if r.get("label") == "P/Adj. FCF"),
+            None,
+        )
+        if padj_idx is not None:
+            mval_rows = mval_rows[:padj_idx + 1] + reit_mval + mval_rows[padj_idx + 1:]
+        else:
+            mval_rows.extend(reit_mval)
+
         # Profitability: FFO / Total Revenue (%) after "Adj. FCF"
         reit_prof = _reit_prof_rows(norm, real_cols)
         adj_fcf_idx = next(

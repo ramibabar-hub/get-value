@@ -50,7 +50,7 @@ _FMP_SUFFIX_TO_EODHD: dict[str, str] = {
     "JK":  "JK",     # Indonesia IDX
     "KL":  "KLSE",   # Malaysia KLSE
     # Middle East / Africa
-    "TA":  "TA",     # Tel Aviv Stock Exchange (Israel)
+    "TA":  "TA",     # Tel Aviv Stock Exchange (Israel) — EODHD uses "TA" (same as FMP suffix)
     "SA":  "SA",     # São Paulo B3 (Brazil)
     "JO":  "JSE",    # Johannesburg Stock Exchange
     # Americas (non-US)
@@ -188,13 +188,24 @@ class SmartGateway:
             return ov
         else:
             ov = self._eod.fetch_overview(eod_base, eod_exchange)
-            if ov:
+            # Require companyName — a dict with only price/volume (fundamentals 403) is not enough
+            if ov and ov.get("companyName"):
+                # Merge FMP price if EODHD price is missing
+                if not ov.get("price"):
+                    fmp_ov = self._fmp.fetch_overview(fmp_ticker)
+                    if fmp_ov.get("price"):
+                        ov["price"] = fmp_ov["price"]
+                        ov["changesPercentage"] = fmp_ov.get("changesPercentage", 0)
                 ov.setdefault("_source", "eodhd")
                 return ov
-            print(f"[SmartGateway] EODHD overview empty for {ticker} — falling back to FMP")
-            ov = self._fmp.fetch_overview(fmp_ticker)
-            ov.setdefault("_source", "fmp_fallback")
-            return ov
+            print(f"[SmartGateway] EODHD overview insufficient for {ticker} — falling back to FMP")
+            fmp_ov = self._fmp.fetch_overview(fmp_ticker)
+            # Enrich with EODHD real-time price if FMP price is missing
+            if ov and ov.get("price") and not fmp_ov.get("price"):
+                fmp_ov["price"] = ov["price"]
+                fmp_ov["changesPercentage"] = ov.get("changesPercentage", 0)
+            fmp_ov.setdefault("_source", "fmp_fallback")
+            return fmp_ov
 
     # ── convenience: routing info ─────────────────────────────────────────────
 

@@ -136,10 +136,22 @@ class FMPService:
 
         data = dict(profile)
 
+        # Normalise profile field names (FMP profile uses different names than quote)
+        # These are fallbacks — the quote block below will override with live data if available
+        if not data.get("mktCap"):
+            data["mktCap"] = data.get("marketCap")
+        if not data.get("volAvg"):
+            data["volAvg"] = data.get("averageVolume") or data.get("avgVolume")
+        if not data.get("changesPercentage"):
+            data["changesPercentage"] = data.get("changePercentage") or 0
+
         # Quote overrides for live price / pe / eps
+        # New stable API uses "changePercentage" (no 's'); handle both
         for field in ("price", "changesPercentage", "change", "eps", "pe"):
             if quote.get(field) is not None:
                 data[field] = quote[field]
+        if quote.get("changePercentage") is not None:
+            data["changesPercentage"] = quote["changePercentage"]
         if quote.get("avgVolume"):
             data["volAvg"] = quote["avgVolume"]
         if quote.get("marketCap"):
@@ -151,10 +163,17 @@ class FMPService:
             or data.get("earningsAnnouncement")
         )
 
-        # Fill P/E gap
+        # Fill P/E gap — try key-metrics earningsYieldTTM, then price÷EPS
         _pe = data.get("pe")
         if (not _pe or _pe < 0) and km.get("peRatioTTM") and km["peRatioTTM"] > 0:
             data["pe"] = km["peRatioTTM"]
+        if not data.get("pe") or data["pe"] < 0:
+            ey = km.get("earningsYieldTTM")
+            try:
+                if ey and float(ey) > 0:
+                    data["pe"] = round(1.0 / float(ey), 2)
+            except (TypeError, ValueError):
+                pass
         if not data.get("beta") and km.get("beta"):
             data["beta"] = km["beta"]
 
@@ -165,6 +184,27 @@ class FMPService:
                 or sf.get("shortPercent")
                 or sf.get("shortRatio")
                 or data.get("shortRatio")
+            )
+
+        # Institutional / insider ownership — FMP profile may include these as decimals
+        def _pct_from_decimal(raw) -> float | None:
+            if raw is None:
+                return None
+            try:
+                f = float(raw)
+                return round(f * 100, 4) if f < 1.5 else f
+            except (TypeError, ValueError):
+                return None
+
+        if not data.get("heldByInsiders"):
+            data["heldByInsiders"] = _pct_from_decimal(
+                data.get("institutionalHolderProportion")
+                or data.get("insiderOwnership")
+            )
+        if not data.get("heldByInstitutions"):
+            data["heldByInstitutions"] = _pct_from_decimal(
+                data.get("institutionalOwnershipProportion")
+                or data.get("institutionalHolderProportion")
             )
 
         # Fiscal year + best EPS
