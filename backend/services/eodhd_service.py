@@ -357,6 +357,15 @@ class EODHDService:
             "_latestFiscalYear": gen.get("FiscalYearEnd", "N/A"),
             "_eps":              eps,
             "_source":          "eodhd",
+            # Header strip fields
+            "exDividendDate":       hi.get("ExDividendDate") or hi.get("DividendDate"),
+            "heldByInsiders":       _safe_float(sh.get("PercentInsiders")),
+            "heldByInstitutions":   _safe_float(sh.get("PercentInstitutions")),
+            "shortPercent":         _safe_float(
+                                        sh.get("ShortPercentOutstanding")
+                                        or sh.get("ShortPercentFloat")
+                                    ),
+            "volAvg":               _safe_float(rt.get("volume")),
         }
 
     # ── public interface ──────────────────────────────────────────────────────

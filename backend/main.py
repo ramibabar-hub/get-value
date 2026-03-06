@@ -78,6 +78,166 @@ def _clean_rows(rows: list[dict], real_cols: list[str]) -> list[dict]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+#  REIT helpers
+# ─────────────────────────────────────────────────────────────────────────────
+
+import math as _math
+
+def _sf(v):
+    """Safe float coercion."""
+    if v is None: return None
+    try:
+        f = float(v)
+        return f if _math.isfinite(f) else None
+    except Exception:
+        return None
+
+
+def _ssum(recs, key):
+    """Sum all finite numeric values for key across a list of dicts."""
+    vals = [_sf(r.get(key)) for r in recs if isinstance(r, dict)]
+    vals = [v for v in vals if v is not None]
+    return sum(vals) if vals else None
+
+
+# Industries that trigger REIT-specific metrics
+_REIT_INDUSTRIES: frozenset = frozenset({
+    "REIT—Residential", "REIT—Office", "REIT—Retail",
+    "REIT—Industrial", "REIT—Healthcare Facilities",
+    "REIT—Hotel & Motel", "REIT—Specialty", "REIT—Diversified",
+    "Real Estate—Development", "Real Estate Services",
+    "Real Estate—Diversified", "Residential Construction",
+    # FMP uses em-dash or regular dash; include both
+    "REIT - Residential", "REIT - Office", "REIT - Retail",
+    "REIT - Industrial", "REIT - Healthcare Facilities",
+    "REIT - Hotel & Motel", "REIT - Specialty", "REIT - Diversified",
+    "Real Estate - Development", "Real Estate - Diversified",
+})
+
+
+def _is_reit(ov: dict) -> bool:
+    """Return True when the company is a REIT / Real-Estate entity."""
+    industry = str(ov.get("industry") or "").strip()
+    if industry in _REIT_INDUSTRIES:
+        return True
+    # Broad fallback: any industry containing "REIT" or "Real Estate"
+    il = industry.lower()
+    return "reit" in il or "real estate" in il
+
+
+def _reit_da(is_recs: list, cf_recs: list):
+    """D&A: from CF records first; fall back to EBITDA − operatingIncome."""
+    da = _ssum(cf_recs, "depreciationAndAmortization")
+    if da:
+        return da
+    ebit = _ssum(is_recs, "ebitda")
+    oi   = _ssum(is_recs, "operatingIncome")
+    if ebit is not None and oi is not None:
+        return ebit - oi
+    return None
+
+
+def _reit_is_rows(norm, real_cols: list[str], p: str) -> list[dict]:
+    """
+    Build 5 REIT income-statement rows (raw numbers): NOI, NOI/Sh, FFO, FFO/Sh, AFFO.
+    Injected after EPS in the IS table.
+    """
+    def _compute(is_recs, cf_recs):
+        oi   = _ssum(is_recs, "operatingIncome")
+        ni   = _ssum(is_recs, "netIncome")
+        capx = _ssum(cf_recs, "capitalExpenditure")   # typically negative
+        sh   = (_ssum(is_recs, "weightedAverageShsOutDil")
+                or _ssum(is_recs, "weightedAverageShsOut"))
+        da   = _reit_da(is_recs, cf_recs)
+
+        noi    = (oi + da)    if (oi  is not None and da is not None) else None
+        noi_sh = (noi / sh)   if (noi is not None and sh and sh > 0)  else None
+        ffo    = (ni + da)    if (ni  is not None and da is not None) else None
+        ffo_sh = (ffo / sh)   if (ffo is not None and sh and sh > 0)  else None
+        affo   = (ffo + capx) if (ffo is not None and capx is not None) else None
+
+        return noi, noi_sh, ffo, ffo_sh, affo
+
+    labels = ["NOI", "NOI/Sh", "FFO", "FFO/Sh", "AFFO"]
+    rows = [{"label": lbl} for lbl in labels]
+
+    # TTM — last 4 quarters
+    q_is4 = (norm.q_is or [])[:4]
+    q_cf4 = (norm.q_cf or [])[:4]
+    for row, v in zip(rows, _compute(q_is4, q_cf4)):
+        row["TTM"] = _strip_nan(v)
+
+    # Historical periods
+    is_src = norm.is_l if p == "annual" else norm.q_is
+    cf_src = norm.cf_l if p == "annual" else norm.q_cf
+    for col in real_cols:
+        if col == "TTM" or col.startswith("N/A"):
+            continue
+        yr_idx = real_cols.index(col) - 1
+        is_rec = [is_src[yr_idx]] if yr_idx < len(is_src) else []
+        cf_rec = [cf_src[yr_idx]] if yr_idx < len(cf_src) else []
+        for row, v in zip(rows, _compute(is_rec, cf_rec)):
+            row[col] = _strip_nan(v)
+
+    return rows
+
+
+def _reit_prof_rows(norm, real_cols: list[str]) -> list[dict]:
+    """
+    Build 1 REIT profitability row: FFO / Total Revenue (%).
+    Injected after 'Adj. FCF' in the Profitability table.
+    """
+    def _compute(is_recs, cf_recs):
+        ni  = _ssum(is_recs, "netIncome")
+        rev = _ssum(is_recs, "revenue")
+        da  = _reit_da(is_recs, cf_recs)
+        ffo = (ni + da) if (ni is not None and da is not None) else None
+        return (ffo / rev) if (ffo is not None and rev and rev > 0) else None
+
+    row: dict = {"label": "FFO / Total Revenue (%)", "fmt": "pct"}
+
+    row["TTM"] = _strip_nan(_compute((norm.q_is or [])[:4], (norm.q_cf or [])[:4]))
+
+    for col in real_cols:
+        if col == "TTM" or col.startswith("N/A"):
+            continue
+        yr_idx = real_cols.index(col) - 1
+        is_rec = [norm.is_l[yr_idx]] if yr_idx < len(norm.is_l) else []
+        cf_rec = [norm.cf_l[yr_idx]] if yr_idx < len(norm.cf_l) else []
+        row[col] = _strip_nan(_compute(is_rec, cf_rec))
+
+    return [row]
+
+
+def _reit_capstruct_row(norm, real_cols: list[str]) -> list[dict]:
+    """
+    Build 1 REIT capital-structure row: FFO Interest Coverage.
+    Injected after 'Interest Coverage (EBIT/Interest)' in the Capital Structure table.
+    """
+    def _compute(is_recs, cf_recs):
+        ni   = _ssum(is_recs, "netIncome")
+        intx = _ssum(is_recs, "interestExpense")
+        da   = _reit_da(is_recs, cf_recs)
+        ffo  = (ni + da) if (ni is not None and da is not None) else None
+        int_abs = abs(intx) if (intx is not None and intx != 0) else None
+        return ((ffo + int_abs) / int_abs) if (ffo is not None and int_abs) else None
+
+    row: dict = {"label": "FFO Interest Coverage", "fmt": "ratio"}
+
+    row["TTM"] = _strip_nan(_compute((norm.q_is or [])[:4], (norm.q_cf or [])[:4]))
+
+    for col in real_cols:
+        if col == "TTM" or col.startswith("N/A"):
+            continue
+        yr_idx = real_cols.index(col) - 1
+        is_rec = [norm.is_l[yr_idx]] if yr_idx < len(norm.is_l) else []
+        cf_rec = [norm.cf_l[yr_idx]] if yr_idx < len(norm.cf_l) else []
+        row[col] = _strip_nan(_compute(is_rec, cf_rec))
+
+    return [row]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 #  Endpoints
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -187,12 +347,23 @@ def financials(
     all_headers = norm.get_column_headers(p)
     real_cols   = ["TTM"] + [h for h in all_headers[2:] if not h.startswith("N/A-")]
 
+    is_rows = _clean_rows(norm.get_income_statement(p), real_cols)
+
+    # Inject REIT-specific IS rows after EPS
+    if _is_reit(ov):
+        reit_rows = _reit_is_rows(norm, real_cols, p)
+        eps_idx = next(
+            (i for i, r in enumerate(is_rows) if r.get("label") == "EPS"),
+            len(is_rows) - 1,
+        )
+        is_rows = is_rows[:eps_idx + 1] + reit_rows + is_rows[eps_idx + 1:]
+
     return {
         "ticker":           ticker,
         "period":           p,
         "currency":         ov.get("currency", "USD"),
         "columns":          real_cols,
-        "income_statement": _clean_rows(norm.get_income_statement(p), real_cols),
+        "income_statement": is_rows,
         "balance_sheet":    _clean_rows(norm.get_balance_sheet(p),    real_cols),
         "cash_flow":        _clean_rows(norm.get_cash_flow(p),        real_cols),
         "debt":             _clean_rows(norm.get_debt_table(p),       real_cols),
@@ -245,6 +416,81 @@ def insights(ticker: str):
         {"title": "Efficiency",          "cols": INS_COLS,  "is_pct": False,
          "rows": norm_rows(ins.get_insights_efficiency(),     "Efficiency",   INS_COLS)},
     ]
+
+    # REIT-specific insight rows
+    if _is_reit(ov):
+        is_l  = raw_data.get("annual_income_statement") or []
+        cf_l  = raw_data.get("annual_cash_flow")        or []
+        km_l  = raw_data.get("annual_key_metrics")      or []
+        q_is4 = (raw_data.get("quarterly_income_statement") or [])[:4]
+        q_cf4 = (raw_data.get("quarterly_cash_flow")        or [])[:4]
+
+        def _ffo_reit(is_recs, cf_recs):
+            ni = _ssum(is_recs, "netIncome")
+            da = _reit_da(is_recs, cf_recs)
+            return (ni + da) if (ni is not None and da is not None) else None
+
+        def _ffo_at(i):
+            return _ffo_reit(
+                [is_l[i]] if i < len(is_l) else [],
+                [cf_l[i]] if i < len(cf_l) else [],
+            )
+
+        def _p_ffo_at(i):
+            ffo = _ffo_at(i)
+            mkt = _sf(km_l[i].get("marketCap")) if i < len(km_l) and isinstance(km_l[i], dict) else None
+            return (mkt / ffo) if (mkt and ffo and ffo > 0) else None
+
+        def _ffo_payout_at(i):
+            ffo = _ffo_at(i)
+            d   = _ssum([cf_l[i]] if i < len(cf_l) else [], "commonDividendsPaid")
+            d_abs = abs(d) if d is not None else None
+            return (d_abs / ffo) if (d_abs is not None and ffo and ffo > 0) else None
+
+        def _avg_vals(vals):
+            v = [x for x in vals if x is not None]
+            return sum(v) / len(v) if v else None
+
+        # P/FFO (TTM)
+        ffo_ttm = _ffo_reit(q_is4, q_cf4)
+        mkt_ttm = _sf(ov.get("mktCap"))
+        p_ffo_ttm = (mkt_ttm / ffo_ttm) if (mkt_ttm and ffo_ttm and ffo_ttm > 0) else None
+
+        p_ffo_row = {
+            "label": "P/FFO (TTM)",
+            "TTM":       _strip_nan(p_ffo_ttm),
+            "Avg. 5yr":  _strip_nan(_avg_vals([_p_ffo_at(i) for i in range(5)])),
+            "Avg. 10yr": _strip_nan(_avg_vals([_p_ffo_at(i) for i in range(10)])),
+        }
+
+        # FFO Payout Ratio (%)
+        div_ttm   = _ssum(q_cf4, "commonDividendsPaid")
+        div_abs   = abs(div_ttm) if div_ttm is not None else None
+        ffo_pay_ttm = (div_abs / ffo_ttm) if (div_abs is not None and ffo_ttm and ffo_ttm > 0) else None
+
+        ffo_payout_row = {
+            "label": "FFO Payout Ratio (%)",
+            "TTM":       _strip_nan(ffo_pay_ttm),
+            "Avg. 5yr":  _strip_nan(_avg_vals([_ffo_payout_at(i) for i in range(5)])),
+            "Avg. 10yr": _strip_nan(_avg_vals([_ffo_payout_at(i) for i in range(10)])),
+        }
+
+        for grp in groups:
+            if grp["title"] == "Valuation Multiples":
+                ev_idx = next(
+                    (i for i, r in enumerate(grp["rows"]) if r.get("label") == "EV / EBITDA"),
+                    0,
+                )
+                grp["rows"].insert(ev_idx, p_ffo_row)
+            elif grp["title"] == "Dividends":
+                pr_idx = next(
+                    (i for i, r in enumerate(grp["rows"]) if r.get("label") == "Payout Ratio"),
+                    None,
+                )
+                if pr_idx is not None:
+                    grp["rows"].insert(pr_idx + 1, ffo_payout_row)
+                else:
+                    grp["rows"].append(ffo_payout_row)
 
     return {"ticker": ticker, "groups": groups}
 
@@ -349,13 +595,42 @@ def financials_extended(
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Computation failed: {exc}")
 
+    mval_rows   = _clean_ext(market_val)
+    prof_rows   = _clean_ext(profitab)
+    capst_rows  = _clean_ext(cap_struct)
+
+    # Inject REIT-specific rows into Profitability and Capital Structure
+    if _is_reit(ov):
+        # Profitability: FFO / Total Revenue (%) after "Adj. FCF"
+        reit_prof = _reit_prof_rows(norm, real_cols)
+        adj_fcf_idx = next(
+            (i for i, r in enumerate(prof_rows) if r.get("label") == "Adj. FCF"),
+            None,
+        )
+        if adj_fcf_idx is not None:
+            prof_rows = prof_rows[:adj_fcf_idx + 1] + reit_prof + prof_rows[adj_fcf_idx + 1:]
+        else:
+            prof_rows.extend(reit_prof)
+
+        # Capital Structure: FFO Interest Coverage after "Interest Coverage (EBIT/Interest)"
+        reit_cs = _reit_capstruct_row(norm, real_cols)
+        ic_idx = next(
+            (i for i, r in enumerate(capst_rows)
+             if r.get("label") == "Interest Coverage (EBIT/Interest)"),
+            None,
+        )
+        if ic_idx is not None:
+            capst_rows = capst_rows[:ic_idx + 1] + reit_cs + capst_rows[ic_idx + 1:]
+        else:
+            capst_rows.extend(reit_cs)
+
     return {
         "ticker":           ticker,
         "period":           p,
         "columns":          real_cols,
-        "market_valuation": _clean_ext(market_val),
-        "capital_structure":_clean_ext(cap_struct),
-        "profitability":    _clean_ext(profitab),
+        "market_valuation": mval_rows,
+        "capital_structure": capst_rows,
+        "profitability":    prof_rows,
         "returns":          _clean_ext(returns),
         "liquidity":        _clean_ext(liquidity),
         "dividends":        _clean_ext(dividends),

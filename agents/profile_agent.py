@@ -144,7 +144,7 @@ class ProfileAgent:
             row("P/E",                      self._num(d.get("pe"))),
             row("EPS (TTM)",                self._num(eps_raw)),
             row("Beta",                     self._num(d.get("beta"))),
-            row("Ex-Dividend Date",         self._date(d.get("exDividendDate") or d.get("lastDiv"))),
+            row("Ex-Dividend Date",         self._date(d.get("exDividendDate"))),
             row("% Held by Insiders",       self._pct(d.get("heldByInsiders"))),
             row("% Held by Institutions",   self._pct(d.get("heldByInstitutions")
                                                       or d.get("institutionalHolderProp"))),
