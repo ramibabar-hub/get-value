@@ -297,6 +297,264 @@ def wacc_endpoint(ticker: str):
     }
 
 
+@app.get("/api/financials-extended/{ticker}", summary="Market & Valuation + 6 metric groups", tags=["Financials"])
+def financials_extended(
+    ticker: str,
+    period: str = Query(default="annual", description="'annual' or 'quarterly'"),
+):
+    """
+    Returns Market & Valuation, Capital Structure, Profitability (abs),
+    Returns, Liquidity, Dividends, Efficiency tables.
+    Each row includes a 'fmt' field ('money'|'pct'|'ratio'|'days'|'int').
+    """
+    ticker = ticker.strip().upper()
+    p = "annual" if period.lower() == "annual" else "quarterly"
+
+    try:
+        raw_data = _gw.fetch_all(ticker)
+        ov       = _gw.fetch_overview(ticker)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Data fetch failed: {exc}")
+
+    # Late import to avoid streamlit at module-load time
+    try:
+        from financials_tab import FinancialExtras
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"FinancialExtras import failed: {exc}")
+
+    norm     = DataNormalizer(raw_data, ticker)
+    hdrs     = norm.get_column_headers(p)
+    real_cols_ext = [h for h in hdrs[2:] if not h.startswith("N/A-")]
+    real_cols = ["TTM"] + real_cols_ext
+
+    def _clean_ext(rows: list[dict]) -> list[dict]:
+        out = []
+        for r in rows:
+            entry: dict = {"label": r.get("label", ""), "fmt": r.get("_fmt", "ratio")}
+            for col in real_cols:
+                v = r.get(col)
+                entry[col] = v if isinstance(v, str) else _strip_nan(v)
+            out.append(entry)
+        return out
+
+    try:
+        ext = FinancialExtras(norm, ov)
+        market_val  = ext.get_market_valuation(hdrs, p)
+        cap_struct  = ext.get_capital_structure(hdrs, p)
+        profitab    = ext.get_profitability(hdrs, p)
+        returns     = ext.get_returns(hdrs, p)
+        liquidity   = ext.get_liquidity(hdrs, p)
+        dividends   = ext.get_dividends(hdrs, p)
+        efficiency  = ext.get_efficiency(hdrs, p)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Computation failed: {exc}")
+
+    return {
+        "ticker":           ticker,
+        "period":           p,
+        "columns":          real_cols,
+        "market_valuation": _clean_ext(market_val),
+        "capital_structure":_clean_ext(cap_struct),
+        "profitability":    _clean_ext(profitab),
+        "returns":          _clean_ext(returns),
+        "liquidity":        _clean_ext(liquidity),
+        "dividends":        _clean_ext(dividends),
+        "efficiency":       _clean_ext(efficiency),
+    }
+
+
+@app.get("/api/cf-irr/{ticker}", summary="CF + IRR valuation model", tags=["Valuation"])
+def cf_irr(
+    ticker:        str,
+    ebt_growth:    str   = Query(default="5,5,5,5,5,5,5,5,5", description="9 EBITDA growth rates (%) comma-separated"),
+    exit_mult:     float = Query(default=15.0),
+    fcf_growth:    str   = Query(default="5,5,5,5,5,5,5,5,5", description="9 FCF growth rates (%) comma-separated"),
+    exit_yield:    float = Query(default=5.0,  description="Exit FCF yield (%)"),
+    mos_pct:       float = Query(default=10.0, description="Margin of safety (%)"),
+    wacc_override: float | None = Query(default=None, description="Manual WACC override (%)"),
+):
+    """
+    Returns historical EV/EBITDA and Adj.FCF/s tables plus the full 9-year
+    forecasts, IRR calculation, quality checklist, and final output table.
+    """
+    ticker = ticker.strip().upper()
+
+    try:
+        raw_data = _gw.fetch_all(ticker)
+        ov       = _gw.fetch_overview(ticker)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Data fetch failed: {exc}")
+
+    try:
+        from cf_irr_tab import (
+            _ebitda_hist, _fcf_hist,
+            _ebitda_forecast_yoy, _fcf_forecast_yoy,
+            _irr_calc, _irr_sensitivity_yield,
+            _ttm_bs, _ttm_flow, _s,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"cf_irr_tab import failed: {exc}")
+
+    # Parse growth-rate arrays
+    def _parse_rates(s: str, default: float = 5.0) -> list[float]:
+        try:
+            rates = [float(x) for x in s.split(",")]
+            while len(rates) < 9:
+                rates.append(default)
+            return rates[:9]
+        except Exception:
+            return [default] * 9
+
+    ebt_rates = _parse_rates(ebt_growth, 5.0)
+    fcf_rates = _parse_rates(fcf_growth, 5.0)
+
+    norm = DataNormalizer(raw_data, ticker)
+    ins  = InsightsAgent(raw_data, ov)
+
+    # Compute WACC
+    try:
+        from backend.logic_engine import compute_wacc, damodaran_spread
+        wacc_computed = compute_wacc(raw_data, ov)
+    except Exception:
+        wacc_computed = 0.10
+
+    wacc_val = (wacc_override / 100.0) if wacc_override is not None else wacc_computed
+
+    # Historical tables
+    (ebt_hist, ebt_ttm, ebt_avg, ebt_cagr,
+     nd_ebt_ttm, rev_c10, ebt_c10, ebt_c5,
+     ebt_avg_mult, base_ebitda,
+     ev_ebt_ttm_numeric, local_ebt_cagr_num,
+     local_rev_cagr_num) = _ebitda_hist(norm, ov, ins)
+
+    (fcf_hist, fcf_ttm, fcf_avg, fcf_cagr,
+     adj_ps_ttm, fcf_c10, fcf_c5,
+     local_adj_cagr_num,
+     local_fcf_cagr_num) = _fcf_hist(norm, ov, ins)
+
+    # Defaults for exit multiple
+    if exit_mult == 15.0 and ev_ebt_ttm_numeric:
+        exit_mult = round(ev_ebt_ttm_numeric, 1)
+
+    # Base year
+    base_year = 2024
+    if norm.is_l and isinstance(norm.is_l[0], dict):
+        try:
+            from cf_irr_tab import _year_label
+            base_year = int(_year_label(norm.is_l[0]))
+        except Exception:
+            pass
+
+    # Balance sheet TTM values
+    debt_ttm    = _ttm_bs(norm.q_bs, "totalDebt") or 0.0
+    cash_ttm    = _ttm_bs(norm.q_bs, "cashAndCashEquivalents") or 0.0
+    net_debt_ttm = debt_ttm - cash_ttm
+    sh_ttm = (_ttm_flow(norm.q_is, "weightedAverageShsOutDil")
+              or _ttm_flow(norm.q_is, "weightedAverageShsOut"))
+    price_now = _s(ov.get("price"))
+
+    # EBITDA forecast
+    ebt_fc = _ebitda_forecast_yoy(base_ebitda, ebt_rates, base_year)
+    ebt_yr9_mm = ebt_fc[-1]["Est. EBITDA ($MM)"] if ebt_fc else None
+    ev_yr9 = (ebt_yr9_mm * 1e6 * exit_mult) if ebt_yr9_mm is not None else None
+    mktcap_yr9 = (ev_yr9 - net_debt_ttm) if ev_yr9 is not None else None
+    ebitda_price = _s(mktcap_yr9 / sh_ttm) if (mktcap_yr9 is not None and sh_ttm) else None
+
+    # FCF forecast + IRR cashflows
+    fcf_fc, fcf_cashflows = _fcf_forecast_yoy(adj_ps_ttm, fcf_rates, exit_yield, base_year)
+    fcf_yr9 = fcf_fc[-1]["Est. Adj. FCF/s"] if fcf_fc else None
+    fcf_price = _s(fcf_yr9 / (exit_yield / 100.0)) if (fcf_yr9 and exit_yield > 0) else None
+
+    # Average target
+    avg_target = None
+    if ebitda_price is not None and fcf_price is not None:
+        avg_target = (ebitda_price + fcf_price) / 2.0
+    elif ebitda_price is not None:
+        avg_target = ebitda_price
+    elif fcf_price is not None:
+        avg_target = fcf_price
+
+    # Fair value & buy price
+    fair_value = None
+    buy_price  = None
+    if avg_target is not None and wacc_val > 0:
+        fair_value = avg_target / (1 + wacc_val) ** 9
+        buy_price  = fair_value * (1 - mos_pct / 100.0)
+    on_sale = (fair_value > price_now) if (fair_value is not None and price_now) else None
+
+    # IRR
+    irr_val = None
+    if price_now and price_now > 0 and fcf_cashflows:
+        irr_val = _irr_calc([-price_now] + fcf_cashflows)
+
+    # IRR sensitivity matrix
+    row_lbls, col_lbls, matrix = _irr_sensitivity_yield(
+        adj_ps_ttm, fcf_rates, exit_yield, price_now)
+
+    # Checklist
+    def _chk_float(v, threshold, lower=False):
+        f = _s(v)
+        if f is None or isinstance(v, str):
+            return {"value": "N/A", "display": "N/A", "passed": None}
+        passed = (f < threshold) if lower else (f >= threshold)
+        return {"value": f, "display": f"{f * 100:.1f}%" if not lower else f"{f:.2f}x", "passed": passed}
+
+    checklist = [
+        {"label": "Revenue Growth (10yr CAGR)", "threshold": "> 7%",  **_chk_float(local_rev_cagr_num, 0.07)},
+        {"label": "EBITDA Growth (10yr CAGR)",  "threshold": "> 10%", **_chk_float(local_ebt_cagr_num, 0.10)},
+        {"label": "FCF Growth (10yr CAGR)",     "threshold": "> 10%", **_chk_float(local_fcf_cagr_num, 0.10)},
+        {"label": "Net Debt / EBITDA (TTM)",    "threshold": "< 3x",
+         **{**_chk_float(nd_ebt_ttm, 3.0, lower=True),
+            "display": f"{nd_ebt_ttm:.2f}x" if isinstance(nd_ebt_ttm, (int, float)) else "N/A"}},
+        {"label": "IRR",                        "threshold": "> 12%", **_chk_float(irr_val, 0.12)},
+    ]
+
+    def _row_clean(r: dict) -> dict:
+        return {k: (v if isinstance(v, str) else _strip_nan(v)) for k, v in r.items()}
+
+    return {
+        "ticker":          ticker,
+        "base_year":       base_year,
+        "price_now":       _strip_nan(price_now),
+        "wacc":            _strip_nan(wacc_val),
+        "wacc_computed":   _strip_nan(wacc_computed),
+        "adj_ps_ttm":      _strip_nan(adj_ps_ttm),
+        "base_ebitda":     _strip_nan(base_ebitda),
+        "net_debt_ttm":    _strip_nan(net_debt_ttm),
+        "sh_ttm":          _strip_nan(sh_ttm),
+        "exit_mult":       exit_mult,
+        "exit_yield":      exit_yield,
+        "mos_pct":         mos_pct,
+        "ebt_hist":        [_row_clean(r) for r in ebt_hist],
+        "ebt_ttm":         _row_clean(ebt_ttm),
+        "ebt_avg":         _row_clean(ebt_avg),
+        "ebt_cagr":        _row_clean(ebt_cagr),
+        "fcf_hist":        [_row_clean(r) for r in fcf_hist],
+        "fcf_ttm":         _row_clean(fcf_ttm),
+        "fcf_avg":         _row_clean(fcf_avg),
+        "fcf_cagr":        _row_clean(fcf_cagr),
+        "ebt_forecast":    [_row_clean(r) for r in ebt_fc],
+        "fcf_forecast":    [_row_clean(r) for r in fcf_fc],
+        "ebt_growth_rates": ebt_rates,
+        "fcf_growth_rates": fcf_rates,
+        "ebitda_price":    _strip_nan(ebitda_price),
+        "fcf_price":       _strip_nan(fcf_price),
+        "avg_target":      _strip_nan(avg_target),
+        "fair_value":      _strip_nan(fair_value),
+        "buy_price":       _strip_nan(buy_price),
+        "on_sale":         on_sale,
+        "irr":             _strip_nan(irr_val),
+        "irr_sensitivity": {
+            "row_labels": row_lbls,
+            "col_labels": col_lbls,
+            "matrix":     [[_strip_nan(v) for v in row] for row in matrix],
+        },
+        "checklist":       checklist,
+        "ev_ebt_ttm":      _strip_nan(ev_ebt_ttm_numeric),
+        "ebt_avg_mult":    _strip_nan(ebt_avg_mult),
+    }
+
+
 @app.get("/health", include_in_schema=False)
 def health():
     return {"status": "ok", "version": app.version}

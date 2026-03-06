@@ -1,15 +1,18 @@
 /**
  * FinancialsTab.tsx
  * Pure presentational component — all data is passed in as props.
- * Shows Income Statement, Balance Sheet, and Cash Flow tables.
- * Period and Scale selectors are rendered here but controlled by the parent.
+ * Shows Income Statement, Balance Sheet, Cash Flow, Debt Schedule,
+ * then Market & Valuation, Capital Structure, Profitability, Returns,
+ * Liquidity, Dividends, Efficiency.
  */
 import { memo } from "react";
-import type { FinancialsData, FinancialRow, Scale, Period } from "../types";
+import type {
+  FinancialsData, FinancialRow, FinancialsExtendedData, ExtRow, FmtType, Scale, Period,
+} from "../types";
 
 const NAVY    = "#1c2b46";
-const PERIODS: Period[]  = ["annual", "quarterly"];
-const SCALES:  Scale[]   = ["K", "MM", "B"];
+const PERIODS: Period[] = ["annual", "quarterly"];
+const SCALES:  Scale[]  = ["K", "MM", "B"];
 const EPS_LABELS = new Set(["eps", "epsdiluted"]);
 
 // ── Formatters ────────────────────────────────────────────────────────────────
@@ -18,7 +21,11 @@ function isEps(label: string): boolean {
   return EPS_LABELS.has(label.toLowerCase().replace(/[^a-z]/g, ""));
 }
 
-function fCell(v: number | string | null | undefined, label: string, scale: Scale): { text: string; negative: boolean } {
+function fCell(
+  v: number | string | null | undefined,
+  label: string,
+  scale: Scale,
+): { text: string; negative: boolean } {
   if (v == null || v === "") return { text: "—", negative: false };
   if (typeof v === "string")  return { text: v,  negative: false };
   if (!isFinite(v))           return { text: "—", negative: false };
@@ -30,6 +37,42 @@ function fCell(v: number | string | null | undefined, label: string, scale: Scal
   const abs  = Math.abs(v) / div;
   const text = abs.toLocaleString("en-US", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
   return { text: neg ? `(${text})` : text, negative: neg };
+}
+
+function fExtCell(
+  v: number | string | null | undefined,
+  fmt: FmtType,
+  scale: Scale,
+): { text: string; negative: boolean } {
+  if (v == null || v === "") return { text: "—", negative: false };
+  if (typeof v === "string") return { text: v,   negative: false };
+  if (!isFinite(v))          return { text: "—", negative: false };
+  const neg = v < 0;
+  const abs = Math.abs(v);
+  let text: string;
+  switch (fmt) {
+    case "money": {
+      const div = scale === "K" ? 1e3 : scale === "MM" ? 1e6 : 1e9;
+      const scaled = abs / div;
+      text = scaled.toLocaleString("en-US", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+      text = neg ? `(${text})` : text;
+      break;
+    }
+    case "pct":
+      text = `${(v * 100).toFixed(1)}%`;
+      break;
+    case "days":
+      text = abs.toFixed(1);
+      if (neg) text = `(${text})`;
+      break;
+    case "int":
+      text = Math.round(v).toString();
+      break;
+    default: // ratio
+      text = abs.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      if (neg) text = `(${text})`;
+  }
+  return { text, negative: neg };
 }
 
 // ── Radio strip ───────────────────────────────────────────────────────────────
@@ -78,7 +121,7 @@ function RadioGroup<T extends string>({
   );
 }
 
-// ── Memoized financial table ──────────────────────────────────────────────────
+// ── Core financial table (IS/BS/CF/Debt) ──────────────────────────────────────
 
 const FinTable = memo(function FinTable({
   title, columns, rows, scale,
@@ -93,18 +136,11 @@ const FinTable = memo(function FinTable({
     padding: "8px 12px", border: "1px solid #2d3f5a",
     fontSize: "0.82em", whiteSpace: "nowrap",
   };
-
   return (
     <div style={{ marginBottom: 28 }}>
-      {/* Section header */}
-      <div style={{
-        fontSize: "1.05em", fontWeight: "bold", color: "#fff",
-        background: NAVY, padding: "6px 15px", borderRadius: 4,
-        marginBottom: 6,
-      }}>
+      <div style={{ fontSize: "1.05em", fontWeight: "bold", color: "#fff", background: NAVY, padding: "6px 15px", borderRadius: 4, marginBottom: 6 }}>
         {title}
       </div>
-
       <div style={{ overflowX: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.83em" }}>
           <thead>
@@ -112,9 +148,7 @@ const FinTable = memo(function FinTable({
               <th style={{ ...thBase, textAlign: "left", minWidth: 200 }}>Item</th>
               {columns.map((col) => (
                 <th key={col} style={{ ...thBase, textAlign: "right", minWidth: 88 }}>
-                  {col === "TTM"
-                    ? <span style={{ color: "#93c5fd" }}>TTM</span>
-                    : col}
+                  {col === "TTM" ? <span style={{ color: "#93c5fd" }}>TTM</span> : col}
                 </th>
               ))}
             </tr>
@@ -130,8 +164,73 @@ const FinTable = memo(function FinTable({
                   return (
                     <td key={col} style={{
                       padding: "7px 12px", border: "1px solid #e5e7eb",
-                      textAlign: "right",
-                      fontVariantNumeric: "tabular-nums",
+                      textAlign: "right", fontVariantNumeric: "tabular-nums",
+                      fontFamily: "'Courier New', monospace",
+                      color: negative ? "#dc2626" : NAVY,
+                      fontWeight: col === "TTM" ? 700 : 400,
+                      background: col === "TTM" ? "#eff6ff" : undefined,
+                    }}>
+                      {text}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+});
+
+// ── Extended metric table (Market & Val, Cap Structure, etc.) ─────────────────
+
+const ExtTable = memo(function ExtTable({
+  title, columns, rows, scale,
+}: {
+  title: string;
+  columns: string[];
+  rows: ExtRow[];
+  scale: Scale;
+}) {
+  const thBase: React.CSSProperties = {
+    background: NAVY, color: "#fff", fontWeight: 700,
+    padding: "8px 12px", border: "1px solid #2d3f5a",
+    fontSize: "0.82em", whiteSpace: "nowrap",
+  };
+  return (
+    <div style={{ marginBottom: 28 }}>
+      <div style={{ fontSize: "1.05em", fontWeight: "bold", color: "#fff", background: NAVY, padding: "6px 15px", borderRadius: 4, marginBottom: 6 }}>
+        {title}
+      </div>
+      <div style={{ overflowX: "auto" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.83em" }}>
+          <thead>
+            <tr>
+              <th style={{ ...thBase, textAlign: "left", minWidth: 240 }}>Metric</th>
+              {columns.map((col) => (
+                <th key={col} style={{ ...thBase, textAlign: "right", minWidth: 88 }}>
+                  {col === "TTM" ? <span style={{ color: "#93c5fd" }}>TTM</span> : col}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, ri) => (
+              <tr key={ri} style={{ background: ri % 2 === 1 ? "#f8fafc" : "#fff" }}>
+                <td style={{ padding: "7px 12px", border: "1px solid #e5e7eb", fontWeight: 600, color: NAVY, whiteSpace: "nowrap" }}>
+                  {row.label}
+                </td>
+                {columns.map((col) => {
+                  const { text, negative } = fExtCell(
+                    row[col] as number | string | null,
+                    row.fmt as FmtType,
+                    scale,
+                  );
+                  return (
+                    <td key={col} style={{
+                      padding: "7px 12px", border: "1px solid #e5e7eb",
+                      textAlign: "right", fontVariantNumeric: "tabular-nums",
                       fontFamily: "'Courier New', monospace",
                       color: negative ? "#dc2626" : NAVY,
                       fontWeight: col === "TTM" ? 700 : 400,
@@ -166,11 +265,13 @@ function Spinner({ label }: { label: string }) {
   );
 }
 
-// ── Main component (presentational — no fetching) ─────────────────────────────
+// ── Main component ────────────────────────────────────────────────────────────
 
 export interface FinancialsTabProps {
   data: FinancialsData | null;
   loading: boolean;
+  extData: FinancialsExtendedData | null;
+  extLoading: boolean;
   period: Period;
   scale: Scale;
   onPeriodChange: (p: Period) => void;
@@ -178,7 +279,7 @@ export interface FinancialsTabProps {
 }
 
 export default function FinancialsTab({
-  data, loading, period, scale, onPeriodChange, onScaleChange,
+  data, loading, extData, extLoading, period, scale, onPeriodChange, onScaleChange,
 }: FinancialsTabProps) {
   return (
     <div>
@@ -216,8 +317,22 @@ export default function FinancialsTab({
           <FinTable title="Balance Sheet"    columns={data.columns} rows={data.balance_sheet}    scale={scale} />
           <FinTable title="Cash Flow"        columns={data.columns} rows={data.cash_flow}        scale={scale} />
           {data.debt && data.debt.length > 0 && (
-            <FinTable title="Debt Schedule" columns={data.columns} rows={data.debt} scale={scale} />
+            <FinTable title="Debt Schedule"  columns={data.columns} rows={data.debt}             scale={scale} />
           )}
+        </>
+      )}
+
+      {extLoading && !loading && <Spinner label="Loading metric tables…" />}
+
+      {extData && !extLoading && (
+        <>
+          <ExtTable title="Market & Valuation"  columns={extData.columns} rows={extData.market_valuation}  scale={scale} />
+          <ExtTable title="Capital Structure"    columns={extData.columns} rows={extData.capital_structure} scale={scale} />
+          <ExtTable title="Profitability"        columns={extData.columns} rows={extData.profitability}     scale={scale} />
+          <ExtTable title="Returns"              columns={extData.columns} rows={extData.returns}           scale={scale} />
+          <ExtTable title="Liquidity"            columns={extData.columns} rows={extData.liquidity}         scale={scale} />
+          <ExtTable title="Dividends"            columns={extData.columns} rows={extData.dividends}         scale={scale} />
+          <ExtTable title="Efficiency"           columns={extData.columns} rows={extData.efficiency}        scale={scale} />
         </>
       )}
     </div>

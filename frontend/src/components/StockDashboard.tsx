@@ -14,10 +14,11 @@ import { useState, useEffect, useRef, memo } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import type {
   OverviewData, FinancialsData, InsightsData, WaccData,
-  NormalizedPEResult, Scale, Period,
+  FinancialsExtendedData, NormalizedPEResult, Scale, Period,
 } from "../types";
-import FinancialsTab   from "./FinancialsTab";
-import InsightsTab     from "./InsightsTab";
+import FinancialsTab from "./FinancialsTab";
+import InsightsTab   from "./InsightsTab";
+import CfIrrTab      from "./CfIrrTab";
 
 // ── Palette ───────────────────────────────────────────────────────────────────
 const NAVY    = "#1c2b46";
@@ -95,8 +96,8 @@ function Legend() {
 const MAIN_TABS = ["Overview", "Financials", "Insights", "Valuations"] as const;
 type MainTab = typeof MAIN_TABS[number];
 
-const VAL_TABS = ["Normalized PE", "DCF", "CF + IRR"] as const;
-type ValTab = typeof VAL_TABS[number];
+const VAL_TABS_DEFAULT = ["CF + IRR", "Normalized PE", "DCF"] as string[];
+type ValTab = string;
 
 function TabBar({ tabs, active, onSelect, size = "md", scrollable = false }: {
   tabs: readonly string[];
@@ -127,6 +128,60 @@ function TabBar({ tabs, active, onSelect, size = "md", scrollable = false }: {
             fontFamily: "inherit", whiteSpace: "nowrap",
             transition: "color 0.12s",
           }}>
+            {t}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── Draggable tab bar (for Valuations sub-tabs) ───────────────────────────────
+
+function DraggableTabBar({ tabs, active, onSelect, onReorder }: {
+  tabs: string[];
+  active: string;
+  onSelect: (t: string) => void;
+  onReorder: (tabs: string[]) => void;
+}) {
+  const dragIdx = useRef<number | null>(null);
+
+  const onDragStart = (i: number) => { dragIdx.current = i; };
+  const onDragOver  = (e: React.DragEvent, i: number) => {
+    e.preventDefault();
+    if (dragIdx.current === null || dragIdx.current === i) return;
+    const next = [...tabs];
+    const [moved] = next.splice(dragIdx.current, 1);
+    next.splice(i, 0, moved);
+    dragIdx.current = i;
+    onReorder(next);
+  };
+  const onDrop = (e: React.DragEvent) => { e.preventDefault(); dragIdx.current = null; };
+
+  return (
+    <div style={{ display: "flex", borderBottom: `2px solid #e5e7eb`, marginBottom: 12, overflowX: "auto", scrollbarWidth: "none" }}>
+      {tabs.map((t, i) => {
+        const active_ = t === active;
+        return (
+          <button
+            key={t}
+            draggable
+            onDragStart={() => onDragStart(i)}
+            onDragOver={(e) => onDragOver(e, i)}
+            onDrop={onDrop}
+            onClick={() => onSelect(t)}
+            title="Drag to reorder"
+            style={{
+              padding: "7px 16px",
+              border: "none", background: "none", cursor: "grab",
+              fontWeight: active_ ? 700 : 500,
+              color: active_ ? BLUE : "#6b7280",
+              borderBottom: active_ ? `2px solid ${BLUE}` : "2px solid transparent",
+              marginBottom: -2, fontSize: "0.86em",
+              fontFamily: "inherit", whiteSpace: "nowrap",
+              transition: "color 0.12s", userSelect: "none",
+            }}
+          >
             {t}
           </button>
         );
@@ -354,6 +409,10 @@ export default function StockDashboard({ ticker, onSearch }: StockDashboardProps
   const [finLoad, setFinLoad] = useState(true);
   const [finQLoad,setFinQLoad]= useState(false);
 
+  // ── Financials Extended ───────────────────────────────────────────────────
+  const [finExt,    setFinExt]    = useState<FinancialsExtendedData | null>(null);
+  const [finExtLoad,setFinExtLoad]= useState(true);
+
   // ── Insights ──────────────────────────────────────────────────────────────
   const [ins,     setIns]     = useState<InsightsData | null>(null);
   const [insErr,  setInsErr]  = useState<string | null>(null);
@@ -365,16 +424,18 @@ export default function StockDashboard({ ticker, onSearch }: StockDashboardProps
 
   // ── UI state ──────────────────────────────────────────────────────────────
   const [activeTab, setActiveTab]   = useState<MainTab>("Overview");
-  const [activeVal, setActiveVal]   = useState<ValTab>("Normalized PE");
+  const [activeVal, setActiveVal]   = useState<ValTab>("CF + IRR");
+  const [valTabs,   setValTabs]     = useState<string[]>(VAL_TABS_DEFAULT);
   const [period,    setPeriod]      = useState<Period>("annual");
   const [scale,     setScale]       = useState<Scale>("MM");
   const [searchQ,   setSearchQ]     = useState("");
 
   // ── Parallel fetch on ticker change ──────────────────────────────────────
   useEffect(() => {
-    setOv(null);   setOvErr(null);   setOvLoad(true);
-    setFinA(null); setFinQ(null);    setFinLoad(true);
-    setIns(null);  setInsErr(null);  setInsLoad(true);
+    setOv(null);     setOvErr(null);   setOvLoad(true);
+    setFinA(null);   setFinQ(null);    setFinLoad(true);
+    setFinExt(null); setFinExtLoad(true);
+    setIns(null);    setInsErr(null);  setInsLoad(true);
     setWaccData(null);
     setPeriod("annual");
 
@@ -385,9 +446,10 @@ export default function StockDashboard({ ticker, onSearch }: StockDashboardProps
         .catch((e: unknown) => setErr(typeof e === "string" ? e : "Failed to load"))
         .finally(() => setLoading(false));
 
-    load<OverviewData>  (`/api/overview/${ticker}`,                 setOv,  setOvErr,  setOvLoad);
-    load<FinancialsData>(`/api/financials/${ticker}?period=annual`, setFinA, () => {}, setFinLoad);
-    load<InsightsData>  (`/api/insights/${ticker}`,                 setIns, setInsErr, setInsLoad);
+    load<OverviewData>          (`/api/overview/${ticker}`,                          setOv,    setOvErr,  setOvLoad);
+    load<FinancialsData>        (`/api/financials/${ticker}?period=annual`,          setFinA,  () => {},  setFinLoad);
+    load<FinancialsExtendedData>(`/api/financials-extended/${ticker}?period=annual`, setFinExt,() => {},  setFinExtLoad);
+    load<InsightsData>          (`/api/insights/${ticker}`,                          setIns,   setInsErr, setInsLoad);
 
     // Fetch WACC components (non-critical — silently ignore errors)
     fetch(`/api/wacc/${ticker}`)
@@ -543,6 +605,8 @@ export default function StockDashboard({ ticker, onSearch }: StockDashboardProps
               <FinancialsTab
                 data={currentFin}
                 loading={currentFinLoad}
+                extData={finExt}
+                extLoading={finExtLoad}
                 period={period}
                 scale={scale}
                 onPeriodChange={handlePeriodChange}
@@ -565,16 +629,15 @@ export default function StockDashboard({ ticker, onSearch }: StockDashboardProps
             {/* ══ Valuations ══ */}
             {activeTab === "Valuations" && (
               <div>
-                <TabBar
-                  tabs={VAL_TABS}
+                <DraggableTabBar
+                  tabs={valTabs}
                   active={activeVal}
-                  onSelect={(t) => setActiveVal(t as ValTab)}
-                  size="sm"
-                  scrollable
+                  onSelect={setActiveVal}
+                  onReorder={setValTabs}
                 />
+                {activeVal === "CF + IRR"     && <CfIrrTab ticker={ticker} externalWacc={manualWacc} />}
                 {activeVal === "Normalized PE" && <NormalizedPETab ticker={ticker} externalWacc={manualWacc} />}
-                {activeVal === "DCF"   && <Placeholder icon="📉" title="DCF Model — Coming Soon"         body="Discounted Cash Flow valuation with customisable WACC and terminal growth rate." />}
-                {activeVal === "CF + IRR" && <Placeholder icon="📈" title="CF + IRR — Coming Soon"      body="Multi-year cash flow schedule and Internal Rate of Return calculation." />}
+                {activeVal === "DCF"           && <Placeholder icon="📉" title="DCF Model — Coming Soon" body="Discounted Cash Flow valuation with customisable WACC and terminal growth rate." />}
               </div>
             )}
           </>
