@@ -401,16 +401,19 @@ export default function CfIrrTab({ ticker, externalWacc, ov }: Props) {
       }
 
       const blob = await resp.blob();
-      const url  = URL.createObjectURL(blob);
+      const url  = window.URL.createObjectURL(blob);
       const a    = document.createElement("a");
       a.href     = url;
       a.download = `${ticker}_One_Pager.pdf`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      // Defer revoke — browser needs the URL alive until the download starts
+      setTimeout(() => window.URL.revokeObjectURL(url), 5_000);
     } catch (err) {
       console.error("PDF download failed:", err);
+      const msg = err instanceof Error ? err.message : String(err);
+      alert(`PDF generation failed: ${msg}`);
     } finally {
       setPdfLoading(false);
     }
