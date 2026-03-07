@@ -578,4 +578,5 @@ def generate_cfirr_pdf(
         _draw_description(pdf, description, company)
 
     # ── Return bytes ──────────────────────────────────────────────────────────
-    return pdf.output()
+    # fpdf2.output() returns bytearray; FastAPI Response requires bytes.
+    return bytes(pdf.output())

@@ -17,8 +17,13 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import datetime
+import concurrent.futures as _cf
 from fastapi import FastAPI, HTTPException, Query, Response
 from pydantic import BaseModel
+
+# Shared executor for lightweight background fetches (e.g. chart prices).
+# Not shut down per-request — avoids blocking on thread completion after timeout.
+_bg_executor = _cf.ThreadPoolExecutor(max_workers=4, thread_name_prefix="bg_fetch")
 from typing import Any
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -1067,14 +1072,13 @@ def cf_irr_pdf(ticker: str, body: _CfIrrPdfBody):
     industry    = body.industry    or ""
     description = body.description or ""
 
-    # Fetch only historical prices for the chart — single lightweight API call
-    # with a 12-second timeout so we never stall the button.
-    import concurrent.futures as _cf
+    # Fetch only historical prices for the chart — single lightweight API call.
+    # Uses a shared module-level executor so we never block waiting for the
+    # thread to finish after a timeout (unlike "with ThreadPoolExecutor(...)").
     hist_prices: list = []
     try:
-        with _cf.ThreadPoolExecutor(max_workers=1) as _ex:
-            _fut = _ex.submit(_gw.fetch_hist_prices, ticker)
-            hist_prices = _fut.result(timeout=12)
+        _fut = _bg_executor.submit(_gw.fetch_hist_prices, ticker)
+        hist_prices = _fut.result(timeout=12)
     except Exception:
         hist_prices = []   # chart omitted — PDF still generated
 
@@ -1139,14 +1143,15 @@ def cf_irr_pdf(ticker: str, body: _CfIrrPdfBody):
             buy_price_now     = body.buy_price,
             on_sale_now       = body.on_sale,
         )
+        return Response(
+            content=pdf_bytes,      # already bytes from pdf_service
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'attachment; filename="{ticker}_One_Pager.pdf"'},
+        )
     except Exception as exc:
+        import traceback
+        traceback.print_exc()       # full stack trace to uvicorn log
         raise HTTPException(status_code=500, detail=f"PDF generation failed: {exc}")
-
-    return Response(
-        content=pdf_bytes,
-        media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="{ticker}_One_Pager.pdf"'},
-    )
 
 
 @app.get("/health", include_in_schema=False)
