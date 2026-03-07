@@ -15,6 +15,7 @@ from ._key_loader import load_key
 class FMPService:
     _STABLE = "https://financialmodelingprep.com/stable"
     _V3     = "https://financialmodelingprep.com/api/v3"
+    _V4     = "https://financialmodelingprep.com/api/v4"
 
     def __init__(self):
         self.api_key = load_key("FMP_API_KEY")
@@ -90,6 +91,22 @@ class FMPService:
 
         body = self._get(f"{self._V3}/historical-price-full/{ticker}", {})
         return _unwrap(body)
+
+    def fetch_revenue_segments(self, ticker: str, period: str = "annual") -> list:
+        """
+        Revenue-by-product-segment from FMP stable API.
+        Returns newest-first list of dicts, each with a nested 'data' field:
+          [{"date": "2024-09-28", "fiscalYear": 2024, "period": "FY",
+            "data": {"iPhone": 201183000000, ...}}, ...]
+        Returns [] when unavailable.
+        """
+        if not self.api_key:
+            return []
+        body = self._get(
+            f"{self._STABLE}/revenue-product-segmentation",
+            {"symbol": ticker, "period": period},
+        )
+        return body if isinstance(body, list) else []
 
     # ── overview (parallel fetch) ─────────────────────────────────────────────
 

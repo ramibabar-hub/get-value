@@ -31,6 +31,137 @@ def _load_api_key():
     return ""
 
 
+def _load_eodhd_key():
+    """Same priority chain as _load_api_key() but for EODHD_API_KEY."""
+    try:
+        raw = st.secrets.get("EODHD_API_KEY", "")
+        if raw:
+            return "".join(raw.split()).strip('"').strip("'")
+    except Exception:
+        pass
+    raw = os.environ.get("EODHD_API_KEY", "")
+    if raw:
+        return raw.strip()
+    env_path = os.path.join(os.path.dirname(__file__), "..", ".env")
+    if os.path.exists(env_path):
+        for line in open(env_path):
+            line = line.strip()
+            if line.startswith("EODHD_API_KEY="):
+                return line.split("=", 1)[1].strip().strip('"').strip("'")
+    return ""
+
+
+# ── EODHD → FMP canonical field maps ─────────────────────────────────────────
+# Mirrors backend/services/eodhd_service.py so both stacks stay in sync.
+
+_EODHD_IS_MAP = {
+    "totalRevenue":                   "revenue",
+    "grossProfit":                    "grossProfit",
+    "costOfGoodsAndServicesSold":     "costOfRevenue",
+    "costOfRevenue":                  "costOfRevenue",
+    "operatingIncome":                "operatingIncome",
+    "ebitda":                         "ebitda",
+    "netIncome":                      "netIncome",
+    "netIncomeContinuousOperations":  "netIncome",
+    "interestExpense":                "interestExpense",
+    "incomeBeforeTax":                "incomeBeforeTax",
+    "incomeTaxExpense":               "incomeTaxExpense",
+    "dilutedEPS":                     "epsDiluted",
+    "epsDiluted":                     "epsDiluted",
+    "eps":                            "eps",
+    "dilutedAverageShares":           "weightedAverageShsOutDil",
+    "weightedAverageShsOutDil":       "weightedAverageShsOutDil",
+    "basicAverageShares":             "weightedAverageShsOut",
+    "weightedAverageShsOut":          "weightedAverageShsOut",
+}
+
+_EODHD_BS_MAP = {
+    "totalAssets":                              "totalAssets",
+    "totalCurrentAssets":                       "totalCurrentAssets",
+    "totalLiab":                                "totalLiabilities",
+    "totalCurrentLiabilities":                  "totalCurrentLiabilities",
+    "totalStockholderEquity":                   "totalStockholdersEquity",
+    "commonStockSharesOutstanding":             "commonStockSharesOutstanding",
+    "cashAndCashEquivalentsAtCarryingValue":    "cashAndCashEquivalents",
+    "cash":                                     "cashAndCashEquivalents",
+    "netReceivables":                           "netReceivables",
+    "inventory":                                "inventory",
+    "accountsPayable":                          "accountPayables",
+    "propertyPlantEquipmentNet":                "propertyPlantEquipmentNet",
+    "shortLongTermDebtTotal":                   "totalDebt",
+    "longTermDebt":                             "longTermDebt",
+    "longTermDebtTotal":                        "longTermDebt",
+    "shortTermDebt":                            "shortTermDebt",
+    "shortLongTermDebt":                        "shortLongTermDebt",
+}
+
+_EODHD_CF_MAP = {
+    "totalCashFromOperatingActivities": "operatingCashFlow",
+    "capitalExpenditures":              "capitalExpenditure",
+    "freeCashFlow":                     "freeCashFlow",
+    "stockBasedCompensation":           "stockBasedCompensation",
+    "commonDividendsPaid":              "commonDividendsPaid",
+    "commonStockRepurchased":           "commonStockRepurchased",
+}
+
+
+def _eodhd_safe_num(v):
+    """Coerce to float or None (NaN-safe)."""
+    if v is None or v == "None":
+        return None
+    try:
+        f = float(v)
+        return f if f == f else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _eodhd_remap(raw: dict, field_map: dict) -> dict:
+    """Re-key an EODHD record using field_map; first mapped name wins."""
+    out: dict = {}
+    for eodhd_key, fmp_key in field_map.items():
+        if eodhd_key in raw and fmp_key not in out:
+            out[fmp_key] = _eodhd_safe_num(raw[eodhd_key])
+    return out
+
+
+def _eodhd_normalize_statements(period_dict: dict, field_map: dict,
+                                 is_quarterly: bool) -> list:
+    """
+    Convert EODHD's period dict:
+        {"2024-09-30": {fields…}, …}
+    → FMP-compatible list (newest first):
+        [{"date": "2024-09-30", "fiscalYear": "2024", …fields…}, …]
+    """
+    if not isinstance(period_dict, dict):
+        return []
+    records = []
+    for date_str, raw in period_dict.items():
+        if not isinstance(raw, dict):
+            continue
+        rec = _eodhd_remap(raw, field_map)
+        rec["date"]         = date_str
+        rec["fiscalYear"]   = str(date_str)[:4]
+        rec["calendarYear"] = str(date_str)[:4]
+        rec["period"]       = "Q" if is_quarterly else "FY"
+        records.append(rec)
+    records.sort(key=lambda r: r.get("date", ""), reverse=True)
+
+    # Derived fields
+    for rec in records:
+        if rec.get("totalDebt") is None:
+            s = _eodhd_safe_num(rec.get("shortTermDebt") or rec.get("shortLongTermDebt") or 0)
+            l = _eodhd_safe_num(rec.get("longTermDebt") or 0)
+            if s is not None or l is not None:
+                rec["totalDebt"] = (s or 0.0) + (l or 0.0)
+        if rec.get("freeCashFlow") is None:
+            ocf  = _eodhd_safe_num(rec.get("operatingCashFlow"))
+            capx = _eodhd_safe_num(rec.get("capitalExpenditure"))
+            if ocf is not None and capx is not None:
+                rec["freeCashFlow"] = ocf + capx
+    return records
+
+
 class GatewayAgent:
 
     # Exchange short-name → emoji flag (used in search dropdown).
@@ -127,6 +258,12 @@ class GatewayAgent:
         "EURONEXT": "🇪🇺",
     }
 
+    # EODHD exchange codes that this gateway routes to EODHD
+    # Key = ticker suffix (after '.'), value = EODHD exchange code
+    _EODHD_SUFFIX_MAP = {
+        "TA": "TA",   # Tel Aviv Stock Exchange (Israel)
+    }
+
     def __init__(self):
         self.api_key = _load_api_key()
         # FMP deprecated /api/v3 on Aug 31 2025 — use /stable
@@ -136,6 +273,14 @@ class GatewayAgent:
             print("[GatewayAgent] WARNING: FMP_API_KEY not found in secrets, env, or .env")
         else:
             print(f"[GatewayAgent] API key loaded (ends: ...{self.api_key[-4:]})")
+
+        # EODHD — secondary data provider for Israeli (.TA) tickers
+        self.eodhd_key  = _load_eodhd_key()
+        self._eodhd_base = "https://eodhd.com/api"
+        if self.eodhd_key:
+            print(f"[GatewayAgent] EODHD key loaded (ends: ...{self.eodhd_key[-4:]})")
+        else:
+            print("[GatewayAgent] INFO: EODHD_API_KEY not found — .TA tickers will fall back to FMP")
 
     # ── internal GET helper ───────────────────────────────────────────────────
     def _get(self, path: str, params: dict, timeout: int = 8):
@@ -247,7 +392,157 @@ class GatewayAgent:
 
         return []
 
+    # ── EODHD routing helpers ─────────────────────────────────────────────────
+
+    def _is_eodhd_ticker(self, ticker: str) -> bool:
+        """Return True when ticker suffix maps to an EODHD-routed exchange."""
+        if "." not in ticker:
+            return False
+        suffix = ticker.rsplit(".", 1)[-1].upper()
+        return suffix in self._EODHD_SUFFIX_MAP
+
+    def _parse_eodhd_ticker(self, ticker: str):
+        """Return (symbol, eodhd_exchange_code) from a dotted ticker string."""
+        parts = ticker.rsplit(".", 1)
+        symbol   = parts[0].upper()
+        suffix   = parts[1].upper() if len(parts) == 2 else ""
+        exchange = self._EODHD_SUFFIX_MAP.get(suffix, suffix)
+        return symbol, exchange
+
+    def _eodhd_get(self, path: str, params: dict | None = None, timeout: int = 15):
+        """Raw GET against the EODHD API base. Returns parsed JSON or None."""
+        if not self.eodhd_key:
+            return None
+        params = params or {}
+        try:
+            url = f"{self._eodhd_base}/{path}"
+            res = requests.get(
+                url,
+                params={**params, "api_token": self.eodhd_key, "fmt": "json"},
+                timeout=timeout,
+            )
+            print(f"[GatewayAgent/EODHD] GET {path} status={res.status_code}")
+            res.raise_for_status()
+            return res.json()
+        except Exception as exc:
+            print(f"[GatewayAgent/EODHD] ERROR {path}: {exc}")
+            return None
+
+    def _fetch_eodhd_fundamentals(self, symbol: str, exchange: str) -> dict:
+        """Fetch EODHD fundamentals mega-endpoint. Returns raw dict or {}."""
+        data = self._eodhd_get(f"fundamentals/{symbol}.{exchange}")
+        if isinstance(data, dict) and data:
+            print(f"[GatewayAgent/EODHD] fundamentals {symbol}.{exchange}: OK")
+            return data
+        print(f"[GatewayAgent/EODHD] fundamentals {symbol}.{exchange}: empty/failed")
+        return {}
+
+    def _fetch_historical_prices_eodhd(self, symbol: str, exchange: str) -> list:
+        """
+        Fetch EODHD daily price history; normalise to FMP-compatible keys:
+          date, open, high, low, close, adjClose, volume.
+        Returns list newest-first (matches FMP historical-price-full format).
+        """
+        data = self._eodhd_get(f"eod/{symbol}.{exchange}", {"order": "d", "limit": 2000})
+        if not isinstance(data, list):
+            return []
+        out = []
+        for bar in data:
+            if not isinstance(bar, dict):
+                continue
+            out.append({
+                "date":     bar.get("date", ""),
+                "open":     _eodhd_safe_num(bar.get("open")),
+                "high":     _eodhd_safe_num(bar.get("high")),
+                "low":      _eodhd_safe_num(bar.get("low")),
+                "close":    _eodhd_safe_num(bar.get("close")),
+                "adjClose": _eodhd_safe_num(bar.get("adjusted_close")),
+                "volume":   bar.get("volume"),
+            })
+        print(f"[GatewayAgent/EODHD] historical {symbol}.{exchange}: {len(out)} bars")
+        return out
+
+    def _fetch_all_eodhd(self, ticker: str) -> dict:
+        """
+        Full data fetch for EODHD-routed tickers (.TA etc.).
+        Returns the same canonical dict shape as fetch_all() so all downstream
+        agents (InsightsAgent, core_agent, cf_irr_tab) remain unmodified.
+        """
+        symbol, exchange = self._parse_eodhd_ticker(ticker)
+        fund = self._fetch_eodhd_fundamentals(symbol, exchange)
+
+        fin = fund.get("Financials") or {}
+
+        # ── Financial statements ─────────────────────────────────────────────
+        annual_is = _eodhd_normalize_statements(
+            (fin.get("Income_Statement") or {}).get("annual") or {}, _EODHD_IS_MAP, False)
+        quarterly_is = _eodhd_normalize_statements(
+            (fin.get("Income_Statement") or {}).get("quarterly") or {}, _EODHD_IS_MAP, True)
+        annual_bs = _eodhd_normalize_statements(
+            (fin.get("Balance_Sheet") or {}).get("annual") or {}, _EODHD_BS_MAP, False)
+        quarterly_bs = _eodhd_normalize_statements(
+            (fin.get("Balance_Sheet") or {}).get("quarterly") or {}, _EODHD_BS_MAP, True)
+        annual_cf = _eodhd_normalize_statements(
+            (fin.get("Cash_Flow") or {}).get("annual") or {}, _EODHD_CF_MAP, False)
+        quarterly_cf = _eodhd_normalize_statements(
+            (fin.get("Cash_Flow") or {}).get("quarterly") or {}, _EODHD_CF_MAP, True)
+
+        # ── Key metrics: synthesise per-year market cap / price from highlights ─
+        # EODHD doesn't supply per-year key_metrics, so we build minimal stubs
+        # that prevent NoneType errors in InsightsAgent.
+        annual_km = []
+        for rec in annual_is:
+            yr = rec.get("fiscalYear", "")
+            annual_km.append({
+                "date":        rec.get("date", ""),
+                "fiscalYear":  yr,
+                "calendarYear": yr,
+                "period":      "FY",
+            })
+        quarterly_km = []
+        for rec in quarterly_is:
+            quarterly_km.append({
+                "date":        rec.get("date", ""),
+                "fiscalYear":  rec.get("fiscalYear", ""),
+                "calendarYear": rec.get("calendarYear", ""),
+                "period":      rec.get("period", ""),
+            })
+
+        # annual_ratios: also empty stubs (InsightsAgent handles missing fields)
+        annual_ratios = []
+
+        # ── Historical prices ────────────────────────────────────────────────
+        historical_prices = self._fetch_historical_prices_eodhd(symbol, exchange)
+
+        print(f"[GatewayAgent/EODHD] {ticker}: "
+              f"IS={len(annual_is)} BS={len(annual_bs)} CF={len(annual_cf)} "
+              f"prices={len(historical_prices)}")
+
+        return {
+            "annual_income_statement":    annual_is,
+            "quarterly_income_statement": quarterly_is,
+            "annual_balance_sheet":       annual_bs,
+            "quarterly_balance_sheet":    quarterly_bs,
+            "annual_cash_flow":           annual_cf,
+            "quarterly_cash_flow":        quarterly_cf,
+            "annual_ratios":              annual_ratios,
+            "annual_key_metrics":         annual_km,
+            "quarterly_key_metrics":      quarterly_km,
+            "historical_prices":          historical_prices,
+        }
+
     def fetch_all(self, ticker):
+        """
+        Fetch all financial data for a ticker.
+        Routes .TA tickers to EODHD when an EODHD key is present;
+        all other tickers use FMP (unchanged behaviour).
+        """
+        if self._is_eodhd_ticker(ticker) and self.eodhd_key:
+            print(f"[GatewayAgent] {ticker} → EODHD route")
+            return self._fetch_all_eodhd(ticker)
+
+        # Default: FMP
+        print(f"[GatewayAgent] {ticker} → FMP route")
         return {
             "annual_income_statement":    self.fetch_data("income-statement",       ticker),
             "quarterly_income_statement": self.fetch_data("income-statement",       ticker, True),

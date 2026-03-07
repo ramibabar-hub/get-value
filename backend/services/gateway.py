@@ -207,6 +207,17 @@ class SmartGateway:
             fmp_ov.setdefault("_source", "fmp_fallback")
             return fmp_ov
 
+    # ── public fetch_segments ─────────────────────────────────────────────────
+
+    def fetch_segments(self, ticker: str) -> list:
+        """
+        Revenue-by-product-segment from FMP v4.
+        Uses the base symbol only (works for US stocks + dual-listed intl tickers).
+        Returns [] when no segment data is available.
+        """
+        base, _, _ = self.parse_ticker(ticker)
+        return self._fmp.fetch_revenue_segments(base)
+
     # ── convenience: routing info ─────────────────────────────────────────────
 
     def routing_info(self, ticker: str) -> dict:

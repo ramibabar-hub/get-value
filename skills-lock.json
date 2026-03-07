@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "skills": {
+    "expo-tailwind-setup": {
+      "source": "expo/skills",
+      "sourceType": "github",
+      "computedHash": "16c53e80cacd65369acfd8a4f5cf06a60083cc6d980127b4b2e384b81ce0e547"
+    },
+    "senior-architect": {
+      "source": "sickn33/antigravity-awesome-skills",
+      "sourceType": "github",
+      "computedHash": "d3726478b49557209aeab3b663ce4fc958514a4d2ea6e31f463f0b1e943b7e87"
+    },
+    "senior-data-scientist": {
+      "source": "davila7/claude-code-templates",
+      "sourceType": "github",
+      "computedHash": "42804288d4f9036199a5e8ff73ceda214ae8c12bf04e712577b0eb9751c69710"
+    },
+    "typescript-expert": {
+      "source": "sickn33/antigravity-awesome-skills",
+      "sourceType": "github",
+      "computedHash": "6a90334060f03a9885eaafe683f14f3b0015c83085e10a511626bc4f4388aa47"
+    }
+  }
+}

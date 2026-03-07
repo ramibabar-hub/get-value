@@ -372,6 +372,71 @@ def normalized_pe(
     return {"ticker": ticker, "data_source": raw_data.get("_source", "unknown"), **result}
 
 
+@app.get("/api/segments/{ticker}", summary="Revenue by business segment (up to 5 years)", tags=["Profile"])
+def segments_endpoint(ticker: str):
+    """
+    Returns product-segment revenue breakdown from FMP stable API.
+
+    The stable endpoint returns nested records:
+      {"fiscalYear": 2024, "period": "FY", "date": "...", "data": {"Seg": value, ...}}
+
+    Years are newest-first; segments sorted by total revenue descending.
+    Returns empty lists when no segment data is available (international tickers).
+    """
+    t = ticker.strip().upper()
+    raw = _gw.fetch_segments(t)
+    if not raw:
+        return {"ticker": t, "years": [], "segments": []}
+
+    # Keep only annual (FY) records — the endpoint may include quarterly rows
+    annual = [r for r in raw if str(r.get("period") or "").upper() in ("FY", "ANNUAL")]
+    if not annual:
+        annual = raw  # fallback: use everything if no FY tag found
+
+    rows = annual[:5]  # cap at 5 most-recent annual years
+
+    # Year label from fiscalYear int → string, fall back to date prefix
+    def _year(r: dict) -> str:
+        fy = r.get("fiscalYear")
+        if fy is not None:
+            return str(int(fy))
+        return (r.get("date") or "")[:4]
+
+    years = [_year(r) for r in rows]
+
+    # Collect segment names from the nested "data" dicts (preserve insertion order)
+    seg_names: list[str] = []
+    seen: set[str] = set()
+    for r in rows:
+        for k in (r.get("data") or {}):
+            if k not in seen:
+                seg_names.append(k)
+                seen.add(k)
+
+    # Drop segments with no revenue across all years
+    def _total(name: str) -> float:
+        return sum(abs(float((r.get("data") or {}).get(name) or 0)) for r in rows)
+
+    seg_names = [s for s in seg_names if _total(s) > 0]
+    seg_names.sort(key=_total, reverse=True)
+
+    segs = []
+    for name in seg_names:
+        rev_by_year: dict = {}
+        for r in rows:
+            yr = _year(r)
+            v = (r.get("data") or {}).get(name)
+            rev_by_year[yr] = _strip_nan(float(v)) if v is not None else None
+        segs.append({
+            "name": name,
+            "revenue_by_year": rev_by_year,
+            "operating_income_by_year": {},
+            "assets_by_year": {},
+        })
+
+    return {"ticker": t, "years": years, "segments": segs}
+
+
 @app.get("/api/routing-info/{ticker}", summary="Data-source routing info", tags=["Meta"])
 def routing_info(ticker: str):
     return _gw.routing_info(ticker.strip())

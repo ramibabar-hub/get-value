@@ -138,6 +138,21 @@ export interface FinancialsExtendedData {
   efficiency: ExtRow[];
 }
 
+// ── Segments ──────────────────────────────────────────────────────────────────
+
+export interface Segment {
+  name: string;
+  revenue_by_year: Record<string, number | null>;
+  operating_income_by_year?: Record<string, number | null>;
+  assets_by_year?: Record<string, number | null>;
+}
+
+export interface SegmentsData {
+  ticker: string;
+  years: string[];      // newest-first, e.g. ["2024","2023","2022","2021","2020"]
+  segments: Segment[];  // sorted largest revenue first
+}
+
 // ── CF + IRR ──────────────────────────────────────────────────────────────────
 
 export interface CfIrrCheckItem {

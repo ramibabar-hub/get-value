@@ -7,6 +7,7 @@ Called from app.py inside the "💰 Valuations" → "📈 CF + IRR" sub-tab.
 """
 
 import math
+import datetime
 import pandas as pd
 import streamlit as st
 from agents.insights_agent import InsightsAgent
@@ -870,9 +871,19 @@ def render_cf_irr_tab(norm, raw):
         avg_target_ss = (ebitda_price_ss + fcf_price_ss) / 2.0
 
     # ── IRR ──────────────────────────────────────────────────────────────────
+    # Use avg_target_ss (cross-model average) as the Year-9 terminal value
+    # when both models produced a price; fall back to the yield-based terminal.
     irr_val = None
     if price_now and price_now > 0 and fcf_cashflows:
-        irr_val = _irr_calc([-price_now] + fcf_cashflows)
+        if avg_target_ss is not None and _fcf_fc_ss:
+            _irr_adj_base = _fcf_fc_ss[-1]["Est. Adj. FCF/s"] if _fcf_fc_ss else None
+            _avg_cfs = fcf_cashflows[:-1] + [
+                (_irr_adj_base + avg_target_ss)
+                if _irr_adj_base is not None else fcf_cashflows[-1]
+            ]
+            irr_val = _irr_calc([-price_now] + _avg_cfs)
+        if irr_val is None:                          # fallback to yield-based
+            irr_val = _irr_calc([-price_now] + fcf_cashflows)
 
     # ── Checklist evaluation ─────────────────────────────────────────────────
     def _check(val, threshold, lower_is_better=False):
@@ -906,6 +917,90 @@ def render_cf_irr_tab(norm, raw):
 
     all_pass = all(p is True  for _, _, p, _ in checklist)
     any_fail = any(p is False for _, _, p, _ in checklist)
+
+    # ── Pre-compute Final Output values for PDF (mirrors fout_col section) ───
+    _pdf_wacc    = st.session_state.get(
+        "cfirr_wacc_manual_pct",
+        (wacc * 100) if wacc is not None else 10.0,
+    ) / 100.0
+    _pdf_mos     = float(st.session_state.get("cfirr_mos", 10.0))
+    _pdf_fv      = (
+        avg_target_ss / (1 + _pdf_wacc) ** 9
+        if avg_target_ss is not None and _pdf_wacc > 0 else None
+    )
+    _pdf_bp      = _pdf_fv * (1 - _pdf_mos / 100.0) if _pdf_fv is not None else None
+    _pdf_sale    = (_pdf_fv > price_now) if _pdf_fv is not None and price_now else None
+
+    def _fmt_delta_pdf(target, current):
+        if target is None or current is None or target == 0:
+            return "N/A"
+        pct = (1.0 - current / target) * 100.0
+        sign = "+" if pct >= 0 else ""
+        label = "Upside" if pct >= 0 else "Downside"
+        return f"{label}  {sign}{pct:.1f}%"
+
+    _pdf_sale_str = (
+        "ON SALE"  if _pdf_sale is True  else
+        "NOT SALE" if _pdf_sale is False else
+        "N/A"
+    )
+    _pdf_final_rows = [
+        ("Average Target Price",   _f_price(avg_target_ss),             None),
+        ("WACC",                   f"{_pdf_wacc * 100:.2f}%",           None),
+        ("Fair Value per share",   _f_price(_pdf_fv),                   None),
+        ("Margin of Safety (%)",   f"{_pdf_mos:.0f}%",                  None),
+        ("Buy Price",              _f_price(_pdf_bp),                   None),
+        ("Current Stock price",    _f_price(price_now),                 None),
+        ("Company on-sale?",       _pdf_sale_str,                       _pdf_sale),
+        ("Upside (vs Fair Value)", _fmt_delta_pdf(_pdf_fv,  price_now), None),
+        ("Upside (vs Buy Price)",  _fmt_delta_pdf(_pdf_bp,  price_now), None),
+    ]
+
+    # ── PDF Download button (top of UI, before sections render) ──────────────
+    _dl_col, _ = st.columns([1, 3])
+    with _dl_col:
+        try:
+            from backend.services.pdf_service import generate_cfirr_pdf
+            _pdf_bytes = generate_cfirr_pdf(
+                ticker            = _cfirr_ticker,
+                company           = str(raw.get("companyName") or raw.get("name") or ""),
+                sector            = str(raw.get("sector")   or ""),
+                industry          = str(raw.get("industry") or ""),
+                historical_prices = (raw.get("historical_prices")
+                                     or raw.get("historical") or []),
+                ebt_hist          = ebt_hist,
+                ebt_cagr          = ebt_cagr,
+                ebt_avg           = ebt_avg,
+                ebt_ttm           = ebt_ttm,
+                fcf_hist          = fcf_hist,
+                fcf_cagr          = fcf_cagr,
+                fcf_avg           = fcf_avg,
+                fcf_ttm           = fcf_ttm,
+                ebt_fc_rows       = _ebt_fc_ss,
+                fcf_fc_rows       = _fcf_fc_ss,
+                checklist         = checklist,
+                final_rows        = _pdf_final_rows,
+                price_now         = price_now,
+                avg_target_ss     = avg_target_ss,
+                irr_val           = irr_val,
+                fair_value_now    = _pdf_fv,
+                buy_price_now     = _pdf_bp,
+                on_sale_now       = _pdf_sale,
+            )
+            _fname = (
+                f"{_cfirr_ticker}_CF_IRR_"
+                f"{datetime.date.today().strftime('%Y%m%d')}.pdf"
+            )
+            st.download_button(
+                label             = "📄  Download PDF One-Pager",
+                data              = _pdf_bytes,
+                file_name         = _fname,
+                mime              = "application/pdf",
+                key               = "cfirr_pdf_dl",
+                use_container_width=True,
+            )
+        except Exception as _pdf_err:
+            st.caption(f"PDF unavailable: {_pdf_err}")
 
     # ══════════════════════════════════════════════════════════════════════════
     # GUIDANCE INFO BOX
@@ -969,15 +1064,15 @@ def render_cf_irr_tab(norm, raw):
         )
 
         final_rows = [
-            ("Average Target Price",           _f_price(avg_target_ss),               None),
-            ("WACC",                           f"{wacc_live * 100:.2f}%",             None),
-            ("Fair Value per share",           _f_price(fair_value_now),              None),
-            ("Margin of Safety (%)",           f"{mos_pct_live:.0f}%",               None),
-            ("Buy Price",                      _f_price(buy_price_now),              None),
-            ("Current Stock Price",            _f_price(price_now),                  None),
-            ("Company on-sale?",               on_sale_str,                          on_sale_now),
-            ("Upside/Downside (Based on FV)",  _fmt_delta(fair_value_now, price_now), None),
-            ("Upside/Downside (Based on Buy)", _fmt_delta(buy_price_now,  price_now), None),
+            ("Average Target Price",   _f_price(avg_target_ss),               None),
+            ("WACC",                   f"{wacc_live * 100:.2f}%",             None),
+            ("Fair Value per share",   _f_price(fair_value_now),              None),
+            ("Margin of Safety (%)",   f"{mos_pct_live:.0f}%",               None),
+            ("Buy Price",              _f_price(buy_price_now),              None),
+            ("Current Stock price",    _f_price(price_now),                  None),
+            ("Company on-sale?",       on_sale_str,                          on_sale_now),
+            ("Upside (vs Fair Value)", _fmt_delta(fair_value_now, price_now), None),
+            ("Upside (vs Buy Price)",  _fmt_delta(buy_price_now,  price_now), None),
         ]
 
         # Build HTML table — same style as _checklist_html
@@ -1065,28 +1160,7 @@ def render_cf_irr_tab(norm, raw):
     _mktcap_yr9      = (_ev_yr9 - _debt_v + _cash_v) if _ev_yr9 is not None else None
     ebitda_price_yr10 = _d(_mktcap_yr9, sh_ttm)
 
-    ebt_price_col, ebt_table_col = st.columns([1, 2])
-
-    with ebt_price_col:
-        _sub("Est. Stock Price (EBITDA Method)")
-        st.number_input(
-            "Est. EV/EBITDA Multiple",
-            min_value=1.0, max_value=100.0, step=0.5, format="%.1f",
-            key="cfirr_ebitda_exit",
-            help="EV/EBITDA multiple at the end of the forecast. Default = TTM.",
-        )
-        ebt_sum_rows = [
-            ["Est. EV/EBITDA Multiple",            f"{exit_mult_now:.1f}x"],
-            [f"EV in {final_yr_ebt} ($MM)",        _f_mm(_ev_yr9)],
-            ["Less: Debt (TTM) ($MM)",             _f_mm(_debt_v)],
-            ["Plus: Cash (TTM) ($MM)",             _f_mm(_cash_v)],
-            ["Est. Market Cap ($MM)",              _f_mm(_mktcap_yr9)],
-            ["Shares Outstanding — TTM (MM)",      f"{sh_ttm / 1e6:,.1f}" if sh_ttm else "N/A"],
-            [f"Est. Stock Price in {final_yr_ebt}", _f_price(ebitda_price_yr10)],
-        ]
-        df_ebt_sum = pd.DataFrame(ebt_sum_rows, columns=["Metric", "Value"]).set_index("Metric")
-        st.dataframe(df_ebt_sum, use_container_width=True,
-                     column_config={"Value": st.column_config.TextColumn("Value", width=160)})
+    ebt_table_col, ebt_price_col = st.columns([2, 1])
 
     with ebt_table_col:
         _sub(f"Table 2.2 · EBITDA Forecast  ({base_year + 1}–{base_year + 9})")
@@ -1157,6 +1231,27 @@ def render_cf_irr_tab(norm, raw):
         else:
             st.caption("Insufficient base data to generate forecast.")
 
+    with ebt_price_col:
+        _sub("Est. Stock Price (EBITDA Method)")
+        st.number_input(
+            "Est. EV/EBITDA Multiple",
+            min_value=1.0, max_value=100.0, step=0.5, format="%.1f",
+            key="cfirr_ebitda_exit",
+            help="EV/EBITDA multiple at the end of the forecast. Default = TTM.",
+        )
+        ebt_sum_rows = [
+            ["Est. EV/EBITDA Multiple",            f"{exit_mult_now:.1f}x"],
+            [f"EV in {final_yr_ebt} ($MM)",        _f_mm(_ev_yr9)],
+            ["Less: Debt (TTM) ($MM)",             _f_mm(_debt_v)],
+            ["Plus: Cash (TTM) ($MM)",             _f_mm(_cash_v)],
+            ["Est. Market Cap ($MM)",              _f_mm(_mktcap_yr9)],
+            ["Shares Outstanding — TTM (MM)",      f"{sh_ttm / 1e6:,.1f}" if sh_ttm else "N/A"],
+            [f"Est. Stock Price in {final_yr_ebt}", _f_price(ebitda_price_yr10)],
+        ]
+        df_ebt_sum = pd.DataFrame(ebt_sum_rows, columns=["Metric", "Value"]).set_index("Metric")
+        st.dataframe(df_ebt_sum, use_container_width=True,
+                     column_config={"Value": st.column_config.TextColumn("Value", width=160)})
+
     # ══════════════════════════════════════════════════════════════════════════
     # SECTION 3 — FREE CASH FLOW ANALYSIS
     # ══════════════════════════════════════════════════════════════════════════
@@ -1178,24 +1273,7 @@ def render_cf_irr_tab(norm, raw):
     fcf_price_yr10   = (_d(_adj_ps_yr9, exit_yield_now / 100.0)
                         if _adj_ps_yr9 and exit_yield_now > 0 else None)
 
-    fcf_price_col, fcf_table_col = st.columns([1, 2])
-
-    with fcf_price_col:
-        _sub("Est. Stock Price (FCF Method)")
-        st.number_input(
-            "Long Term FCF/s Yield (%)",
-            min_value=0.5, max_value=50.0, step=0.5, format="%.1f",
-            key="cfirr_fcf_exit_yield",
-            help="Est. Stock Price = Est. Adj. FCF/s ÷ Yield.  "
-                 "Default = 9-yr CAGR of Adj. FCF/s.",
-        )
-        fcf_sum_rows = [
-            ["Long Term FCF/s Yield",               f"{exit_yield_now:.1f}%"],
-            [f"Est. Stock Price in {final_yr_fcf}", _f_price(fcf_price_yr10)],
-        ]
-        df_fcf_sum = pd.DataFrame(fcf_sum_rows, columns=["Metric", "Value"]).set_index("Metric")
-        st.dataframe(df_fcf_sum, use_container_width=True,
-                     column_config={"Value": st.column_config.TextColumn("Value", width=160)})
+    fcf_table_col, fcf_price_col = st.columns([2, 1])
 
     with fcf_table_col:
         _sub(f"Table 3.2 · Est. Adj. FCF/s Forecast  ({base_year + 1}–{base_year + 9})")
@@ -1258,6 +1336,23 @@ def render_cf_irr_tab(norm, raw):
         else:
             st.caption("Insufficient base data to generate forecast.")
 
+    with fcf_price_col:
+        _sub("Est. Stock Price (FCF Method)")
+        st.number_input(
+            "Long Term FCF/s Yield (%)",
+            min_value=0.5, max_value=50.0, step=0.5, format="%.1f",
+            key="cfirr_fcf_exit_yield",
+            help="Est. Stock Price = Est. Adj. FCF/s ÷ Yield.  "
+                 "Default = 9-yr CAGR of Adj. FCF/s.",
+        )
+        fcf_sum_rows = [
+            ["Long Term FCF/s Yield",               f"{exit_yield_now:.1f}%"],
+            [f"Est. Stock Price in {final_yr_fcf}", _f_price(fcf_price_yr10)],
+        ]
+        df_fcf_sum = pd.DataFrame(fcf_sum_rows, columns=["Metric", "Value"]).set_index("Metric")
+        st.dataframe(df_fcf_sum, use_container_width=True,
+                     column_config={"Value": st.column_config.TextColumn("Value", width=160)})
+
     # ══════════════════════════════════════════════════════════════════════════
     # COMPARISON TABLE
     # ══════════════════════════════════════════════════════════════════════════
@@ -1287,11 +1382,17 @@ def render_cf_irr_tab(norm, raw):
     # Use the session-state cashflows (irr_val was computed at top)
     _sub("IRR Cash Flow Schedule")
     if price_now and fcf_cashflows:
-        # Decompose year-9 cash flow into FCF/s + terminal price components
+        # Year-9 decomposition: use Average Target Price as the terminal value
+        # (cross-model weighted average of EBITDA and FCF methods).
         _irr_adj_ps_yr9 = _fcf_fc_ss[-1]["Est. Adj. FCF/s"] if _fcf_fc_ss else None
-        _irr_exit_yield  = float(st.session_state.get("cfirr_fcf_exit_yield", 10.0)) / 100.0
-        _irr_terminal    = (_irr_adj_ps_yr9 / _irr_exit_yield
-                            if _irr_adj_ps_yr9 and _irr_exit_yield > 0 else None)
+        # Terminal price: Average Target Price when available, else yield-based
+        _irr_terminal_price = avg_target_ss
+        # Year-9 Total Cash Flow = Est. FCF/s + Average Target Price
+        _irr_yr9_total = (
+            (_irr_adj_ps_yr9 + _irr_terminal_price)
+            if _irr_adj_ps_yr9 is not None and _irr_terminal_price is not None
+            else fcf_cashflows[-1]         # fallback to original total
+        )
 
         irr_rows = []
         # Year 0: entry outflow
@@ -1310,12 +1411,12 @@ def render_cf_irr_tab(norm, raw):
                 "Est. FCF/s":      _f_price(cf),
                 "Total Cash Flow": _f_price(cf),
             })
-        # Year 9: FCF/s + terminal price
+        # Year 9: Est. FCF/s + Average Target Price (terminal)
         irr_rows.append({
             "Year":            str(base_year + 9),
-            "price":           _f_price(_irr_terminal),
+            "price":           _f_price(_irr_terminal_price),   # Average Target Price
             "Est. FCF/s":      _f_price(_irr_adj_ps_yr9),
-            "Total Cash Flow": _f_price(fcf_cashflows[-1]),
+            "Total Cash Flow": _f_price(_irr_yr9_total),        # FCF/s + Avg Target
         })
 
         df_irr = pd.DataFrame(irr_rows).set_index("Year")

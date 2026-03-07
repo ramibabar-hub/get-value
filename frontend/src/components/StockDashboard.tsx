@@ -19,6 +19,7 @@ import type {
 import FinancialsTab from "./FinancialsTab";
 import InsightsTab   from "./InsightsTab";
 import CfIrrTab      from "./CfIrrTab";
+import SegmentsTab   from "./SegmentsTab";
 
 // ── Palette ───────────────────────────────────────────────────────────────────
 const NAVY    = "#1c2b46";
@@ -592,10 +593,18 @@ export default function StockDashboard({ ticker, onSearch }: StockDashboardProps
             {activeTab === "Overview" && (
               ov
                 ? <div style={{ maxWidth: 900, marginTop: 8 }}>
+                    <h4 style={{
+                      fontSize: "0.72em", fontWeight: 700,
+                      textTransform: "uppercase", letterSpacing: "0.09em",
+                      color: "#4d6b88", margin: "0 0 8px",
+                    }}>
+                      About
+                    </h4>
                     {ov.description
-                      ? <p style={{ color: "#4d6b88", fontSize: "0.92em", lineHeight: 1.75 }}>{ov.description}</p>
-                      : <p style={{ color: "#9ca3af", fontStyle: "italic" }}>No company description available.</p>
+                      ? <p style={{ color: "#4d6b88", fontSize: "0.92em", lineHeight: 1.75, margin: 0 }}>{ov.description}</p>
+                      : <p style={{ color: "#9ca3af", fontStyle: "italic", margin: 0 }}>No company description available.</p>
                     }
+                    <SegmentsTab ticker={ticker} />
                   </div>
                 : null
             )}

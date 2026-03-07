@@ -5,102 +5,63 @@
  *
  * Groups: Growth (CAGR) | Valuation Multiples | Profitability |
  *         Returns Analysis | Liquidity | Dividends | Efficiency | WACC
+ *
+ * Each table row owns its own isExpanded state (multiple rows can be open).
+ * MiniChart is React.lazy() loaded — only bundled when a row is first expanded.
  */
-import { memo, useState, Fragment } from "react";
+import { lazy, memo, useState, Suspense, Fragment } from "react";
 import type { InsightsData, InsightsGroup, InsightsRow, WaccData } from "../types";
+
+// ── Lazy chart import ─────────────────────────────────────────────────────────
+// MiniChart.tsx is only fetched from the server when the first row is expanded.
+
+const MiniChart = lazy(() => import("./MiniChart"));
 
 const NAVY = "#1c2b46";
 
-// ── Chart helpers ─────────────────────────────────────────────────────────────
+// ── Slide-down keyframes (injected once) ──────────────────────────────────────
 
-const CHART_NAVY = "#1c2b46";
+const SLIDE_STYLE = `
+@keyframes gvInsSlideDown {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.gv-ins-chart-wrap { animation: gvInsSlideDown 0.18s ease forwards; }
+`;
 
-function ChartIcon() {
+// ── Icon helpers ──────────────────────────────────────────────────────────────
+
+function ChartBarIcon() {
   return (
-    <svg width="13" height="13" viewBox="0 0 13 13" fill="currentColor" style={{ display: "block", flexShrink: 0 }}>
-      <rect x="0" y="7" width="3.5" height="6" rx="0.5"/>
-      <rect x="4.75" y="3.5" width="3.5" height="9.5" rx="0.5"/>
-      <rect x="9.5" y="0.5" width="3.5" height="12.5" rx="0.5"/>
+    <svg
+      width="13" height="13" viewBox="0 0 13 13" fill="currentColor"
+      style={{ display: "block", flexShrink: 0 }}
+    >
+      <rect x="0"   y="7"   width="3.5" height="6"    rx="0.5" />
+      <rect x="4.75" y="3.5" width="3.5" height="9.5"  rx="0.5" />
+      <rect x="9.5" y="0.5" width="3.5" height="12.5" rx="0.5" />
     </svg>
   );
 }
 
-function MiniChart({
-  cols, vals, isBar,
-}: {
-  cols: string[];
-  vals: (number | null | string)[];
-  isBar: boolean;
-}) {
-  const nums = vals.map(v => (typeof v === "number" && isFinite(v)) ? v : null);
-  const nonNull = nums.filter((v): v is number => v !== null);
-  if (nonNull.length === 0) {
-    return <div style={{ padding: "12px 16px", color: "#9ca3af", fontSize: "0.8em" }}>No chart data</div>;
-  }
-
-  const N   = cols.length;
-  const VW  = Math.max(N * 55, 280);
-  const VH  = 110;
-  const PL = 4, PR = 4, PT = 10, PB = 26;
-  const cW  = VW - PL - PR;
-  const cH  = VH - PT - PB;
-
-  const rawMin = Math.min(...nonNull);
-  const rawMax = Math.max(...nonNull);
-  const vMin   = Math.min(0, rawMin);
-  const vMaxRaw = Math.max(0, rawMax);
-  const vMax   = vMaxRaw === vMin ? vMin + 1 : vMaxRaw;
-  const range  = vMax - vMin;
-
-  const toY   = (v: number) => PT + cH - ((v - vMin) / range) * cH;
-  const zeroY = toY(0);
-  const bW    = cW / N;
-  const colX  = (i: number) => PL + i * bW;
-  const shortLbl = (c: string) => c === "TTM" ? "TTM" : c.length > 4 ? c.slice(-4) : c;
-
-  if (isBar) {
-    return (
-      <svg viewBox={`0 0 ${VW} ${VH}`} width="100%" style={{ display: "block" }}>
-        <line x1={PL} y1={zeroY} x2={VW - PR} y2={zeroY} stroke="#e5e7eb" strokeWidth="1"/>
-        {nums.map((v, i) => {
-          if (v === null) return null;
-          const isTtm = cols[i] === "TTM";
-          const x    = colX(i) + bW * 0.1;
-          const w    = bW * 0.8;
-          const top  = v >= 0 ? toY(v) : zeroY;
-          const h    = Math.max(Math.abs(toY(v) - zeroY), 1);
-          const fill = isTtm ? "#3b82f6" : v < 0 ? "#ef4444" : CHART_NAVY;
-          return (
-            <g key={i}>
-              <rect x={x} y={top} width={w} height={h} fill={fill} opacity={isTtm ? 1 : 0.72}/>
-              <text x={x + w / 2} y={VH - 4} textAnchor="middle" fontSize="8" fill="#9ca3af">{shortLbl(cols[i])}</text>
-            </g>
-          );
-        })}
-      </svg>
-    );
-  }
-
-  const pts = nums
-    .map((v, i) => v !== null ? { x: PL + (i + 0.5) * bW, y: toY(v), col: cols[i] } : null)
-    .filter(Boolean) as { x: number; y: number; col: string }[];
-  const d = pts.map((p, i) => `${i === 0 ? "M" : "L"}${p.x},${p.y}`).join(" ");
-
+function XIcon() {
   return (
-    <svg viewBox={`0 0 ${VW} ${VH}`} width="100%" style={{ display: "block" }}>
-      <line x1={PL} y1={zeroY} x2={VW - PR} y2={zeroY} stroke="#e5e7eb" strokeWidth="1"/>
-      {d && <path d={d} fill="none" stroke={CHART_NAVY} strokeWidth="1.5" opacity="0.7"/>}
-      {pts.map((p, i) => {
-        const isTtm = p.col === "TTM";
-        return (
-          <g key={i}>
-            <circle cx={p.x} cy={p.y} r={isTtm ? 4 : 2.5} fill={isTtm ? "#3b82f6" : CHART_NAVY}/>
-            <text x={p.x} y={VH - 4} textAnchor="middle" fontSize="8" fill="#9ca3af">{shortLbl(p.col)}</text>
-          </g>
-        );
-      })}
+    <svg
+      width="12" height="12" viewBox="0 0 12 12" fill="none"
+      style={{ display: "block", flexShrink: 0 }}
+    >
+      <line x1="2" y1="2" x2="10" y2="10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      <line x1="10" y1="2" x2="2"  y2="10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
     </svg>
   );
+}
+
+// ── Chart-type detection ──────────────────────────────────────────────────────
+// CAGR / Growth groups → bar chart  (comparing compound rates across periods)
+// All other groups     → line chart (trend over time + median reference)
+
+function isBarGroup(group: InsightsGroup): boolean {
+  return /cagr|growth/i.test(group.title);
 }
 
 // ── Cell formatter ────────────────────────────────────────────────────────────
@@ -111,15 +72,150 @@ function fCell(v: number | string | null | undefined, is_pct: boolean): string {
   if (!isFinite(v))                  return "N/A";
   if (is_pct) {
     const pct = v * 100;
-    return `${pct >= 0 ? "" : ""}${pct.toFixed(1)}%`;
+    return `${pct.toFixed(1)}%`;
   }
   return v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-// ── Memoized group table ──────────────────────────────────────────────────────
+// ── MetricRow — owns its own expansion state ──────────────────────────────────
+// Each row instance independently tracks whether its chart is shown.
+// Multiple rows across any group can be open simultaneously.
+
+interface MetricRowProps {
+  row: InsightsRow;
+  cols: string[];
+  is_pct: boolean;
+  isBar: boolean;
+  isAlt: boolean;
+  totalCols: number; // cols.length + 1  (the label column)
+}
+
+const MetricRow = memo(function MetricRow({
+  row, cols, is_pct, isBar, isAlt, totalCols,
+}: MetricRowProps) {
+  // ── Per-row independent expansion state ──────────────────────────────────
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  const vals = cols.map(col => row[col] as number | string | null);
+
+  const tdLabel: React.CSSProperties = {
+    padding: "6px 12px",
+    border: "1px solid #e5e7eb",
+    fontWeight: 600,
+    color: NAVY,
+    whiteSpace: "nowrap",
+  };
+
+  return (
+    <Fragment>
+      {/* ── Main data row ── */}
+      <tr style={{ background: isAlt ? "#f8fafc" : "#fff" }}>
+        <td style={tdLabel}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            {/* Label text comes FIRST, icon AFTER — per spec */}
+            <span>{row.label}</span>
+
+            <button
+              onClick={() => setIsExpanded(prev => !prev)}
+              title={isExpanded ? "Close chart" : "Show chart"}
+              style={{
+                background:  isExpanded ? "#eff6ff" : "none",
+                border:      isExpanded ? "1px solid #bfdbfe" : "none",
+                padding:     2,
+                cursor:      "pointer",
+                color:       isExpanded ? "#3b82f6" : "#9ca3af",
+                lineHeight:  0,
+                borderRadius: 3,
+                flexShrink:  0,
+                transition:  "color 0.15s, background 0.15s",
+              }}
+            >
+              {isExpanded ? <XIcon /> : <ChartBarIcon />}
+            </button>
+          </div>
+        </td>
+
+        {cols.map((col) => {
+          const raw   = row[col] as number | string | null;
+          const text  = fCell(raw, is_pct);
+          const isNeg = typeof raw === "number" && raw < 0;
+          const isNM  = raw === "N/M";
+          return (
+            <td
+              key={col}
+              style={{
+                padding: "6px 12px",
+                border: "1px solid #e5e7eb",
+                textAlign: "right",
+                fontVariantNumeric: "tabular-nums",
+                fontFamily: "'Courier New', monospace",
+                color:     isNM  ? "#9ca3af" : isNeg ? "#dc2626" : NAVY,
+                fontStyle: isNM  ? "italic"  : "normal",
+                fontSize:  isNM  ? "0.92em"  : undefined,
+              }}
+            >
+              {text}
+            </td>
+          );
+        })}
+      </tr>
+
+      {/* ── Expanded chart row (lazy-loaded) ── */}
+      {isExpanded && (
+        <tr>
+          <td
+            colSpan={totalCols}
+            style={{
+              padding:    0,
+              border:     "1px solid #e5e7eb",
+              borderTop:  "2px solid #3b82f6",
+              background: "#f8fafc",
+            }}
+          >
+            <div
+              className="gv-ins-chart-wrap"
+              style={{
+                padding:       "10px 16px 6px",
+                height:        156,          // fixed height — fits without breaking table layout
+                boxSizing:     "border-box",
+                overflow:      "hidden",
+              }}
+            >
+              {/* chart-type badge */}
+              <div style={{
+                fontSize:      "0.70em",
+                fontWeight:    600,
+                color:         "#6b7280",
+                letterSpacing: "0.05em",
+                textTransform: "uppercase",
+                marginBottom:  4,
+              }}>
+                {isBar ? "Bar — CAGR by period" : "Trend — with median"}
+              </div>
+
+              {/* MiniChart fetched only on first expansion (React.lazy) */}
+              <Suspense
+                fallback={
+                  <div style={{ color: "#9ca3af", fontSize: "0.8em", paddingTop: 8 }}>
+                    Loading chart…
+                  </div>
+                }
+              >
+                <MiniChart cols={cols} vals={vals} isBar={isBar} />
+              </Suspense>
+            </div>
+          </td>
+        </tr>
+      )}
+    </Fragment>
+  );
+});
+
+// ── GroupTable — memoized per group ───────────────────────────────────────────
 
 const GroupTable = memo(function GroupTable({ group }: { group: InsightsGroup }) {
-  const [openRow, setOpenRow] = useState<number | null>(null);
+  const isBar      = isBarGroup(group);
+  const totalCols  = group.cols.length + 1; // data cols + label col
 
   const thBase: React.CSSProperties = {
     background: NAVY, color: "#fff", fontWeight: 700,
@@ -130,6 +226,10 @@ const GroupTable = memo(function GroupTable({ group }: { group: InsightsGroup })
 
   return (
     <div style={{ marginBottom: 28 }}>
+      {/* Keyframes injected once per GroupTable instance */}
+      <style>{SLIDE_STYLE}</style>
+
+      {/* Section header */}
       <div style={{
         fontSize: "1.05em", fontWeight: "bold", color: "#fff",
         background: NAVY, padding: "6px 15px", borderRadius: 4, marginBottom: 6,
@@ -148,62 +248,18 @@ const GroupTable = memo(function GroupTable({ group }: { group: InsightsGroup })
             </tr>
           </thead>
           <tbody>
-            {group.rows.map((row: InsightsRow, ri: number) => {
-              const isAlt  = ri % 2 === 1;
-              const isOpen = openRow === ri;
-              const vals   = group.cols.map(col => row[col] as number | string | null);
-              return (
-                <Fragment key={ri}>
-                  <tr style={{ background: isAlt ? "#f8fafc" : "#fff" }}>
-                    <td style={{
-                      padding: "6px 12px", border: "1px solid #e5e7eb",
-                      fontWeight: 600, color: NAVY, whiteSpace: "nowrap",
-                    }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                        <button
-                          onClick={() => setOpenRow(isOpen ? null : ri)}
-                          title="Toggle chart"
-                          style={{
-                            background: "none", border: "none", padding: 2, cursor: "pointer",
-                            color: isOpen ? "#3b82f6" : "#9ca3af", lineHeight: 0,
-                            borderRadius: 3, flexShrink: 0,
-                          }}
-                        >
-                          <ChartIcon />
-                        </button>
-                        {row.label}
-                      </div>
-                    </td>
-                    {group.cols.map((col) => {
-                      const raw = row[col] as number | string | null;
-                      const text = fCell(raw, group.is_pct);
-                      const isNeg = typeof raw === "number" && raw < 0;
-                      const isNM  = raw === "N/M";
-                      return (
-                        <td key={col} style={{
-                          padding: "6px 12px", border: "1px solid #e5e7eb",
-                          textAlign: "right",
-                          fontVariantNumeric: "tabular-nums",
-                          fontFamily: "'Courier New', monospace",
-                          color: isNM ? "#9ca3af" : isNeg ? "#dc2626" : NAVY,
-                          fontStyle: isNM ? "italic" : "normal",
-                          fontSize: isNM ? "0.92em" : undefined,
-                        }}>
-                          {text}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                  {isOpen && (
-                    <tr>
-                      <td colSpan={group.cols.length + 1} style={{ padding: "8px 16px", border: "1px solid #e5e7eb", background: "#f8fafc" }}>
-                        <MiniChart cols={group.cols} vals={vals} isBar={!group.is_pct} />
-                      </td>
-                    </tr>
-                  )}
-                </Fragment>
-              );
-            })}
+            {group.rows.map((row: InsightsRow, ri: number) => (
+              // key uses label for stable identity; ri as tiebreaker for duplicates
+              <MetricRow
+                key={`${row.label}-${ri}`}
+                row={row}
+                cols={group.cols}
+                is_pct={group.is_pct}
+                isBar={isBar}
+                isAlt={ri % 2 === 1}
+                totalCols={totalCols}
+              />
+            ))}
           </tbody>
         </table>
       </div>
@@ -211,28 +267,28 @@ const GroupTable = memo(function GroupTable({ group }: { group: InsightsGroup })
   );
 });
 
-// ── WACC components table ─────────────────────────────────────────────────────
+// ── WACC table ────────────────────────────────────────────────────────────────
 
 function fPctW(v: number | null, decimals = 2): string {
   if (v == null || !isFinite(v)) return "N/A";
   return `${(v * 100).toFixed(decimals)}%`;
 }
 
-interface WaccRow { label: string; value: string; note: string; highlight?: boolean; }
+interface WaccRowDef { label: string; value: string; note: string; highlight?: boolean; }
 
 const WaccTable = memo(function WaccTable({ wacc }: { wacc: WaccData }) {
-  const rows: WaccRow[] = [
-    { label: "Risk-Free Rate (Rf)",           value: fPctW(wacc.rf),                    note: "US 10-yr treasury yield (4.2%)" },
+  const rows: WaccRowDef[] = [
+    { label: "Risk-Free Rate (Rf)",           value: fPctW(wacc.rf),                     note: "US 10-yr treasury yield (4.2%)" },
     { label: "Beta (β)",                      value: wacc.beta != null ? wacc.beta.toFixed(2) : "N/A", note: "Market risk vs S&P 500" },
-    { label: "Cost of Equity (Re)",           value: fPctW(wacc.cost_of_equity),         note: "CAPM: Rf + β × 4.6% ERP" },
+    { label: "Cost of Equity (Re)",           value: fPctW(wacc.cost_of_equity),          note: "CAPM: Rf + β × 4.6% ERP" },
     { label: "Interest Coverage Ratio",       value: wacc.int_coverage != null ? wacc.int_coverage.toFixed(2) + "×" : "N/A", note: "EBITDA / Interest expense" },
-    { label: "Credit Spread (Damodaran)",     value: fPctW(wacc.spread),                note: "Lookup from coverage ratio" },
-    { label: "Cost of Debt Pre-Tax (Rd)",     value: fPctW(wacc.cost_of_debt_pre_tax),  note: "Rf + Spread" },
-    { label: "Effective Tax Rate",            value: fPctW(wacc.tax_rate),               note: "Capped at 50%" },
-    { label: "Cost of Debt After-Tax",        value: fPctW(wacc.cost_of_debt_after_tax), note: "Rd × (1 − Tax rate)" },
-    { label: "Equity Weight (E/TC)",          value: fPctW(wacc.equity_weight),          note: "Mkt cap / (Mkt cap + Debt)" },
-    { label: "Debt Weight (D/TC)",            value: fPctW(wacc.debt_weight),            note: "Total debt / (Mkt cap + Debt)" },
-    { label: "Computed WACC",                 value: fPctW(wacc.wacc),                   note: "E/TC × Re + D/TC × Rd(at)", highlight: true },
+    { label: "Credit Spread (Damodaran)",     value: fPctW(wacc.spread),                 note: "Lookup from coverage ratio" },
+    { label: "Cost of Debt Pre-Tax (Rd)",     value: fPctW(wacc.cost_of_debt_pre_tax),   note: "Rf + Spread" },
+    { label: "Effective Tax Rate",            value: fPctW(wacc.tax_rate),                note: "Capped at 50%" },
+    { label: "Cost of Debt After-Tax",        value: fPctW(wacc.cost_of_debt_after_tax),  note: "Rd × (1 − Tax rate)" },
+    { label: "Equity Weight (E/TC)",          value: fPctW(wacc.equity_weight),           note: "Mkt cap / (Mkt cap + Debt)" },
+    { label: "Debt Weight (D/TC)",            value: fPctW(wacc.debt_weight),             note: "Total debt / (Mkt cap + Debt)" },
+    { label: "Computed WACC",                 value: fPctW(wacc.wacc),                    note: "E/TC × Re + D/TC × Rd(at)", highlight: true },
   ];
 
   const thBase: React.CSSProperties = {
@@ -291,7 +347,7 @@ const WaccTable = memo(function WaccTable({ wacc }: { wacc: WaccData }) {
   );
 });
 
-// ── Manual WACC selector ──────────────────────────────────────────────────────
+// ── WACC manual selector ──────────────────────────────────────────────────────
 
 function WaccSelector({ computedWacc, manualWacc, onChange }: {
   computedWacc: number | null;
@@ -363,7 +419,7 @@ function Spinner() {
   );
 }
 
-// ── Main component ────────────────────────────────────────────────────────────
+// ── Main export ───────────────────────────────────────────────────────────────
 
 interface Props {
   data: InsightsData | null;
@@ -374,7 +430,9 @@ interface Props {
   onWaccChange: (v: number) => void;
 }
 
-export default function InsightsTab({ data, loading, error, waccData, manualWacc, onWaccChange }: Props) {
+export default function InsightsTab({
+  data, loading, error, waccData, manualWacc, onWaccChange,
+}: Props) {
   if (loading) return <Spinner />;
 
   if (error) {

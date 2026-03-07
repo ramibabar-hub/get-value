@@ -6,7 +6,13 @@
       "Bash(python3:*)",
       "Bash(find .:*)",
       "Bash(pip install:*)",
-      "Bash(npm run:*)"
+      "Bash(npm run:*)",
+      "Bash(curl -s \"http://127.0.0.1:8000/api/routing-info/NICE.TA\")",
+      "Bash(curl -s \"http://127.0.0.1:8000/api/overview/NICE.TA\")",
+      "Bash(curl -s \"http://127.0.0.1:8000/api/overview/AAPL\")",
+      "Bash(curl -s \"http://127.0.0.1:8000/api/financials/NICE.TA\")",
+      "Bash(npx skills add https://github.com/davila7/claude-code-templates --skill senior-data-scientist)",
+      "Bash(npx skills add https://github.com/davila7/claude-code-templates --skill senior-data-scientist --yes)"
     ]
   }
 }
