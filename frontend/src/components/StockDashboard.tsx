@@ -278,7 +278,7 @@ function NormalizedPETab({ ticker, externalWacc }: { ticker: string; externalWac
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState<string | null>(null);
   const [sliders, setSliders] = useState<Sliders>({ growthPct: 5, years: 7, discPct: 15, mosPct: 15, useWacc: false });
-  const debounce = useRef<ReturnType<typeof setTimeout>>();
+  const debounce = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useEffect(() => {
     setLoading(true); setError(null); setData(null);

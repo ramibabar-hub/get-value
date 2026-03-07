@@ -28,15 +28,6 @@ const f$   = (v: number | null | string) =>
   v == null || typeof v !== "number" || !isFinite(v) ? "N/A"
   : `$${v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-const fPct = (v: number | null | string) => {
-  if (v == null || typeof v === "string") return typeof v === "string" ? v : "N/A";
-  if (!isFinite(v)) return "N/A";
-  return `${(v * 100).toFixed(1)}%`;
-};
-
-const fX = (v: number | null | string) =>
-  v == null || typeof v !== "number" || !isFinite(v) ? "N/A"
-  : `${v.toFixed(1)}x`;
 
 const fPctNum = (v: number) => `${v.toFixed(1)}%`;
 
@@ -346,7 +337,7 @@ export default function CfIrrTab({ ticker, externalWacc }: Props) {
   // WACC: use external (from slider) if set, else use computed from backend
   const waccPct = externalWacc > 0 ? externalWacc : (data?.wacc_computed ?? 0) * 100;
 
-  const debounce = useRef<ReturnType<typeof setTimeout>>();
+  const debounce = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const seeded   = useRef(false);
 
   const buildUrl = useCallback((rates?: { ebt: number[]; fcf: number[]; mult: number; yld: number; mos: number }) => {
@@ -431,12 +422,35 @@ export default function CfIrrTab({ ticker, externalWacc }: Props) {
 
   return (
     <div>
-      {/* Info banner */}
-      <div style={{ background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 8, padding: "10px 16px", marginBottom: 18, fontSize: "0.83em", color: "#1e40af" }}>
-        <strong>How to use:</strong> Review the historical EV/EBITDA and Adj. FCF/s tables, then adjust
-        the per-year growth rates and exit assumptions. The two stock-price projections are averaged,
-        discounted at WACC to compute Fair Value, and compared to the current price.
-        IRR is calculated from the projected FCF/s cash flow stream.
+      {/* Info banner + PDF download */}
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 12, marginBottom: 18, flexWrap: "wrap" }}>
+        <div style={{ flex: 1, minWidth: 260, background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 8, padding: "10px 16px", fontSize: "0.83em", color: "#1e40af" }}>
+          <strong>How to use:</strong> Review the historical EV/EBITDA and Adj. FCF/s tables, then adjust
+          the per-year growth rates and exit assumptions. The two stock-price projections are averaged,
+          discounted at WACC to compute Fair Value, and compared to the current price.
+          IRR is calculated from the projected FCF/s cash flow stream.
+        </div>
+        <a
+          href={`/api/cf-irr/${ticker}/pdf?${new URLSearchParams({
+            ebt_growth:    ebtGrowth.join(","),
+            fcf_growth:    fcfGrowth.join(","),
+            exit_mult:     String(exitMult),
+            exit_yield:    String(exitYield),
+            mos_pct:       String(mosPct),
+            wacc_override: String(waccPct),
+          }).toString()}`}
+          target="_blank"
+          rel="noreferrer"
+          download
+          style={{
+            display: "inline-flex", alignItems: "center", gap: 6,
+            padding: "8px 16px", borderRadius: 6, fontSize: "0.83em", fontWeight: 600,
+            background: NAVY, color: "#fff", textDecoration: "none", whiteSpace: "nowrap",
+            border: "none", cursor: "pointer", flexShrink: 0,
+          }}
+        >
+          📄 Download PDF One-Pager
+        </a>
       </div>
 
       {/* ═══ SECTION 1 — Checklist + Final Output ══════════════════════════════ */}
@@ -475,7 +489,19 @@ export default function CfIrrTab({ ticker, externalWacc }: Props) {
       <SubHeader title="Table 2.1 · EV/EBITDA Historical  (values in $MM unless noted)" />
       <HistTable rows={data.ebt_hist} thmRow={data.ebt_ttm} avgRow={data.ebt_avg} cagrRow={data.ebt_cagr} columns={ebtHistCols} />
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 20 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 20 }}>
+        <div>
+          <SubHeader title={`Table 2.2 · EBITDA Forecast  (${data.base_year + 1}–${data.base_year + 9})`} />
+          <ForecastTable
+            rows={data.ebt_forecast}
+            growthRates={ebtGrowth}
+            onGrowthChange={handleEbtGrowth}
+            valueKey="Est. EBITDA ($MM)"
+            valueLabel="Est. EBITDA ($MM)"
+            globalRate={ebtGlobal}
+            onGlobalChange={handleEbtGlobal}
+          />
+        </div>
         <div>
           <SubHeader title="Est. Stock Price — EBITDA Method" />
           <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
@@ -504,18 +530,6 @@ export default function CfIrrTab({ ticker, externalWacc }: Props) {
             </tbody>
           </table>
         </div>
-        <div>
-          <SubHeader title={`Table 2.2 · EBITDA Forecast  (${data.base_year + 1}–${data.base_year + 9})`} />
-          <ForecastTable
-            rows={data.ebt_forecast}
-            growthRates={ebtGrowth}
-            onGrowthChange={handleEbtGrowth}
-            valueKey="Est. EBITDA ($MM)"
-            valueLabel="Est. EBITDA ($MM)"
-            globalRate={ebtGlobal}
-            onGlobalChange={handleEbtGlobal}
-          />
-        </div>
       </div>
 
       {/* ═══ SECTION 3 — FCF Analysis ════════════════════════════════════════ */}
@@ -523,7 +537,19 @@ export default function CfIrrTab({ ticker, externalWacc }: Props) {
       <SubHeader title="Table 3.1 · Adj. FCF/s Historical  (values in $MM unless noted)" />
       <HistTable rows={data.fcf_hist} thmRow={data.fcf_ttm} avgRow={data.fcf_avg} cagrRow={data.fcf_cagr} columns={fcfHistCols} />
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 20 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 20 }}>
+        <div>
+          <SubHeader title={`Table 3.2 · Adj. FCF/s Forecast  (${data.base_year + 1}–${data.base_year + 9})`} />
+          <ForecastTable
+            rows={data.fcf_forecast}
+            growthRates={fcfGrowth}
+            onGrowthChange={handleFcfGrowth}
+            valueKey="Est. Adj. FCF/s"
+            valueLabel="Est. Adj. FCF/s ($)"
+            globalRate={fcfGlobal}
+            onGlobalChange={handleFcfGlobal}
+          />
+        </div>
         <div>
           <SubHeader title="Est. Stock Price — FCF/s Method" />
           <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
@@ -551,18 +577,6 @@ export default function CfIrrTab({ ticker, externalWacc }: Props) {
               ))}
             </tbody>
           </table>
-        </div>
-        <div>
-          <SubHeader title={`Table 3.2 · Adj. FCF/s Forecast  (${data.base_year + 1}–${data.base_year + 9})`} />
-          <ForecastTable
-            rows={data.fcf_forecast}
-            growthRates={fcfGrowth}
-            onGrowthChange={handleFcfGrowth}
-            valueKey="Est. Adj. FCF/s"
-            valueLabel="Est. Adj. FCF/s ($)"
-            globalRate={fcfGlobal}
-            onGlobalChange={handleFcfGlobal}
-          />
         </div>
       </div>
 
