@@ -644,7 +644,7 @@ export default function StockDashboard({ ticker, onSearch }: StockDashboardProps
                   onSelect={setActiveVal}
                   onReorder={setValTabs}
                 />
-                {activeVal === "CF + IRR"     && <CfIrrTab ticker={ticker} externalWacc={manualWacc} />}
+                {activeVal === "CF + IRR"     && <CfIrrTab ticker={ticker} externalWacc={manualWacc} ov={ov} />}
                 {activeVal === "Normalized PE" && <NormalizedPETab ticker={ticker} externalWacc={manualWacc} />}
                 {activeVal === "DCF"           && <Placeholder icon="📉" title="DCF Model — Coming Soon" body="Discounted Cash Flow valuation with customisable WACC and terminal growth rate." />}
               </div>

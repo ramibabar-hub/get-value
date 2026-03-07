@@ -1019,6 +1019,11 @@ class _CfIrrPdfBody(BaseModel):
     mos_pct:      float
     exit_mult:    float
     exit_yield:   float
+    # Company identity (passed from React overview state — avoids extra API call)
+    company:      str = ""
+    sector:       str = ""
+    industry:     str = ""
+    description:  str = ""
     # Historical tables
     ebt_hist:     list[dict[str, Any]]
     ebt_ttm:      dict[str, Any]
@@ -1056,18 +1061,22 @@ def cf_irr_pdf(ticker: str, body: _CfIrrPdfBody):
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"PDF service unavailable: {exc}")
 
-    # Fetch only metadata + historical prices — the heavy financials come from React
-    try:
-        raw_data = _gw.fetch_all(ticker)
-        ov       = _gw.fetch_overview(ticker)
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Data fetch failed: {exc}")
+    # Company metadata comes from the React body — no API call needed for that.
+    company     = body.company     or ticker
+    sector      = body.sector      or ""
+    industry    = body.industry    or ""
+    description = body.description or ""
 
-    company     = str(ov.get("companyName") or ov.get("name") or ticker)
-    sector      = str(ov.get("sector")      or "")
-    industry    = str(ov.get("industry")    or "")
-    description = str(ov.get("description") or "")
-    hist_prices = raw_data.get("historical_prices") or []
+    # Fetch only historical prices for the chart — single lightweight API call
+    # with a 12-second timeout so we never stall the button.
+    import concurrent.futures as _cf
+    hist_prices: list = []
+    try:
+        with _cf.ThreadPoolExecutor(max_workers=1) as _ex:
+            _fut = _ex.submit(_gw.fetch_hist_prices, ticker)
+            hist_prices = _fut.result(timeout=12)
+    except Exception:
+        hist_prices = []   # chart omitted — PDF still generated
 
     # Convert React checklist dicts → (label, display, passed, threshold) tuples
     checklist_pdf = [

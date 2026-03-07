@@ -9,7 +9,7 @@
  *  4. IRR Sensitivity Matrix
  */
 import { useState, useEffect, useRef, memo, useCallback } from "react";
-import type { CfIrrData } from "../types";
+import type { CfIrrData, OverviewData } from "../types";
 
 const NAVY = "#1c2b46";
 const CLR_PASS = "#d1fae5"; const CLR_PASS_FG = "#065f46";
@@ -318,9 +318,10 @@ const SensitivityMatrix = memo(function SensitivityMatrix({
 interface Props {
   ticker: string;
   externalWacc: number;   // from Insights WACC slider (in %)
+  ov?: OverviewData | null;  // company overview from StockDashboard (for PDF metadata)
 }
 
-export default function CfIrrTab({ ticker, externalWacc }: Props) {
+export default function CfIrrTab({ ticker, externalWacc, ov }: Props) {
   const [data,    setData]    = useState<CfIrrData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error,   setError]   = useState<string | null>(null);
@@ -356,6 +357,11 @@ export default function CfIrrTab({ ticker, externalWacc }: Props) {
         mos_pct:      mosPct,
         exit_mult:    exitMult,
         exit_yield:   exitYield,
+        // Company identity — from overview state, avoids extra API call in PDF endpoint
+        company:      ov?.company_name  ?? "",
+        sector:       ov?.sector        ?? "",
+        industry:     ov?.industry      ?? "",
+        description:  ov?.description   ?? "",
         // Historical tables — exactly what's rendered on screen
         ebt_hist:     data.ebt_hist,
         ebt_ttm:      data.ebt_ttm,
@@ -379,11 +385,15 @@ export default function CfIrrTab({ ticker, externalWacc }: Props) {
         irr:          data.irr,
       };
 
+      const ctrl = new AbortController();
+      const timeoutId = setTimeout(() => ctrl.abort(), 90_000);
       const resp = await fetch(`/api/cf-irr/${ticker}/pdf`, {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
         body:    JSON.stringify(payload),
+        signal:  ctrl.signal,
       });
+      clearTimeout(timeoutId);
 
       if (!resp.ok) {
         const msg = await resp.text().catch(() => `HTTP ${resp.status}`);

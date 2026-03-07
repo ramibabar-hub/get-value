@@ -207,6 +207,26 @@ class SmartGateway:
             fmp_ov.setdefault("_source", "fmp_fallback")
             return fmp_ov
 
+    # ── public fetch_hist_prices ──────────────────────────────────────────────
+
+    def fetch_hist_prices(self, ticker: str) -> list:
+        """
+        Lightweight: fetch only historical prices for chart (single API call).
+        Routes to FMP for US tickers, EODHD for international (with FMP fallback).
+        Returns a list of {date, close} dicts or similar raw price records.
+        """
+        base, suffix, is_us = self.parse_ticker(ticker)
+        fmp_ticker = ticker.strip().upper()
+        eod_base, eod_exchange = self._eodhd_coords(base, suffix)
+
+        if is_us:
+            return self._fmp.fetch_historical_prices(fmp_ticker)
+        else:
+            prices = self._eod.fetch_historical_prices(eod_base, eod_exchange)
+            if prices:
+                return prices
+            return self._fmp.fetch_historical_prices(fmp_ticker)
+
     # ── public fetch_segments ─────────────────────────────────────────────────
 
     def fetch_segments(self, ticker: str) -> list:
