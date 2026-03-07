@@ -337,6 +337,75 @@ export default function CfIrrTab({ ticker, externalWacc }: Props) {
   // WACC: use external (from slider) if set, else use computed from backend
   const waccPct = externalWacc > 0 ? externalWacc : (data?.wacc_computed ?? 0) * 100;
 
+  const [pdfLoading, setPdfLoading] = useState(false);
+
+  const handleDownloadPdf = async () => {
+    if (!data) return;
+    setPdfLoading(true);
+    try {
+      // Derive fair value / buy price locally — identical to FinalOutput component
+      // so the PDF exactly mirrors what the user sees on screen.
+      const waccDec = waccPct / 100;
+      const fv  = data.avg_target != null && waccDec > 0
+        ? data.avg_target / Math.pow(1 + waccDec, 9) : null;
+      const bp  = fv != null ? fv * (1 - mosPct / 100) : null;
+      const os  = fv != null && data.price_now != null ? fv > data.price_now : null;
+
+      const payload = {
+        wacc_pct:     waccPct,
+        mos_pct:      mosPct,
+        exit_mult:    exitMult,
+        exit_yield:   exitYield,
+        // Historical tables — exactly what's rendered on screen
+        ebt_hist:     data.ebt_hist,
+        ebt_ttm:      data.ebt_ttm,
+        ebt_avg:      data.ebt_avg,
+        ebt_cagr:     data.ebt_cagr,
+        fcf_hist:     data.fcf_hist,
+        fcf_ttm:      data.fcf_ttm,
+        fcf_avg:      data.fcf_avg,
+        fcf_cagr:     data.fcf_cagr,
+        // Forecast rows already reflect the user's current growth rate inputs
+        ebt_forecast: data.ebt_forecast,
+        fcf_forecast: data.fcf_forecast,
+        // Checklist from live data
+        checklist:    data.checklist,
+        // Results — client-computed so they're 100% in sync with sliders
+        price_now:    data.price_now,
+        avg_target:   data.avg_target,
+        fair_value:   fv,
+        buy_price:    bp,
+        on_sale:      os,
+        irr:          data.irr,
+      };
+
+      const resp = await fetch(`/api/cf-irr/${ticker}/pdf`, {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify(payload),
+      });
+
+      if (!resp.ok) {
+        const msg = await resp.text().catch(() => `HTTP ${resp.status}`);
+        throw new Error(msg);
+      }
+
+      const blob = await resp.blob();
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement("a");
+      a.href     = url;
+      a.download = `${ticker}_One_Pager.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("PDF download failed:", err);
+    } finally {
+      setPdfLoading(false);
+    }
+  };
+
   const debounce = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const seeded   = useRef(false);
 
@@ -430,27 +499,21 @@ export default function CfIrrTab({ ticker, externalWacc }: Props) {
           discounted at WACC to compute Fair Value, and compared to the current price.
           IRR is calculated from the projected FCF/s cash flow stream.
         </div>
-        <a
-          href={`/api/cf-irr/${ticker}/pdf?${new URLSearchParams({
-            ebt_growth:    ebtGrowth.join(","),
-            fcf_growth:    fcfGrowth.join(","),
-            exit_mult:     String(exitMult),
-            exit_yield:    String(exitYield),
-            mos_pct:       String(mosPct),
-            wacc_override: String(waccPct),
-          }).toString()}`}
-          target="_blank"
-          rel="noreferrer"
-          download
+        <button
+          onClick={handleDownloadPdf}
+          disabled={pdfLoading || !data}
           style={{
             display: "inline-flex", alignItems: "center", gap: 6,
             padding: "8px 16px", borderRadius: 6, fontSize: "0.83em", fontWeight: 600,
-            background: NAVY, color: "#fff", textDecoration: "none", whiteSpace: "nowrap",
-            border: "none", cursor: "pointer", flexShrink: 0,
+            background: pdfLoading ? "#64748b" : NAVY,
+            color: "#fff", border: "none",
+            cursor: pdfLoading || !data ? "not-allowed" : "pointer",
+            flexShrink: 0, whiteSpace: "nowrap",
+            opacity: pdfLoading || !data ? 0.7 : 1,
           }}
         >
-          📄 Download PDF One-Pager
-        </a>
+          {pdfLoading ? "⏳ Generating…" : "📄 Download PDF One-Pager"}
+        </button>
       </div>
 
       {/* ═══ SECTION 1 — Checklist + Final Output ══════════════════════════════ */}

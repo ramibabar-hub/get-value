@@ -18,6 +18,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import datetime
 from fastapi import FastAPI, HTTPException, Query, Response
+from pydantic import BaseModel
+from typing import Any
 from fastapi.middleware.cors import CORSMiddleware
 
 from agents.core_agent import DataNormalizer
@@ -1009,131 +1011,73 @@ def cf_irr(
     }
 
 
-@app.get("/api/cf-irr/{ticker}/pdf", summary="Download CF+IRR One-Pager PDF", tags=["Valuation"])
-def cf_irr_pdf(
-    ticker:        str,
-    ebt_growth:    str   = Query(default="5,5,5,5,5,5,5,5,5"),
-    exit_mult:     float = Query(default=15.0),
-    fcf_growth:    str   = Query(default="5,5,5,5,5,5,5,5,5"),
-    exit_yield:    float = Query(default=5.0),
-    mos_pct:       float = Query(default=10.0),
-    wacc_override: float | None = Query(default=None),
-):
-    """Generate and download the analyst-style CF+IRR PDF one-pager."""
+# ── Request body for PDF generation ──────────────────────────────────────────
+
+class _CfIrrPdfBody(BaseModel):
+    """Full live state from React — exactly what the user sees on screen."""
+    wacc_pct:     float
+    mos_pct:      float
+    exit_mult:    float
+    exit_yield:   float
+    # Historical tables
+    ebt_hist:     list[dict[str, Any]]
+    ebt_ttm:      dict[str, Any]
+    ebt_avg:      dict[str, Any]
+    ebt_cagr:     dict[str, Any]
+    fcf_hist:     list[dict[str, Any]]
+    fcf_ttm:      dict[str, Any]
+    fcf_avg:      dict[str, Any]
+    fcf_cagr:     dict[str, Any]
+    # Forecast rows (already reflect user's current growth inputs)
+    ebt_forecast: list[dict[str, Any]]
+    fcf_forecast: list[dict[str, Any]]
+    # Computed results (from React's live FinalOutput derivation)
+    price_now:    float | None
+    avg_target:   float | None
+    fair_value:   float | None
+    buy_price:    float | None
+    on_sale:      bool | None
+    irr:          float | None
+    # Checklist items as {label, threshold, display, passed, value}
+    checklist:    list[dict[str, Any]]
+
+
+@app.post("/api/cf-irr/{ticker}/pdf", summary="Download CF+IRR One-Pager PDF", tags=["Valuation"])
+def cf_irr_pdf(ticker: str, body: _CfIrrPdfBody):
+    """
+    Accepts the full live React state and returns a dynamic analyst-style PDF.
+    Only fetches overview + historical prices from the API (needed for chart +
+    company metadata). All financial table data comes directly from the request body.
+    """
     ticker = ticker.strip().upper()
-
-    try:
-        raw_data = _gw.fetch_all(ticker)
-        ov       = _gw.fetch_overview(ticker)
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Data fetch failed: {exc}")
-
-    try:
-        from cf_irr_tab import (
-            _ebitda_hist, _fcf_hist,
-            _ebitda_forecast_yoy, _fcf_forecast_yoy,
-            _irr_calc, _ttm_bs, _ttm_flow, _s, _year_label,
-        )
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"cf_irr_tab import failed: {exc}")
 
     try:
         from backend.services.pdf_service import generate_cfirr_pdf
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"PDF service unavailable: {exc}")
 
-    def _parse_rates(s: str, default: float = 5.0) -> list[float]:
-        try:
-            rates = [float(x) for x in s.split(",")]
-            while len(rates) < 9:
-                rates.append(default)
-            return rates[:9]
-        except Exception:
-            return [default] * 9
-
-    ebt_rates = _parse_rates(ebt_growth)
-    fcf_rates = _parse_rates(fcf_growth)
-
-    norm = DataNormalizer(raw_data, ticker)
-    ins  = InsightsAgent(raw_data, ov)
-
+    # Fetch only metadata + historical prices — the heavy financials come from React
     try:
-        from backend.logic_engine import compute_wacc
-        wacc_computed = compute_wacc(raw_data, ov)
-    except Exception:
-        wacc_computed = 0.10
-    wacc_val = (wacc_override / 100.0) if wacc_override is not None else wacc_computed
+        raw_data = _gw.fetch_all(ticker)
+        ov       = _gw.fetch_overview(ticker)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Data fetch failed: {exc}")
 
-    (ebt_hist, ebt_ttm, ebt_avg, ebt_cagr,
-     nd_ebt_ttm, _rc, _ec5, _ec10,
-     _eam, base_ebitda,
-     ev_ebt_ttm_numeric, local_ebt_cagr_num,
-     local_rev_cagr_num) = _ebitda_hist(norm, ov, ins)
+    company     = str(ov.get("companyName") or ov.get("name") or ticker)
+    sector      = str(ov.get("sector")      or "")
+    industry    = str(ov.get("industry")    or "")
+    description = str(ov.get("description") or "")
+    hist_prices = raw_data.get("historical_prices") or []
 
-    (fcf_hist, fcf_ttm, fcf_avg, fcf_cagr,
-     adj_ps_ttm, _fc10, _fc5,
-     _adj_cagr, local_fcf_cagr_num) = _fcf_hist(norm, ov, ins)
-
-    if exit_mult == 15.0 and ev_ebt_ttm_numeric:
-        exit_mult = round(ev_ebt_ttm_numeric, 1)
-
-    base_year = 2024
-    if norm.is_l and isinstance(norm.is_l[0], dict):
-        try:
-            base_year = int(_year_label(norm.is_l[0]))
-        except Exception:
-            pass
-
-    debt_ttm     = _ttm_bs(norm.q_bs, "totalDebt") or 0.0
-    cash_ttm     = _ttm_bs(norm.q_bs, "cashAndCashEquivalents") or 0.0
-    net_debt_ttm = debt_ttm - cash_ttm
-    sh_ttm       = (_ttm_flow(norm.q_is, "weightedAverageShsOutDil")
-                    or _ttm_flow(norm.q_is, "weightedAverageShsOut"))
-    price_now    = _s(ov.get("price"))
-
-    ebt_fc = _ebitda_forecast_yoy(base_ebitda, ebt_rates, base_year)
-    ebt_yr9_mm   = ebt_fc[-1]["Est. EBITDA ($MM)"] if ebt_fc else None
-    ev_yr9       = (ebt_yr9_mm * 1e6 * exit_mult) if ebt_yr9_mm is not None else None
-    mktcap_yr9   = (ev_yr9 - net_debt_ttm) if ev_yr9 is not None else None
-    ebitda_price = _s(mktcap_yr9 / sh_ttm) if (mktcap_yr9 is not None and sh_ttm) else None
-
-    fcf_fc, fcf_cashflows = _fcf_forecast_yoy(adj_ps_ttm, fcf_rates, exit_yield, base_year)
-    fcf_yr9   = fcf_fc[-1]["Est. Adj. FCF/s"] if fcf_fc else None
-    fcf_price = _s(fcf_yr9 / (exit_yield / 100.0)) if (fcf_yr9 and exit_yield > 0) else None
-
-    avg_target = None
-    if ebitda_price is not None and fcf_price is not None:
-        avg_target = (ebitda_price + fcf_price) / 2.0
-    elif ebitda_price is not None:
-        avg_target = ebitda_price
-    elif fcf_price is not None:
-        avg_target = fcf_price
-
-    fair_value = buy_price = None
-    if avg_target is not None and wacc_val > 0:
-        fair_value = avg_target / (1 + wacc_val) ** 9
-        buy_price  = fair_value * (1 - mos_pct / 100.0)
-    on_sale = (fair_value > price_now) if (fair_value is not None and price_now) else None
-
-    irr_val = None
-    if price_now and price_now > 0 and fcf_cashflows:
-        irr_val = _irr_calc([-price_now] + fcf_cashflows)
-
-    def _chk_float(v, threshold, lower=False):
-        f = _s(v)
-        if f is None or isinstance(v, str):
-            return {"value": "N/A", "display": "N/A", "passed": None}
-        passed = (f < threshold) if lower else (f >= threshold)
-        return {"value": f, "display": f"{f * 100:.1f}%" if not lower else f"{f:.2f}x", "passed": passed}
-
-    checklist = [
-        {"label": "Revenue Growth (10yr CAGR)", "threshold": "> 7%",  **_chk_float(local_rev_cagr_num, 0.07)},
-        {"label": "EBITDA Growth (10yr CAGR)",  "threshold": "> 10%", **_chk_float(local_ebt_cagr_num, 0.10)},
-        {"label": "FCF Growth (10yr CAGR)",     "threshold": "> 10%", **_chk_float(local_fcf_cagr_num, 0.10)},
-        {"label": "Net Debt / EBITDA (TTM)",    "threshold": "< 3x",
-         **{**_chk_float(nd_ebt_ttm, 3.0, lower=True),
-            "display": f"{nd_ebt_ttm:.2f}x" if isinstance(nd_ebt_ttm, (int, float)) else "N/A"}},
-        {"label": "IRR",                        "threshold": "> 12%", **_chk_float(irr_val, 0.12)},
+    # Convert React checklist dicts → (label, display, passed, threshold) tuples
+    checklist_pdf = [
+        (
+            item.get("label",     ""),
+            item.get("display",   "N/A"),
+            item.get("passed"),
+            item.get("threshold", ""),
+        )
+        for item in body.checklist
     ]
 
     def _fp(v):
@@ -1142,60 +1086,57 @@ def cf_irr_pdf(
     def _fmt_delta(target, current):
         if not target or not current or target == 0:
             return "N/A"
-        pct   = (1.0 - current / target) * 100.0
-        sign  = "+" if pct >= 0 else ""
-        lbl   = "Upside" if pct >= 0 else "Downside"
-        return f"{lbl}  {sign}{pct:.1f}%"
+        pct = (1.0 - current / target) * 100.0
+        return f"{'Upside' if pct >= 0 else 'Downside'}  {'+' if pct >= 0 else ''}{pct:.1f}%"
 
     final_rows = [
-        ("Average Target Price",   _fp(avg_target),                   None),
-        ("WACC",                   f"{wacc_val * 100:.2f}%",          None),
-        ("Fair Value per share",   _fp(fair_value),                   None),
-        ("Margin of Safety (%)",   f"{mos_pct:.0f}%",                 None),
-        ("Buy Price",              _fp(buy_price),                    None),
-        ("Current Stock Price",    _fp(price_now),                    None),
-        ("Company on-sale?",       "ON SALE" if on_sale else "NOT ON SALE" if on_sale is False else "N/A", on_sale),
-        ("Upside (vs Fair Value)", _fmt_delta(fair_value, price_now), None),
-        ("Upside (vs Buy Price)",  _fmt_delta(buy_price,  price_now), None),
+        ("Average Target Price",   _fp(body.avg_target),                        None),
+        ("WACC",                   f"{body.wacc_pct:.2f}%",                     None),
+        ("Fair Value per share",   _fp(body.fair_value),                        None),
+        ("Margin of Safety (%)",   f"{body.mos_pct:.0f}%",                      None),
+        ("Buy Price",              _fp(body.buy_price),                         None),
+        ("Current Stock Price",    _fp(body.price_now),                         None),
+        ("Company on-sale?",
+         "ON SALE" if body.on_sale else "NOT ON SALE" if body.on_sale is False else "N/A",
+         body.on_sale),
+        ("Upside (vs Fair Value)", _fmt_delta(body.fair_value, body.price_now), None),
+        ("Upside (vs Buy Price)",  _fmt_delta(body.buy_price,  body.price_now), None),
     ]
-
-    def _row_clean(r: dict) -> dict:
-        return {k: (v if isinstance(v, str) else _strip_nan(v)) for k, v in r.items()}
 
     try:
         pdf_bytes = generate_cfirr_pdf(
             ticker            = ticker,
-            company           = str(ov.get("companyName") or ov.get("name") or ""),
-            sector            = str(ov.get("sector")      or ""),
-            industry          = str(ov.get("industry")    or ""),
-            historical_prices = raw_data.get("historical_prices") or [],
-            ebt_hist          = [_row_clean(r) for r in ebt_hist],
-            ebt_cagr          = _row_clean(ebt_cagr),
-            ebt_avg           = _row_clean(ebt_avg),
-            ebt_ttm           = _row_clean(ebt_ttm),
-            fcf_hist          = [_row_clean(r) for r in fcf_hist],
-            fcf_cagr          = _row_clean(fcf_cagr),
-            fcf_avg           = _row_clean(fcf_avg),
-            fcf_ttm           = _row_clean(fcf_ttm),
-            ebt_fc_rows       = [_row_clean(r) for r in ebt_fc],
-            fcf_fc_rows       = [_row_clean(r) for r in fcf_fc],
-            checklist         = checklist,
+            company           = company,
+            sector            = sector,
+            industry          = industry,
+            description       = description,
+            historical_prices = hist_prices,
+            ebt_hist          = body.ebt_hist,
+            ebt_cagr          = body.ebt_cagr,
+            ebt_avg           = body.ebt_avg,
+            ebt_ttm           = body.ebt_ttm,
+            fcf_hist          = body.fcf_hist,
+            fcf_cagr          = body.fcf_cagr,
+            fcf_avg           = body.fcf_avg,
+            fcf_ttm           = body.fcf_ttm,
+            ebt_fc_rows       = body.ebt_forecast,
+            fcf_fc_rows       = body.fcf_forecast,
+            checklist         = checklist_pdf,
             final_rows        = final_rows,
-            price_now         = price_now,
-            avg_target_ss     = avg_target,
-            irr_val           = irr_val,
-            fair_value_now    = fair_value,
-            buy_price_now     = buy_price,
-            on_sale_now       = on_sale,
+            price_now         = body.price_now,
+            avg_target_ss     = body.avg_target,
+            irr_val           = body.irr,
+            fair_value_now    = body.fair_value,
+            buy_price_now     = body.buy_price,
+            on_sale_now       = body.on_sale,
         )
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"PDF generation failed: {exc}")
 
-    filename = f"{ticker}_CF_IRR_{datetime.date.today().strftime('%Y%m%d')}.pdf"
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={"Content-Disposition": f'attachment; filename="{ticker}_One_Pager.pdf"'},
     )
 
 

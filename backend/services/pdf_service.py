@@ -171,24 +171,29 @@ class _PDF(FPDF):
 #  Block renderers
 # ─────────────────────────────────────────────────────────────────────────────
 def _draw_banner(pdf: _PDF, ticker, company, sector, industry, date_str):
-    H = 15.0
+    H = 16.0
     pdf.fc(_NAVY)
     pdf.rect(0, 0, _PW, H, "F")
 
-    pdf.set_xy(_LM, 3.5)
-    pdf.set_font("Helvetica", "B", 14)
+    # Left: TICKER (large) then full company name on the line below
+    pdf.set_xy(_LM, 2.5)
+    pdf.set_font("Helvetica", "B", 13)
     pdf.tc(_WHITE)
-    pdf.cell(28, 8, ticker, new_x=XPos.RIGHT, new_y=YPos.TOP, align="L")
+    pdf.cell(0, 7, ticker, new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="L")
 
-    pdf.set_font("Helvetica", "", 9)
+    pdf.set_x(_LM)
+    pdf.set_font("Helvetica", "", 7)
     pdf.tc((170, 200, 225))
-    pdf.cell(90, 8, f"  {company}", new_x=XPos.RIGHT, new_y=YPos.TOP)
+    safe_co = company.encode("latin-1", "replace").decode("latin-1")
+    pdf.cell(110, 5, safe_co, new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="L")
 
-    pdf.set_x(_PW - 80)
-    pdf.set_font("Helvetica", "", 6.5)
+    # Right-aligned metadata
+    pdf.set_xy(_LM, 3.0)
+    pdf.set_font("Helvetica", "", 6.0)
     pdf.tc((145, 175, 210))
-    meta = " -".join(x for x in [sector, industry, date_str] if x)
-    pdf.cell(72, 8, meta, align="R", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    meta = "  |  ".join(x for x in [sector, industry, date_str] if x)
+    safe_meta = meta.encode("latin-1", "replace").decode("latin-1")
+    pdf.cell(_BW, 7, safe_meta, align="R", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
     pdf.set_y(H + 2)
 
@@ -341,7 +346,16 @@ def _draw_checklist(pdf: _PDF, x, y, w, checklist) -> float:
     pdf.cell(c3, 3.8, "Status",      fill=True, border=0, align="C",
              new_x=XPos.LEFT,  new_y=YPos.NEXT)
 
-    for label, val, passed, _threshold in checklist:
+    for item in checklist:
+        if isinstance(item, dict):
+            label      = item.get("label",     "")
+            val        = item.get("display",   "N/A")
+            passed     = item.get("passed")
+            _threshold = item.get("threshold", "")
+        else:
+            label, val, passed, _threshold = item
+        label = str(label).encode("latin-1", "replace").decode("latin-1")
+        val   = str(val).encode("latin-1", "replace").decode("latin-1")
         bg   = _GRN_BG if passed is True  else _RED_BG if passed is False else _LT_GREY
         fg   = _GRN_FG if passed is True  else _RED_FG if passed is False else _BODY_TXT
         icon = "PASS" if passed is True else "FAIL" if passed is False else "N/A"
@@ -358,6 +372,33 @@ def _draw_checklist(pdf: _PDF, x, y, w, checklist) -> float:
                  new_x=XPos.LEFT,  new_y=YPos.NEXT)
 
     return pdf.get_y()
+
+
+def _draw_description(pdf: _PDF, text: str, company: str) -> None:
+    """Render a company description block at the current Y position."""
+    if not text or len(text.strip()) < 30:
+        return
+    pdf.ln(2)
+    y0 = pdf.get_y()
+    pdf.set_xy(_LM, y0)
+
+    # Title bar
+    pdf.fc(_NAVY); pdf.tc(_WHITE)
+    pdf.set_font("Helvetica", "B", 6.2)
+    title = f"About {company}".encode("latin-1", "replace").decode("latin-1") if company else "Business Description"
+    pdf.cell(_BW, 4.8, f"  {title}", fill=True, border=0, align="L",
+             new_x=XPos.LEFT, new_y=YPos.NEXT)
+    pdf.ln(0.4)
+    pdf.set_x(_LM)
+
+    # Body text — truncate at 900 chars, encode safe
+    safe = text.encode("latin-1", "replace").decode("latin-1")
+    if len(safe) > 900:
+        safe = safe[:897] + "..."
+
+    pdf.fc(_LT_GREY); pdf.tc(_BODY_TXT)
+    pdf.set_font("Helvetica", "", 5.5)
+    pdf.multi_cell(_BW, 3.8, f"  {safe}", fill=True, border=0, align="L")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -387,6 +428,7 @@ def generate_cfirr_pdf(
     fair_value_now,
     buy_price_now,
     on_sale_now,
+    description: str = "",
 ) -> bytes:
     """
     Generate an analyst-style A4 one-page PDF for the CF+IRR model.
@@ -530,6 +572,10 @@ def generate_cfirr_pdf(
     y_r3 = _draw_checklist(pdf, _LM + _CL + _GAP, y_bot, _CR, checklist)
 
     pdf.set_y(max(y_l3, y_r3))
+
+    # ── COMPANY DESCRIPTION ───────────────────────────────────────────────────
+    if description:
+        _draw_description(pdf, description, company)
 
     # ── Return bytes ──────────────────────────────────────────────────────────
     return pdf.output()
