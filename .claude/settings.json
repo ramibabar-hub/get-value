@@ -1,5 +1,17 @@
 {
   "enabledPlugins": {
-    "frontend-design@claude-plugins-official": true
+    "frontend-design@claude-plugins-official": true,
+    "superpowers@claude-plugins-official": true,
+    "business-intelligence@mamad-skills": true,
+    "business-analyst@mamad-skills": true,
+    "excalidraw-diagram-generator@mamad-skills": true,
+    "presentation-builder@mamad-skills": true,
+    "ui-ux-pro-max@mamad-skills": true,
+    "equity-research@financial-services-plugins": true,
+    "private-equity@financial-services-plugins": true,
+    "financial-analysis@financial-services-plugins": true,
+    "investment-banking@financial-services-plugins": true,
+    "wealth-management@financial-services-plugins": true,
+    "sp-global@financial-services-plugins": true
   }
 }

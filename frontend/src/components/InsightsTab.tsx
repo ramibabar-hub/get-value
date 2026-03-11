@@ -11,6 +11,8 @@
  */
 import { lazy, memo, useState, Suspense, Fragment } from "react";
 import type { InsightsData, InsightsGroup, InsightsRow, WaccData } from "../types";
+import { IndustryComparisonCell } from "./IndustryComparisonCell";
+import { lookupBenchmark } from "../utils/industryBenchmarks";
 
 // ── Lazy chart import ─────────────────────────────────────────────────────────
 // MiniChart.tsx is only fetched from the server when the first row is expanded.
@@ -87,16 +89,24 @@ interface MetricRowProps {
   is_pct: boolean;
   isBar: boolean;
   isAlt: boolean;
-  totalCols: number; // cols.length + 1  (the label column)
+  totalCols: number; // label col + data cols (+ optional benchmark col)
+  showBenchmarkCol: boolean; // whether this group has a Vs. Industry column
 }
 
 const MetricRow = memo(function MetricRow({
-  row, cols, is_pct, isBar, isAlt, totalCols,
+  row, cols, is_pct, isBar, isAlt, totalCols, showBenchmarkCol,
 }: MetricRowProps) {
   // ── Per-row independent expansion state ──────────────────────────────────
   const [isExpanded, setIsExpanded] = useState(false);
 
   const vals = cols.map(col => row[col] as number | string | null);
+
+  // ── Benchmark lookup (TTM value vs industry avg) ──────────────────────────
+  const ttmVal   = cols.includes("TTM") ? row["TTM"] as number | null : null;
+  const benchmark = showBenchmarkCol ? lookupBenchmark(row.label) : null;
+  const showCell  = benchmark !== null
+    && typeof ttmVal === "number"
+    && isFinite(ttmVal);
 
   const tdLabel: React.CSSProperties = {
     padding: "6px 12px",
@@ -158,6 +168,28 @@ const MetricRow = memo(function MetricRow({
             </td>
           );
         })}
+
+        {/* ── Vs. Industry benchmark cell ── */}
+        {showBenchmarkCol && (
+          <td style={{
+            padding: "4px 8px", border: "1px solid #e5e7eb",
+            borderLeft: "2px solid #dbeafe",
+            verticalAlign: "middle",
+            background: isAlt ? "#f8fafc" : "#fff",
+          }}>
+            {showCell ? (
+              <IndustryComparisonCell
+                companyValue={ttmVal as number}
+                industryAvg={benchmark!.avg}
+                metricName={row.label}
+                higherIsBetter={benchmark!.higherIsBetter}
+                formatValue={(v) => fCell(v, is_pct)}
+              />
+            ) : (
+              <span style={{ color: "#d1d5db", fontSize: "0.75em", paddingLeft: 4 }}>—</span>
+            )}
+          </td>
+        )}
       </tr>
 
       {/* ── Expanded chart row (lazy-loaded) ── */}
@@ -214,8 +246,15 @@ const MetricRow = memo(function MetricRow({
 // ── GroupTable — memoized per group ───────────────────────────────────────────
 
 const GroupTable = memo(function GroupTable({ group }: { group: InsightsGroup }) {
-  const isBar      = isBarGroup(group);
-  const totalCols  = group.cols.length + 1; // data cols + label col
+  const isBar = isBarGroup(group);
+
+  // Show the Vs. Industry column only for non-CAGR groups that have a TTM column
+  // and at least one row with a known benchmark.
+  const showBenchmarkCol = !isBar
+    && group.cols.includes("TTM")
+    && group.rows.some(row => lookupBenchmark(row.label) !== null);
+
+  const totalCols = group.cols.length + 1 + (showBenchmarkCol ? 1 : 0);
 
   const thBase: React.CSSProperties = {
     background: NAVY, color: "#fff", fontWeight: 700,
@@ -245,11 +284,15 @@ const GroupTable = memo(function GroupTable({ group }: { group: InsightsGroup })
               {group.cols.map((col) => (
                 <th key={col} style={thRight}>{col}</th>
               ))}
+              {showBenchmarkCol && (
+                <th style={{ ...thBase, minWidth: 140, borderLeft: "2px solid #2d4a7a" }}>
+                  Vs. Industry
+                </th>
+              )}
             </tr>
           </thead>
           <tbody>
             {group.rows.map((row: InsightsRow, ri: number) => (
-              // key uses label for stable identity; ri as tiebreaker for duplicates
               <MetricRow
                 key={`${row.label}-${ri}`}
                 row={row}
@@ -258,6 +301,7 @@ const GroupTable = memo(function GroupTable({ group }: { group: InsightsGroup })
                 isBar={isBar}
                 isAlt={ri % 2 === 1}
                 totalCols={totalCols}
+                showBenchmarkCol={showBenchmarkCol}
               />
             ))}
           </tbody>

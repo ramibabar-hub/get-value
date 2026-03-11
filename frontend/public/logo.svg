@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 278 64">
+  <!--
+    getValue wordmark — two-tone typographic logotype, no border, no frame.
+    "get"   → brand blue  #007bff
+    "Value" → brand navy  #1c2b46
+    Font: Trebuchet MS 900 — geometric, punchy, matches the app's heading weight.
+    Tight letter-spacing (-1.5) gives a condensed, modern wordmark feel.
+    viewBox width sized to text (font-size 58, Trebuchet MS proportions).
+  -->
+  <text
+    x="2"
+    y="50"
+    font-family="'Trebuchet MS', 'Gill Sans MT', 'Helvetica Neue', Arial, sans-serif"
+    font-weight="900"
+    font-size="58"
+    letter-spacing="-1.5"
+  >
+    <tspan fill="#007bff">get</tspan><tspan fill="#1c2b46">Value</tspan>
+  </text>
+</svg>

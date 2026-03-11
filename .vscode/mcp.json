@@ -1,0 +1,13 @@
+{
+	"servers": {
+		"fmp-server": {
+			"type": "stdio",
+			"command": "npx",
+			"args": [
+				"-y",
+				"@fmp/mcp-server"
+			]
+		}
+	},
+	"inputs": []
+}

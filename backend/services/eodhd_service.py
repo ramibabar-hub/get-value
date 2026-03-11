@@ -19,7 +19,7 @@ from ._key_loader import load_key
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-#  Field-name maps: EODHD → FMP canonical
+#  Field-name maps: EODHD -> FMP canonical
 # ─────────────────────────────────────────────────────────────────────────────
 
 # Income statement
@@ -104,7 +104,7 @@ def _year(date_str: str) -> str:
 
 def _quarter_label(date_str: str) -> str:
     """
-    Map a date string → FMP-style period label (Q1/Q2/Q3/Q4).
+    Map a date string -> FMP-style period label (Q1/Q2/Q3/Q4).
     Uses the month of the period-end date (standard calendar quarters).
     """
     try:
@@ -119,7 +119,7 @@ def _quarter_label(date_str: str) -> str:
 
 def _remap(raw: dict, field_map: dict) -> dict:
     """
-    Remap raw EODHD record → FMP canonical field names.
+    Remap raw EODHD record -> FMP canonical field names.
     Priority: first mapped name wins; unmapped keys are dropped.
     """
     out: dict = {}
@@ -134,7 +134,7 @@ def _normalize_statements(period_dict: dict, field_map: dict,
     """
     Convert EODHD's period dict:
         {"2024-09-30": {fields…}, "2023-09-30": {fields…}, …}
-    → FMP-style list (newest first):
+    -> FMP-style list (newest first):
         [{"date": "2024-09-30", "fiscalYear": "2024", …fields…}, …]
     """
     if not isinstance(period_dict, dict):
@@ -154,7 +154,7 @@ def _normalize_statements(period_dict: dict, field_map: dict,
             rec["period"] = "FY"
         records.append(rec)
 
-    # Sort newest → oldest
+    # Sort newest -> oldest
     records.sort(key=lambda r: r.get("date", ""), reverse=True)
 
     # ── Post-process: derived fields ──────────────────────────────────────────
@@ -203,13 +203,13 @@ class EODHDService:
     def __init__(self):
         self.api_key = load_key("EODHD_API_KEY")
         if not self.api_key:
-            print("[EODHDService] WARNING: EODHD_API_KEY not found")
+            pass
 
     # ── internal GET ─────────────────────────────────────────────────────────
 
     def _get(self, path: str, params: dict | None = None,
              timeout: int = 15):
-        """GET → parsed JSON or None."""
+        """GET -> parsed JSON or None."""
         params = params or {}
         try:
             res = requests.get(
@@ -221,10 +221,10 @@ class EODHDService:
             return res.json()
         except requests.HTTPError as exc:
             status = exc.response.status_code if exc.response is not None else "?"
-            print(f"[EODHDService] ERROR {status} GET {path}: {exc}", flush=True)
+
             return None
         except Exception as exc:
-            print(f"[EODHDService] ERROR {type(exc).__name__} GET {path}: {exc}", flush=True)
+
             return None
 
     # ── raw fetchers ─────────────────────────────────────────────────────────
@@ -238,9 +238,9 @@ class EODHDService:
             return {}
         data = self._get(f"fundamentals/{ticker}.{exchange}")
         if isinstance(data, dict) and data:
-            print(f"[EODHDService] fundamentals {ticker}.{exchange}: OK")
+
             return data
-        print(f"[EODHDService] fundamentals {ticker}.{exchange}: empty/failed")
+
         return {}
 
     def fetch_real_time(self, ticker: str, exchange: str) -> dict:
@@ -256,7 +256,7 @@ class EODHDService:
             return {}
         # EODHD returns "NA" strings for tickers with no live feed
         if data.get("close") in (None, "NA", "N/A", ""):
-            print(f"[EODHDService] real-time {ticker}.{exchange}: no live price, trying EOD", flush=True)
+
             return {}
         return data
 
@@ -460,7 +460,7 @@ class EODHDService:
             # Real-time unavailable — try EOD historical as price fallback
             eod = self.fetch_eod_latest(ticker, exchange)
             if eod:
-                print(f"[EODHDService] using EOD fallback price for {ticker}.{exchange}: {eod.get('close')}", flush=True)
+
                 rt = eod
         if not fund and not rt:
             return {}

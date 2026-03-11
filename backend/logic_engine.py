@@ -38,7 +38,7 @@ def _s(v):
 # ─────────────────────────────────────────────────────────────────────────────
 
 def damodaran_spread(coverage: float) -> float:
-    """Damodaran interest-coverage → credit-spread lookup table."""
+    """Damodaran interest-coverage -> credit-spread lookup table."""
     if coverage > 8.5:  return 0.0067
     if coverage > 6.5:  return 0.0082
     if coverage > 5.5:  return 0.0103
@@ -169,7 +169,7 @@ def compute_normalized_pe(
     growth_default = round(sum(valid_gs) / len(valid_gs), 2) if valid_gs else 10.0
     growth_default = min(growth_default, 30.0)
 
-    # ── Resolve inputs — None → fall back to model defaults ──────────────────
+    # ── Resolve inputs — None -> fall back to model defaults ──────────────────
     use_wacc   = bool(params.get("use_wacc", False))
 
     _gp = params.get("growth_pct")

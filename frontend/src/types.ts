@@ -3,6 +3,64 @@
 export type Scale  = "K" | "MM" | "B";
 export type Period = "annual" | "quarterly";
 
+// ── Cascade data service ───────────────────────────────────────────────────────
+
+/** Which provider supplied the data */
+export type CascadeProvider = "fmp" | "eodhd" | "alpha_vantage" | "finnhub" | "none";
+
+/** Normalised company profile returned by GET /api/cascade/profile/{ticker} */
+export interface CascadeProfile {
+  ticker:          string;
+  company_name:    string;
+  exchange:        string;
+  sector:          string;
+  industry:        string;
+  currency:        string;
+  country:         string;
+  description:     string;
+  price:           number | null;
+  market_cap:      number | null;
+  pe_ratio:        number | null;
+  logo_url:        string;
+  website:         string;
+  data_source:     CascadeProvider;
+  providers_tried: CascadeProvider[];
+  /** Set only when every provider failed */
+  error?:          string;
+}
+
+/** Lightweight price-only result from GET /api/cascade/quote/{ticker} */
+export interface CascadeQuote {
+  ticker:      string;
+  price:       number | null;
+  change_pct:  number | null;
+  data_source: CascadeProvider;
+}
+
+// ── Gemini qualitative analysis ───────────────────────────────────────────────
+
+export type GeminiAnalysisType = "summary" | "moat" | "risks" | "valuation";
+
+/** Context sent to POST /api/gemini/analyze/{ticker} */
+export interface GeminiAnalysisRequest {
+  company_name?: string;
+  sector?:       string;
+  industry?:     string;
+  country?:      string;
+  market_cap?:   number;
+  pe_ratio?:     number;
+  description?:  string;
+}
+
+/** Response from POST /api/gemini/analyze/{ticker} */
+export interface GeminiAnalysis {
+  ticker:        string;
+  analysis_type: GeminiAnalysisType;
+  text:          string;
+  model:         string;
+  error:         string | null;
+}
+
 // ── Normalized PE ─────────────────────────────────────────────────────────────
 
 export interface NormalizedPEResult {
@@ -153,6 +211,162 @@ export interface SegmentsData {
   segments: Segment[];  // sorted largest revenue first
 }
 
+// ── DDM  ──────────────────────────────────────────────────────────────────────
+
+export interface DdmHistRow {
+  year:       string;
+  divs_paid:  number | null;  // raw dollars, negative (cash outflow)
+  shares:     number | null;  // raw share count
+  dps:        number | null;  // dollars per share
+  net_income: number | null;  // raw dollars
+  payout_pct: number | null;  // decimal fraction (0.35 = 35 %)
+}
+
+export interface DdmData {
+  ticker:             string;
+  currency:           string;
+  price_now:          number | null;
+  hist:               DdmHistRow[];  // oldest year first, no TTM
+  ttm:                DdmHistRow;
+  dps_cagr:           number | null; // decimal (0.082 = 8.2 %)
+  dps_cagr_years:     number;
+  wacc_computed:      number;        // decimal
+  wacc:               number;        // decimal (= override or computed)
+  default_g_terminal: number;        // decimal
+  has_dividend:       boolean;
+}
+
+// ── CF + IRR Special (TBV + EPS model) ───────────────────────────────────────
+
+export interface CfIrrSpecialData {
+  ticker:      string;
+  base_year:   number;
+  price_now:   number | null;
+  base_tbv_ps: number | null;
+  base_eps:    number | null;
+  wacc:        number;
+  wacc_computed: number;
+  exit_ptbv:   number;
+  exit_pe:     number;
+  tbv_weight:  number;
+  mos_pct:     number;
+  tbv_growth_rates: number[];
+  eps_growth_rates: number[];
+  default_tbv_rate: number;
+  default_eps_rate: number;
+  // Historical table (all values pre-formatted as strings)
+  hist:      Record<string, string>[];
+  hist_ttm:  Record<string, string>;
+  hist_avg:  Record<string, string>;
+  hist_cagr: Record<string, string>;
+  // Forecasts (numeric values)
+  tbv_forecast: { Year: string; "Est. Growth Rate (%)": number; "Est. TBV/s": number }[];
+  eps_forecast: { Year: string; "Est. Growth Rate (%)": number; "Est. EPS":   number }[];
+  // Results
+  tbv_terminal: number | null;
+  eps_terminal: number | null;
+  avg_target:   number | null;
+  fair_value:   number | null;
+  buy_price:    number | null;
+  on_sale:      boolean | null;
+  irr:          number | null;
+  checklist:    CfIrrCheckItem[];
+  // CAGRs
+  assets_cagr:  number | null;
+  tbv_ps_cagr:  number | null;
+  eps_cagr:     number | null;
+  margin_avg:   number | null;
+}
+
+// ── Industry Multiple ─────────────────────────────────────────────────────────
+
+export interface IMultipleHistRow {
+  year:         string;
+  price:        number | null;
+  price_growth: number | null;
+  eps:          number | null;
+  eps_growth:   number | null;
+  ebitda_mm:    number | null;
+  revenue_mm:   number | null;
+  fcf_mm:       number | null;
+  pe:           number | null;
+  ev_ebitda:    number | null;
+  ps:           number | null;
+  p_fcf:        number | null;
+}
+
+export interface IMultipleData {
+  ticker:             string;
+  sector:             string;
+  industry:           string;
+  currency:           string;
+  hist:               IMultipleHistRow[];
+  ttm:                IMultipleHistRow;
+  avg_10yr:           IMultipleHistRow;
+  avg_eps:            number | null;
+  avg_ebitda_mm:      number | null;
+  avg_ebitda_raw:     number | null;
+  net_debt_mm:        number | null;
+  net_debt_raw:       number | null;
+  shares_outstanding: number | null;
+  price_now:          number | null;
+}
+
+// ── Piotroski F-Score ─────────────────────────────────────────────────────────
+
+export interface PiotroskiData {
+  ticker:   string;
+  currency: string;
+
+  // Raw inputs
+  net_income_ttm:           number | null;
+  net_income_prev:          number | null;
+  total_assets_ttm:         number | null;
+  total_assets_prev:        number | null;
+  total_assets_2prev:       number | null;
+  ocf_ttm:                  number | null;
+  ocf_prev:                 number | null;
+  ltd_ttm:                  number | null;
+  ltd_prev:                 number | null;
+  current_assets_ttm:       number | null;
+  current_assets_prev:      number | null;
+  current_liabilities_ttm:  number | null;
+  current_liabilities_prev: number | null;
+  shares_ttm:               number | null;
+  shares_prev:              number | null;
+  gross_profit_ttm:         number | null;
+  gross_profit_prev:        number | null;
+  revenue_ttm:              number | null;
+  revenue_prev:             number | null;
+
+  // Computed ratios
+  roa_ttm:             number | null;
+  roa_prev:            number | null;
+  ocf_ratio_ttm:       number | null;
+  ocf_ratio_prev:      number | null;
+  leverage_ttm:        number | null;
+  leverage_prev:       number | null;
+  current_ratio_ttm:   number | null;
+  current_ratio_prev:  number | null;
+  gross_margin_ttm:    number | null;
+  gross_margin_prev:   number | null;
+  asset_turnover_ttm:  number | null;
+  asset_turnover_prev: number | null;
+
+  // 9-point scores (0 or 1)
+  f1_positive_roa:          number;
+  f2_positive_ocf:          number;
+  f3_higher_roa:            number;
+  f4_accruals:              number;
+  f5_lower_leverage:        number;
+  f6_higher_current_ratio:  number;
+  f7_less_shares:           number;
+  f8_higher_gross_margin:   number;
+  f9_higher_asset_turnover: number;
+
+  total_score: number;
+}
+
 // ── CF + IRR ──────────────────────────────────────────────────────────────────
 
 export interface CfIrrCheckItem {
@@ -202,4 +416,51 @@ export interface CfIrrData {
   checklist: CfIrrCheckItem[];
   ev_ebt_ttm: number | null;
   ebt_avg_mult: number | null;
+}
+
+// ── Company Overview: Price Chart ──────────────────────────────────────────────
+export type PriceRange = "1D" | "5D" | "1M" | "6M" | "YTD" | "1Y" | "5Y" | "10Y";
+
+export interface PricePoint {
+  date:   string;
+  price:  number;
+  volume: number | null;
+}
+
+export interface PriceHistoryData {
+  ticker: string;
+  range:  string;
+  points: PricePoint[];
+}
+
+// ── Company Overview: News & Insights ─────────────────────────────────────────
+export interface NewsInsight {
+  headline:             string;
+  date:                 string;
+  summary:              string;
+  model_impact:         string;
+  educational_insight?: string;
+  url?:                 string;
+}
+
+export interface NewsInsightsData {
+  ticker:             string;
+  executive_summary?: string;
+  insights:           NewsInsight[];
+}
+
+// ── Ownership Structure ───────────────────────────────────────────────────────
+export interface OwnershipData {
+  ticker:             string;
+  insider_pct:        number;   // real — from SEC via FMP shares-float
+  institutional_pct:  number;   // AI estimate
+  retail_pct:         number;   // derived
+  power_dynamics:     string;   // Claude 2-sentence analysis
+}
+
+
+// ── Condensed Description ─────────────────────────────────────────────────────
+export interface DescriptionSummary {
+  ticker:  string;
+  summary: string;
 }

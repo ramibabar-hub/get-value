@@ -2,7 +2,7 @@
 backend/services/_key_loader.py
 Streamlit-free API key loader.
 
-Priority: os.environ → .env file (two directories up from this file).
+Priority: os.environ -> .env file (two directories up from this file).
 Does NOT touch st.secrets — this module must be safe to import outside Streamlit.
 """
 

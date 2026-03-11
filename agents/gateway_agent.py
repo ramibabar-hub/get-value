@@ -280,7 +280,7 @@ class GatewayAgent:
         if self.eodhd_key:
             print(f"[GatewayAgent] EODHD key loaded (ends: ...{self.eodhd_key[-4:]})")
         else:
-            print("[GatewayAgent] INFO: EODHD_API_KEY not found — .TA tickers will fall back to FMP")
+            print("[GatewayAgent] INFO: EODHD_API_KEY not found - .TA tickers will fall back to FMP")
 
     # ── internal GET helper ───────────────────────────────────────────────────
     def _get(self, path: str, params: dict, timeout: int = 8):
@@ -311,7 +311,7 @@ class GatewayAgent:
     # ── financial statement bulk fetch ────────────────────────────────────────
     def fetch_data(self, path, ticker, is_quarterly=False):
         if not self.api_key:
-            print(f"[GatewayAgent] No API key — skipping {path}/{ticker}")
+            print(f"[GatewayAgent] No API key - skipping {path}/{ticker}")
             return []
         params = {"symbol": ticker, "apikey": self.api_key, "limit": 15}
         if is_quarterly:
@@ -327,7 +327,7 @@ class GatewayAgent:
             if isinstance(body, list) and body:
                 print(f"[GatewayAgent] OK stable {label}: {len(body)} records")
                 return body
-            print(f"[GatewayAgent] EMPTY stable {label} status={res.status_code} — trying v3")
+            print(f"[GatewayAgent] EMPTY stable {label} status={res.status_code} - trying v3")
         except Exception as e:
             print(f"[GatewayAgent] ERROR stable {label}: {e}")
 
@@ -374,7 +374,7 @@ class GatewayAgent:
             if data:
                 print(f"[GatewayAgent] historical-prices stable {ticker}: {len(data)} records")
                 return data
-            print(f"[GatewayAgent] historical-prices stable {ticker}: empty — trying v3")
+            print(f"[GatewayAgent] historical-prices stable {ticker}: empty - trying v3")
         except Exception as e:
             print(f"[GatewayAgent] historical-prices stable {ticker} ERROR: {e}")
 
@@ -538,11 +538,11 @@ class GatewayAgent:
         all other tickers use FMP (unchanged behaviour).
         """
         if self._is_eodhd_ticker(ticker) and self.eodhd_key:
-            print(f"[GatewayAgent] {ticker} → EODHD route")
+            print(f"[GatewayAgent] {ticker} -> EODHD route")
             return self._fetch_all_eodhd(ticker)
 
         # Default: FMP
-        print(f"[GatewayAgent] {ticker} → FMP route")
+        print(f"[GatewayAgent] {ticker} -> FMP route")
         return {
             "annual_income_statement":    self.fetch_data("income-statement",       ticker),
             "quarterly_income_statement": self.fetch_data("income-statement",       ticker, True),

@@ -3,8 +3,8 @@ backend/services/gateway.py
 SmartGateway — exchange-aware data router.
 
 Routing rules:
-  US tickers   (no suffix, or non-international suffix) → FMP primary, EODHD fallback
-  Intl tickers (recognised exchange suffix)             → EODHD primary, FMP fallback
+  US tickers   (no suffix, or non-international suffix) -> FMP primary, EODHD fallback
+  Intl tickers (recognised exchange suffix)             -> EODHD primary, FMP fallback
 
 Both services return the same canonical dict format, so logic_engine
 receives identical data structures regardless of source.
@@ -17,7 +17,7 @@ from .eodhd_service import EODHDService
 # ── Exchange suffix tables ────────────────────────────────────────────────────
 
 # Suffixes that unambiguously identify a non-US exchange.
-# Key = FMP suffix (after the dot)  →  Value = EODHD exchange code.
+# Key = FMP suffix (after the dot)  ->  Value = EODHD exchange code.
 _FMP_SUFFIX_TO_EODHD: dict[str, str] = {
     # Europe
     "L":   "LSE",    # London Stock Exchange
@@ -40,11 +40,11 @@ _FMP_SUFFIX_TO_EODHD: dict[str, str] = {
     "HK":  "HK",     # Hong Kong Stock Exchange
     "T":   "T",      # Tokyo Stock Exchange
     "KS":  "KS",     # Korea Stock Exchange
-    "AX":  "AU",     # ASX Australia  (FMP .AX → EODHD .AU)
+    "AX":  "AU",     # ASX Australia  (FMP .AX -> EODHD .AU)
     "NZ":  "NZ",     # NZX New Zealand
     "SI":  "SI",     # SGX Singapore
-    "NS":  "NSE",    # NSE India       (FMP .NS → EODHD .NSE)
-    "BO":  "BSE",    # BSE India       (FMP .BO → EODHD .BSE)
+    "NS":  "NSE",    # NSE India       (FMP .NS -> EODHD .NSE)
+    "BO":  "BSE",    # BSE India       (FMP .BO -> EODHD .BSE)
     "TW":  "TW",     # TWSE Taiwan
     "BK":  "BK",     # Thailand SET
     "JK":  "JK",     # Indonesia IDX
@@ -81,9 +81,9 @@ class SmartGateway:
 
     Usage:
         gw = SmartGateway()
-        raw_data = gw.fetch_all("AAPL")          # US → FMP
-        raw_data = gw.fetch_all("NICE.TA")       # Israel → EODHD
-        overview = gw.fetch_overview("VOD.L")    # UK → EODHD
+        raw_data = gw.fetch_all("AAPL")          # US -> FMP
+        raw_data = gw.fetch_all("NICE.TA")       # Israel -> EODHD
+        overview = gw.fetch_overview("VOD.L")    # UK -> EODHD
     """
 
     def __init__(self):
@@ -121,7 +121,7 @@ class SmartGateway:
     def _source_label(self, ticker: str) -> str:
         """Human-readable routing label for logging."""
         _, _, is_us = self.parse_ticker(ticker)
-        return "FMP→EODHD" if is_us else "EODHD→FMP"
+        return "FMP->EODHD" if is_us else "EODHD->FMP"
 
     # ── public fetch_all ──────────────────────────────────────────────────────
 
@@ -140,14 +140,12 @@ class SmartGateway:
         fmp_ticker = ticker.strip().upper()
         eod_base, eod_exchange = self._eodhd_coords(base, suffix)
 
-        print(f"[SmartGateway] fetch_all {ticker!r}  route={self._source_label(ticker)}")
 
         if is_us:
             data = self._fmp.fetch_all(fmp_ticker)
             if _has_data(data):
                 data["_source"] = "fmp"
                 return data
-            print(f"[SmartGateway] FMP empty for {ticker} — falling back to EODHD")
             data = self._eod.fetch_all(eod_base, eod_exchange)
             data["_source"] = "eodhd_fallback"
             return data
@@ -156,7 +154,6 @@ class SmartGateway:
             if _has_data(data):
                 data["_source"] = "eodhd"
                 return data
-            print(f"[SmartGateway] EODHD empty for {ticker} — falling back to FMP")
             data = self._fmp.fetch_all(fmp_ticker)
             data["_source"] = "fmp_fallback"
             return data
@@ -175,14 +172,12 @@ class SmartGateway:
         fmp_ticker = ticker.strip().upper()
         eod_base, eod_exchange = self._eodhd_coords(base, suffix)
 
-        print(f"[SmartGateway] fetch_overview {ticker!r}  route={self._source_label(ticker)}")
 
         if is_us:
             ov = self._fmp.fetch_overview(fmp_ticker)
             if ov:
                 ov.setdefault("_source", "fmp")
                 return ov
-            print(f"[SmartGateway] FMP overview empty for {ticker} — falling back to EODHD")
             ov = self._eod.fetch_overview(eod_base, eod_exchange)
             ov["_source"] = "eodhd_fallback"
             return ov
@@ -198,7 +193,6 @@ class SmartGateway:
                         ov["changesPercentage"] = fmp_ov.get("changesPercentage", 0)
                 ov.setdefault("_source", "eodhd")
                 return ov
-            print(f"[SmartGateway] EODHD overview insufficient for {ticker} — falling back to FMP")
             fmp_ov = self._fmp.fetch_overview(fmp_ticker)
             # Enrich with EODHD real-time price if FMP price is missing
             if ov and ov.get("price") and not fmp_ov.get("price"):

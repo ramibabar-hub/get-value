@@ -5,3 +5,9 @@ plotly
 python-dotenv
 fastapi
 uvicorn[standard]
+
+# financial_models/utils dependencies
+openpyxl>=3.0.0      # Excel model reading/writing (validate_dcf.py)
+yfinance>=0.2.0      # Market data fetching for DCF inputs
+anthropic>=0.25.0
+beautifulsoup4>=4.12.0

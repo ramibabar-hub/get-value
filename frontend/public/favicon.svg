@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <!--
+    getValue favicon — isolated "g" lettermark, no border, no frame.
+    Uses Trebuchet MS (900 weight) — bold double-story 'g', crisp at 16/32/48px.
+    Transparent background so it blends on any browser chrome colour.
+  -->
+  <text
+    x="50"
+    y="76"
+    text-anchor="middle"
+    font-family="'Trebuchet MS', 'Gill Sans MT', 'Helvetica Neue', Arial, sans-serif"
+    font-weight="900"
+    font-size="90"
+    fill="#007bff"
+    letter-spacing="-2"
+  >g</text>
+</svg>

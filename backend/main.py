@@ -13,12 +13,38 @@ GET /api/routing-info/{ticker}        Debug: data-source routing info
 
 import os
 import sys
+import io
+import builtins
+
+# ── Windows Unicode safety ──────────────────────────────────────────────────
+# Uvicorn on Windows uses cp1252 stdout which crashes on non-ASCII print() calls.
+# We patch builtins.print so ANY non-encodable character is silently replaced.
+# This is the only layer that reliably survives uvicorn's stdout management.
+_builtin_print = builtins.print
+
+def _safe_print(*args, **kwargs):
+    try:
+        _builtin_print(*args, **kwargs)
+    except (UnicodeEncodeError, UnicodeDecodeError, ValueError):
+        enc = getattr(getattr(sys.stdout, "encoding", None), "__str__", lambda: "utf-8")()
+        safe = tuple(
+            str(a).encode(enc or "utf-8", errors="replace").decode(enc or "utf-8")
+            for a in args
+        )
+        try:
+            _builtin_print(*safe, **kwargs)
+        except Exception:
+            pass  # absolute last resort — swallow to prevent HTTP 502
+
+builtins.print = _safe_print
+# ────────────────────────────────────────────────────────────────────────────
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import datetime
 import concurrent.futures as _cf
-from fastapi import FastAPI, HTTPException, Query, Response
+from contextlib import asynccontextmanager
+from fastapi import FastAPI, HTTPException, Query, Response, Body, BackgroundTasks
 from pydantic import BaseModel
 
 # Shared executor for lightweight background fetches (e.g. chart prices).
@@ -38,6 +64,11 @@ from backend.logic_engine import compute_normalized_pe
 #  App setup
 # ─────────────────────────────────────────────────────────────────────────────
 
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    yield
+
+
 app = FastAPI(
     title="getValue API",
     description=(
@@ -45,6 +76,7 @@ app = FastAPI(
         "US stocks use FMP; international stocks use EODHD with cross-source fallback."
     ),
     version="0.3.0",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -403,7 +435,7 @@ def segments_endpoint(ticker: str):
 
     rows = annual[:5]  # cap at 5 most-recent annual years
 
-    # Year label from fiscalYear int → string, fall back to date prefix
+    # Year label from fiscalYear int -> string, fall back to date prefix
     def _year(r: dict) -> str:
         fy = r.get("fiscalYear")
         if fy is not None:
@@ -510,7 +542,7 @@ def financials(
 
     if not raw_data.get("annual_income_statement") and \
        not raw_data.get("quarterly_income_statement"):
-        print(f"[financials] No data for {ticker} — using skeleton", flush=True)
+        print(f"[financials] No data for {ticker} - using skeleton", flush=True)
         raw_data = _skeleton_raw_data()
 
     norm        = DataNormalizer(raw_data, ticker)
@@ -734,7 +766,7 @@ def financials_extended(
 
     if not raw_data.get("annual_income_statement") and \
        not raw_data.get("quarterly_income_statement"):
-        print(f"[financials_extended] No data for {ticker} — using skeleton", flush=True)
+        print(f"[financials_extended] No data for {ticker} - using skeleton", flush=True)
         raw_data = _skeleton_raw_data()
 
     # Late import to avoid streamlit at module-load time
@@ -1082,7 +1114,7 @@ def cf_irr_pdf(ticker: str, body: _CfIrrPdfBody):
     except Exception:
         hist_prices = []   # chart omitted — PDF still generated
 
-    # Convert React checklist dicts → (label, display, passed, threshold) tuples
+    # Convert React checklist dicts -> (label, display, passed, threshold) tuples
     checklist_pdf = [
         (
             item.get("label",     ""),
@@ -1152,6 +1184,1205 @@ def cf_irr_pdf(ticker: str, body: _CfIrrPdfBody):
         import traceback
         traceback.print_exc()       # full stack trace to uvicorn log
         raise HTTPException(status_code=500, detail=f"PDF generation failed: {exc}")
+
+
+@app.get("/api/cf-irr-special/{ticker}", summary="Special TBV+EPS IRR Model", tags=["Valuation"])
+def cf_irr_special(
+    ticker:       str,
+    tbv_growth:   str   = Query(default="5"),
+    eps_growth:   str   = Query(default="5"),
+    exit_ptbv:    float = Query(default=1.5),
+    exit_pe:      float = Query(default=15.0),
+    tbv_weight:   float = Query(default=0.5),
+    mos_pct:      float = Query(default=10.0),
+    wacc_override: float | None = Query(default=None),
+):
+    """
+    Special valuation model using Tangible Book Value (TBV) and EPS.
+    TBV = Total Assets − (Goodwill & Intangibles) − Total Liabilities.
+    Terminal Value = tbv_weight × (TBV₁₀ × exit_ptbv) + (1−tbv_weight) × (EPS₁₀ × exit_pe).
+    IRR on cashflow: [−price, EPS₁..EPS₉, EPS₁₀ + TerminalValue].
+    """
+    import math as _math
+
+    ticker = ticker.strip().upper()
+    try:
+        raw_data = _gw.fetch_all(ticker)
+        ov       = _gw.fetch_overview(ticker)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Data fetch failed: {exc}")
+
+    try:
+        from cf_irr_tab import _irr_calc, _s as _sf
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Logic import failed: {exc}")
+
+    # ── Growth-rate arrays ────────────────────────────────────────────────────
+    def _parse(s: str, default: float = 5.0) -> list[float]:
+        try:
+            r = [float(x) for x in s.split(",")]
+            while len(r) < 9:
+                r.append(default)
+            return r[:9]
+        except Exception:
+            return [default] * 9
+
+    tbv_rates = _parse(tbv_growth, 5.0)
+    eps_rates = _parse(eps_growth, 5.0)
+
+    # ── Raw annual data ───────────────────────────────────────────────────────
+    bs_l = (raw_data.get("annual_balance_sheet")      or [])[:10]   # newest-first
+    is_l = (raw_data.get("annual_income_statement")   or [])[:10]
+    n    = min(len(bs_l), len(is_l))
+
+    def _yr(r: dict) -> str:
+        d = str(r.get("date") or r.get("calendarYear") or "")
+        return d[:4] if len(d) >= 4 else "?"
+
+    def _fB(v) -> str:   # in billions
+        f = _sf(v); return "N/A" if f is None else f"{f / 1e9:,.2f}"
+    def _fps(v) -> str:  # per-share price
+        f = _sf(v); return "N/A" if f is None else f"${f:,.2f}"
+    def _fpct(v) -> str:
+        f = _sf(v); return "N/A" if f is None else f"{f * 100:.1f}%"
+    def _fx(v) -> str:
+        f = _sf(v); return "N/A" if f is None else f"{f:.2f}x"
+    def _row_clean_sp(r: dict) -> dict:
+        return {k: (v if isinstance(v, str) else _strip_nan(v)) for k, v in r.items()}
+
+    hist_raw: list[dict] = []   # numeric, newest-first
+    hist_disp: list[dict] = []  # display strings, newest-first
+
+    for i in range(n):
+        bs  = bs_l[i]
+        iss = is_l[i]
+        yr  = _yr(bs)
+
+        assets = _sf(bs.get("totalAssets"))
+        gwi    = _sf(bs.get("goodwillAndIntangibleAssets"))
+        if gwi is None:
+            gwi = (_sf(bs.get("goodwill")) or 0.0) + (_sf(bs.get("intangibleAssets")) or 0.0)
+        liab   = _sf(bs.get("totalLiabilities"))
+        tbv    = (assets - gwi - liab) if (assets is not None and liab is not None) else None
+
+        shares = _sf(iss.get("weightedAverageShsOutDil") or iss.get("weightedAverageShsOut"))
+        tbv_ps = (tbv / shares) if (tbv is not None and shares and shares > 0) else None
+        eps    = _sf(iss.get("epsDiluted"))
+        ni     = _sf(iss.get("netIncome"))
+        rev    = _sf(iss.get("revenue"))
+        margin = (ni / rev) if (ni is not None and rev and rev != 0) else None
+
+        hist_raw.append({"yr": yr, "assets": assets, "gwi": gwi, "liab": liab,
+                          "tbv_ps": tbv_ps, "eps": eps, "ni": ni, "rev": rev, "margin": margin})
+        hist_disp.append({
+            "Year":        yr,
+            "Assets ($B)": _fB(assets),
+            "GW&I ($B)":   _fB(gwi),
+            "Liab ($B)":   _fB(liab),
+            "TBV/s":       _fps(tbv_ps),
+            "EPS":         _fps(eps),
+            "Net Margin":  _fpct(margin),
+        })
+
+    # ── Summary rows ─────────────────────────────────────────────────────────
+    ttm  = hist_raw[0]  if hist_raw else {}
+    disp_oldest_first = list(reversed(hist_disp))
+
+    def _avg_col(key):
+        vals = [r[key] for r in hist_raw if r.get(key) is not None]
+        return sum(vals) / len(vals) if vals else None
+
+    def _cagr_col(key):
+        vals = [r[key] for r in reversed(hist_raw) if r.get(key) is not None and r[key] > 0]
+        if len(vals) < 2:
+            return None
+        try:
+            return (vals[-1] / vals[0]) ** (1 / (len(vals) - 1)) - 1
+        except Exception:
+            return None
+
+    cagr_n      = min(9, max(1, n - 1))
+    assets_cagr = _cagr_col("assets")
+    tbv_ps_cagr = _cagr_col("tbv_ps")
+    eps_cagr    = _cagr_col("eps")
+    margin_avg  = _avg_col("margin")
+
+    hist_ttm = {
+        "Year": "TTM", "Assets ($B)": _fB(ttm.get("assets")),
+        "GW&I ($B)": _fB(ttm.get("gwi")), "Liab ($B)": _fB(ttm.get("liab")),
+        "TBV/s": _fps(ttm.get("tbv_ps")), "EPS": _fps(ttm.get("eps")),
+        "Net Margin": _fpct(ttm.get("margin")),
+    }
+    hist_avg = {
+        "Year": "Average", "Assets ($B)": _fB(_avg_col("assets")),
+        "GW&I ($B)": _fB(_avg_col("gwi")), "Liab ($B)": _fB(_avg_col("liab")),
+        "TBV/s": _fps(_avg_col("tbv_ps")), "EPS": _fps(_avg_col("eps")),
+        "Net Margin": _fpct(margin_avg),
+    }
+    hist_cagr = {
+        "Year": f"CAGR ({cagr_n}-yr)",
+        "Assets ($B)": _fpct(assets_cagr), "GW&I ($B)": "—", "Liab ($B)": "—",
+        "TBV/s": _fpct(tbv_ps_cagr), "EPS": _fpct(eps_cagr),
+        "Net Margin": _fpct(margin_avg),
+    }
+
+    # ── Default growth seeds from CAGRs ──────────────────────────────────────
+    def _seed(v, default=5.0) -> float:
+        if v is None:
+            return default
+        pct = v * 100
+        return max(-20.0, min(50.0, round(pct, 1)))
+
+    default_tbv_rate = _seed(tbv_ps_cagr, 5.0)
+    default_eps_rate = _seed(eps_cagr,    5.0)
+
+    # ── Forecast rows ─────────────────────────────────────────────────────────
+    base_year  = int(ttm.get("yr", 2024))
+    base_tbv_ps = ttm.get("tbv_ps") or 0.0
+    base_eps    = ttm.get("eps")    or 0.0
+    price_now   = _sf(ov.get("price"))
+
+    tbv_fc_rows: list[dict] = []
+    eps_fc_rows: list[dict] = []
+    tbv_run = base_tbv_ps
+    eps_run = base_eps
+
+    for y in range(1, 10):
+        g_tbv  = tbv_rates[y - 1] / 100.0
+        g_eps  = eps_rates[y - 1] / 100.0
+        tbv_run = tbv_run * (1 + g_tbv)
+        eps_run = eps_run * (1 + g_eps)
+        yr_lbl  = str(base_year + y)
+        tbv_fc_rows.append({"Year": yr_lbl, "Est. Growth Rate (%)": tbv_rates[y - 1], "Est. TBV/s": tbv_run})
+        eps_fc_rows.append({"Year": yr_lbl, "Est. Growth Rate (%)": eps_rates[y - 1], "Est. EPS":   eps_run})
+
+    # ── Terminal value ────────────────────────────────────────────────────────
+    tbv_yr9    = tbv_fc_rows[-1]["Est. TBV/s"] if tbv_fc_rows else None
+    eps_yr9    = eps_fc_rows[-1]["Est. EPS"]   if eps_fc_rows else None
+    tbv_terminal = (tbv_yr9 * exit_ptbv) if tbv_yr9 is not None else None
+    eps_terminal = (eps_yr9 * exit_pe)   if eps_yr9 is not None else None
+
+    if tbv_terminal is not None and eps_terminal is not None:
+        avg_target = tbv_weight * tbv_terminal + (1.0 - tbv_weight) * eps_terminal
+    elif tbv_terminal is not None:
+        avg_target = tbv_terminal
+    elif eps_terminal is not None:
+        avg_target = eps_terminal
+    else:
+        avg_target = None
+
+    # ── WACC + fair value ─────────────────────────────────────────────────────
+    try:
+        from backend.logic_engine import compute_wacc
+        wacc_computed = compute_wacc(raw_data, ov)
+    except Exception:
+        wacc_computed = 0.10
+
+    wacc_val   = (wacc_override / 100.0) if wacc_override is not None else wacc_computed
+    fair_value = None
+    buy_price  = None
+    if avg_target is not None and wacc_val > 0:
+        fair_value = avg_target / (1.0 + wacc_val) ** 9
+        buy_price  = fair_value * (1.0 - mos_pct / 100.0)
+    on_sale = (fair_value > price_now) if (fair_value is not None and price_now) else None
+
+    # ── IRR: [−price, EPS₁..EPS₈, EPS₉ + TerminalValue] ────────────────────
+    irr_val = None
+    if price_now and price_now > 0 and eps_fc_rows and avg_target is not None:
+        cashflows = [r["Est. EPS"] for r in eps_fc_rows]
+        cashflows[-1] = cashflows[-1] + avg_target
+        irr_val = _irr_calc([-price_now] + cashflows)
+
+    # ── Checklist ─────────────────────────────────────────────────────────────
+    def _chk(val, threshold, lower=False):
+        f = _sf(val)
+        if f is None:
+            return {"value": None, "display": "N/A", "passed": None}
+        passed = (f < threshold) if lower else (f >= threshold)
+        return {"value": f, "display": f"{f * 100:.1f}%", "passed": passed}
+
+    checklist = [
+        {"label": "Assets Growth (CAGR)",  "threshold": "> 4%",  **_chk(assets_cagr, 0.04)},
+        {"label": "TBV/s Growth (CAGR)",   "threshold": "> 3%",  **_chk(tbv_ps_cagr, 0.03)},
+        {"label": "Net Inc. Margin (avg)", "threshold": "> 10%", **_chk(margin_avg,  0.10)},
+        {"label": "EPS Growth (CAGR)",     "threshold": "> 10%", **_chk(eps_cagr,    0.10)},
+        {"label": "IRR",                   "threshold": "> 12%", **_chk(irr_val,     0.12)},
+    ]
+
+    return {
+        "ticker":           ticker,
+        "base_year":        base_year,
+        "price_now":        _strip_nan(price_now),
+        "base_tbv_ps":      _strip_nan(base_tbv_ps),
+        "base_eps":         _strip_nan(base_eps),
+        "wacc":             _strip_nan(wacc_val),
+        "wacc_computed":    _strip_nan(wacc_computed),
+        "exit_ptbv":        exit_ptbv,
+        "exit_pe":          exit_pe,
+        "tbv_weight":       tbv_weight,
+        "mos_pct":          mos_pct,
+        "tbv_growth_rates": tbv_rates,
+        "eps_growth_rates": eps_rates,
+        "default_tbv_rate": default_tbv_rate,
+        "default_eps_rate": default_eps_rate,
+        "hist":             [_row_clean_sp(r) for r in disp_oldest_first],
+        "hist_ttm":         _row_clean_sp(hist_ttm),
+        "hist_avg":         _row_clean_sp(hist_avg),
+        "hist_cagr":        _row_clean_sp(hist_cagr),
+        "tbv_forecast":     [_row_clean_sp(r) for r in tbv_fc_rows],
+        "eps_forecast":     [_row_clean_sp(r) for r in eps_fc_rows],
+        "tbv_terminal":     _strip_nan(tbv_terminal),
+        "eps_terminal":     _strip_nan(eps_terminal),
+        "avg_target":       _strip_nan(avg_target),
+        "fair_value":       _strip_nan(fair_value),
+        "buy_price":        _strip_nan(buy_price),
+        "on_sale":          on_sale,
+        "irr":              _strip_nan(irr_val),
+        "checklist":        checklist,
+        "assets_cagr":      _strip_nan(assets_cagr),
+        "tbv_ps_cagr":      _strip_nan(tbv_ps_cagr),
+        "eps_cagr":         _strip_nan(eps_cagr),
+        "margin_avg":       _strip_nan(margin_avg),
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  DDM  —  Dividend Discount Model (Gordon Growth)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.get("/api/ddm/{ticker}", summary="Dividend Discount Model — Gordon Growth", tags=["Valuation"])
+def ddm(
+    ticker:        str,
+    wacc_override: float | None = Query(default=None,
+                                         description="Override WACC (pct, e.g. 9.5 -> 9.5%)"),
+):
+    """
+    Returns 10-year DPS history (oldest first), TTM row, DPS CAGR, WACC, and
+    terminal-growth default so the React frontend can run the Gordon Growth
+    model entirely client-side.
+    """
+    ticker = ticker.strip().upper()
+
+    # ── Fetch ─────────────────────────────────────────────────────────────────
+    try:
+        raw_data = _gw.fetch_all(ticker)
+        ov       = _gw.fetch_overview(ticker) or {}
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Data fetch failed: {exc}")
+
+    is_l = raw_data.get("annual_income_statement")   or []
+    cf_l = raw_data.get("annual_cash_flow")           or []
+    q_is = raw_data.get("quarterly_income_statement") or []
+    q_cf = raw_data.get("quarterly_cash_flow")        or []
+
+    # ── Helpers ───────────────────────────────────────────────────────────────
+    def _g(lst, key, i):
+        if i >= len(lst):
+            return None
+        v = lst[i].get(key)
+        try:
+            f = float(v)
+            return f if _math.isfinite(f) else None
+        except (TypeError, ValueError):
+            return None
+
+    def _ttm_q(q_lst, key, n=4):
+        vals     = [_g(q_lst, key, i) for i in range(min(n, len(q_lst)))]
+        non_null = [v for v in vals if v is not None]
+        return sum(non_null) if non_null else None
+
+    # ── Annual history (oldest first) ─────────────────────────────────────────
+    n_yrs = min(len(is_l), len(cf_l), 10)
+    hist_rows: list[dict] = []
+
+    for i in range(n_yrs - 1, -1, -1):          # index 0 = most recent; reverse for display
+        rec    = is_l[i]
+        yr_lbl = str(rec.get("calendarYear") or rec.get("date", "")[:4])
+
+        divs   = _g(cf_l, "commonDividendsPaid", i)        # negative = paid out
+        shares = (_g(is_l, "weightedAverageShsOutDil", i)
+                  or _g(is_l, "weightedAverageShsOut",    i))
+        ni     = _g(is_l, "netIncome", i)
+
+        dps    = (abs(divs) / shares
+                  if divs is not None and shares and shares > 0 else None)
+        payout = (abs(divs) / ni
+                  if divs is not None and ni and ni > 0 else None)
+
+        hist_rows.append({
+            "year":       yr_lbl,
+            "divs_paid":  _strip_nan(divs),
+            "shares":     _strip_nan(shares),
+            "dps":        _strip_nan(dps),
+            "net_income": _strip_nan(ni),
+            "payout_pct": _strip_nan(payout),
+        })
+
+    # ── TTM ───────────────────────────────────────────────────────────────────
+    divs_ttm  = _ttm_q(q_cf, "commonDividendsPaid")
+    ni_ttm    = _ttm_q(q_is, "netIncome")
+    # DPS uses the most recent quarter's share count (annualising a sum would overcount)
+    sh_latest = (_g(q_is, "weightedAverageShsOutDil", 0)
+                 or _g(q_is, "weightedAverageShsOut",    0)
+                 or _g(is_l, "weightedAverageShsOutDil", 0)
+                 or _g(is_l, "weightedAverageShsOut",    0))
+
+    dps_ttm    = (abs(divs_ttm) / sh_latest
+                  if divs_ttm is not None and sh_latest and sh_latest > 0 else None)
+    payout_ttm = (abs(divs_ttm) / ni_ttm
+                  if divs_ttm is not None and ni_ttm and ni_ttm > 0 else None)
+
+    ttm_row = {
+        "year":       "TTM",
+        "divs_paid":  _strip_nan(divs_ttm),
+        "shares":     _strip_nan(sh_latest),
+        "dps":        _strip_nan(dps_ttm),
+        "net_income": _strip_nan(ni_ttm),
+        "payout_pct": _strip_nan(payout_ttm),
+    }
+
+    # ── DPS CAGR (oldest hist year -> TTM) ────────────────────────────────────
+    dps_series = [r["dps"] for r in hist_rows if r["dps"] is not None and r["dps"] > 0]
+    if dps_ttm and dps_ttm > 0:
+        dps_series.append(dps_ttm)
+
+    dps_cagr   = None
+    cagr_years = 0
+    if len(dps_series) >= 2:
+        oldest, latest = dps_series[0], dps_series[-1]
+        cagr_years = len(dps_series) - 1
+        try:
+            raw_cagr = (latest / oldest) ** (1.0 / cagr_years) - 1.0
+            dps_cagr = raw_cagr if _math.isfinite(raw_cagr) else None
+        except Exception:
+            dps_cagr = None
+
+    # ── WACC ──────────────────────────────────────────────────────────────────
+    try:
+        from backend.logic_engine import compute_wacc
+        wacc_computed = compute_wacc(raw_data, ov)
+        if not wacc_computed or not _math.isfinite(wacc_computed):
+            wacc_computed = 0.10
+    except Exception:
+        wacc_computed = 0.10
+
+    wacc_val = (wacc_override / 100.0) if wacc_override is not None else wacc_computed
+
+    # ── Terminal growth default ────────────────────────────────────────────────
+    # Cap at 5 %; floor at 1 %; follow DPS CAGR when in range
+    if dps_cagr is not None and _math.isfinite(dps_cagr):
+        if dps_cagr > 0.05:
+            g_terminal_default = 0.05
+        elif dps_cagr > 0.0:
+            g_terminal_default = min(dps_cagr, 0.04)
+        else:
+            g_terminal_default = 0.02
+    else:
+        g_terminal_default = 0.03
+
+    price_now = _strip_nan(float(ov.get("price") or 0) or None)
+    currency  = is_l[0].get("reportedCurrency", "USD") if is_l else "USD"
+
+    return {
+        "ticker":             ticker,
+        "currency":           currency,
+        "price_now":          price_now,
+        "hist":               hist_rows,
+        "ttm":                ttm_row,
+        "dps_cagr":           _strip_nan(dps_cagr),
+        "dps_cagr_years":     cagr_years,
+        "wacc_computed":      _strip_nan(wacc_computed),
+        "wacc":               _strip_nan(wacc_val),
+        "default_g_terminal": g_terminal_default,
+        "has_dividend":       bool(dps_ttm and dps_ttm > 0),
+    }
+
+
+@app.get("/api/sec-filings/{ticker}", summary="Filing links by period (SEC for US, EODHD portal for intl)", tags=["Filings"])
+def sec_filings(ticker: str):
+    """
+    Returns {period_label: filing_url} for the given ticker.
+    • US tickers  -> SEC EDGAR iXBRL viewer URLs (exact filing documents)
+    • Intl tickers -> EODHD-derived period list + exchange regulatory portal links
+    Period labels match FinancialsTab column headers ("2024", "Q3 2024", …).
+    Best-effort — errors are swallowed, never raise to the client.
+    """
+    try:
+        from backend.services.sec_service import get_filing_links
+        return get_filing_links(ticker.strip().upper())
+    except Exception as exc:
+        print(f"[sec_filings] {ticker}: {exc}", flush=True)
+        return {}
+
+
+# ══ Cascade data service ══════════════════════════════════════════════════════
+
+@app.get("/api/cascade/profile/{ticker}",
+         summary="Company profile via 4-provider cascade (FMP->EODHD->AlphaVantage->Finnhub)",
+         tags=["Cascade"])
+def cascade_profile(ticker: str):
+    """
+    Returns a normalised company profile dict.
+    Tries FMP first; falls back to EODHD, then Alpha Vantage, then Finnhub.
+    Response always includes `data_source` (which provider succeeded) and
+    `providers_tried` (ordered list of all providers attempted).
+    """
+    try:
+        from backend.services.cascade_service import fetch_cascade_profile
+        return fetch_cascade_profile(ticker.strip().upper())
+    except Exception as exc:
+        print(f"[cascade_profile] {ticker}: {exc}", flush=True)
+        return {"ticker": ticker.upper(), "error": str(exc), "data_source": "none"}
+
+
+@app.get("/api/cascade/quote/{ticker}",
+         summary="Live price + change via FMP->Finnhub cascade",
+         tags=["Cascade"])
+def cascade_quote(ticker: str):
+    """
+    Lightweight quote endpoint — price + % change only.
+    Tries FMP first, falls back to Finnhub.
+    """
+    try:
+        from backend.services.cascade_service import fetch_cascade_quote
+        return fetch_cascade_quote(ticker.strip().upper())
+    except Exception as exc:
+        print(f"[cascade_quote] {ticker}: {exc}", flush=True)
+        return {"ticker": ticker.upper(), "price": None, "change_pct": None, "data_source": "none"}
+
+
+# ══ Gemini qualitative analysis ═══════════════════════════════════════════════
+
+class _GeminiAnalysisRequest(BaseModel):
+    company_name: str | None = None
+    sector:       str | None = None
+    industry:     str | None = None
+    country:      str | None = None
+    market_cap:   float | None = None
+    pe_ratio:     float | None = None
+    description:  str | None = None
+
+
+@app.post("/api/gemini/analyze/{ticker}",
+          summary="Qualitative company analysis powered by Gemini 1.5 Flash",
+          tags=["AI"])
+def gemini_analyze(
+    ticker: str,
+    body: _GeminiAnalysisRequest,
+    analysis_type: str = "summary",
+):
+    """
+    Generate qualitative AI analysis for a company.
+
+    **analysis_type** options:
+    - `summary`   — 3–5 sentence investment overview (default)
+    - `moat`      — economic moat assessment (Wide / Narrow / None)
+    - `risks`     — top 3 material investor risks
+    - `valuation` — valuation commentary relative to business quality
+
+    Pass company context in the request body (from a prior /api/cascade/profile call).
+    """
+    try:
+        from backend.services.gemini_service import analyze_company
+        context = body.model_dump(exclude_none=True)
+        return analyze_company(ticker.strip().upper(), context, analysis_type)
+    except Exception as exc:
+        print(f"[gemini_analyze] {ticker}: {exc}", flush=True)
+        return {
+            "ticker": ticker.upper(),
+            "analysis_type": analysis_type,
+            "text": "",
+            "model": "gemini-1.5-flash",
+            "error": str(exc),
+        }
+
+
+@app.get("/api/industry-multiple/{ticker}", summary="Industry Multiple valuation model", tags=["Valuation"])
+def industry_multiple(ticker: str):
+    """
+    Returns historical annual data (price, EPS, EBITDA, Revenue, FCF, multiples) plus
+    TTM values and 10yr averages for the Industry Multiple valuation model.
+    The frontend handles all interactive calculations client-side.
+    """
+    ticker = ticker.strip().upper()
+    try:
+        raw_data = _gw.fetch_all(ticker)
+        ov       = _gw.fetch_overview(ticker)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Data fetch failed: {exc}")
+
+    norm = DataNormalizer(raw_data, ticker)
+    is_l = norm.is_l or []
+    cf_l = norm.cf_l or []
+    bs_l = norm.bs_l or []
+    km_l = raw_data.get("annual_key_metrics") or []
+
+    # ── Year-end price lookup ─────────────────────────────────────────────────
+    hist_prices_raw = raw_data.get("historical_prices") or []
+    _price_by_year: dict[str, float] = {}
+    for rec in reversed(hist_prices_raw):          # oldest -> newest so Dec overwrites Jan
+        d = str(rec.get("date") or "")
+        if len(d) < 4:
+            continue
+        yr = d[:4]
+        p  = _sf(rec.get("close") or rec.get("adjClose"))
+        if p:
+            _price_by_year[yr] = p
+
+    # ── Build per-year rows (newest first, then reversed) ─────────────────────
+    _rows_newest = []
+    for i, is_rec in enumerate(is_l[:10]):
+        if not isinstance(is_rec, dict):
+            continue
+        date_str = str(is_rec.get("date") or is_rec.get("calendarYear") or "")
+        year  = date_str[:4] if len(date_str) >= 4 else f"Yr{i}"
+        eps   = _sf(is_rec.get("eps") or is_rec.get("epsDiluted"))
+        ebitda = _sf(is_rec.get("ebitda"))
+        revenue = _sf(is_rec.get("revenue"))
+        shares  = _sf(is_rec.get("weightedAverageShsOutDil") or is_rec.get("weightedAverageShsOut"))
+        if eps is None and shares and shares > 0:
+            ni = _sf(is_rec.get("netIncome"))
+            if ni is not None:
+                eps = ni / shares
+        cf_rec = cf_l[i] if i < len(cf_l) and isinstance(cf_l[i], dict) else {}
+        fcf    = _sf(cf_rec.get("freeCashFlow"))
+        if fcf is None:
+            op   = _sf(cf_rec.get("operatingCashFlow"))
+            capx = _sf(cf_rec.get("capitalExpenditure"))
+            if op is not None and capx is not None:
+                fcf = op + capx
+        km_rec = km_l[i] if i < len(km_l) and isinstance(km_l[i], dict) else {}
+        price  = _price_by_year.get(year)
+        if price is None:
+            mkt = _sf(km_rec.get("marketCap"))
+            if mkt and shares and shares > 0:
+                price = mkt / shares
+        # Prefer pre-computed multiples from key_metrics; fall back to manual
+        pe        = _sf(km_rec.get("peRatio") or km_rec.get("priceEarningsRatio"))
+        ev_ebitda = _sf(km_rec.get("enterpriseValueOverEBITDA") or km_rec.get("evToEbitda"))
+        ps        = _sf(km_rec.get("priceToSalesRatio"))
+        p_fcf     = _sf(km_rec.get("priceToFreeCashFlowsRatio") or km_rec.get("pfcfRatio"))
+        if pe is None and price and eps and eps > 0:
+            pe = price / eps
+        if ps is None and price and revenue and shares and shares > 0:
+            ps = price / (revenue / shares)
+        if p_fcf is None and price and fcf and shares and shares > 0:
+            fps = fcf / shares
+            if fps > 0:
+                p_fcf = price / fps
+        if ev_ebitda is None and price and shares and ebitda and ebitda > 0:
+            bs_rec  = bs_l[i] if i < len(bs_l) and isinstance(bs_l[i], dict) else {}
+            mkt_cap = _sf(km_rec.get("marketCap")) or (price * shares)
+            td      = _sf(bs_rec.get("totalDebt")) or 0.0
+            cash    = _sf(bs_rec.get("cashAndCashEquivalents")) or 0.0
+            ev_ebitda = (mkt_cap + td - cash) / ebitda
+        _rows_newest.append({
+            "year": year, "price": _strip_nan(price), "price_growth": None,
+            "eps": _strip_nan(eps), "eps_growth": None,
+            "ebitda_mm":  _strip_nan(ebitda  / 1e6) if ebitda  is not None else None,
+            "revenue_mm": _strip_nan(revenue / 1e6) if revenue is not None else None,
+            "fcf_mm":     _strip_nan(fcf     / 1e6) if fcf     is not None else None,
+            "pe": _strip_nan(pe), "ev_ebitda": _strip_nan(ev_ebitda),
+            "ps": _strip_nan(ps), "p_fcf": _strip_nan(p_fcf),
+        })
+
+    rows = list(reversed(_rows_newest))
+    for i, row in enumerate(rows):
+        if i == 0:
+            continue
+        prev = rows[i - 1]
+        if row["price"] and prev["price"] and prev["price"] > 0:
+            row["price_growth"] = _strip_nan(row["price"] / prev["price"] - 1)
+        if row["eps"] and prev["eps"] and prev["eps"] > 0:
+            row["eps_growth"] = _strip_nan(row["eps"] / prev["eps"] - 1)
+
+    # ── TTM ───────────────────────────────────────────────────────────────────
+    q_is4 = (norm.q_is or [])[:4]
+    q_cf4 = (norm.q_cf or [])[:4]
+
+    def _ttm_sum(lst, key):
+        vals = [_sf(r.get(key)) for r in lst if isinstance(r, dict)]
+        return sum(v for v in vals if v is not None) if any(v is not None for v in vals) else None
+
+    eps_ttm     = _ttm_sum(q_is4, "eps") or _ttm_sum(q_is4, "epsDiluted")
+    ebitda_ttm  = _ttm_sum(q_is4, "ebitda")
+    revenue_ttm = _ttm_sum(q_is4, "revenue")
+    fcf_ttm     = _ttm_sum(q_cf4, "freeCashFlow")
+    shares_ttm  = _sf((q_is4[0] if q_is4 else {}).get("weightedAverageShsOutDil")
+                      or (q_is4[0] if q_is4 else {}).get("weightedAverageShsOut"))
+    price_now   = _sf(ov.get("price"))
+    if eps_ttm is None and shares_ttm and shares_ttm > 0:
+        ni_ttm = _ttm_sum(q_is4, "netIncome")
+        if ni_ttm is not None:
+            eps_ttm = ni_ttm / shares_ttm
+    q_bs0 = (norm.q_bs[0] if norm.q_bs else {})
+    td_ttm   = _sf(q_bs0.get("totalDebt")) or 0.0
+    cash_ttm = (_sf(q_bs0.get("cashAndCashEquivalents")) or 0.0) + \
+               (_sf(q_bs0.get("shortTermInvestments")) or 0.0)
+    net_debt_raw = (td_ttm - cash_ttm) if td_ttm else None
+    pe_ttm = (price_now / eps_ttm) if (price_now and eps_ttm and eps_ttm > 0) else None
+    ps_ttm = (price_now / (revenue_ttm / shares_ttm)) \
+             if (price_now and revenue_ttm and shares_ttm and shares_ttm > 0) else None
+    fcf_ps_ttm = (fcf_ttm / shares_ttm) if (fcf_ttm and shares_ttm and shares_ttm > 0) else None
+    p_fcf_ttm  = (price_now / fcf_ps_ttm) if (price_now and fcf_ps_ttm and fcf_ps_ttm > 0) else None
+    ev_ebitda_ttm = None
+    if price_now and shares_ttm and ebitda_ttm and ebitda_ttm > 0:
+        ev_ttm = price_now * shares_ttm + (net_debt_raw or 0)
+        ev_ebitda_ttm = ev_ttm / ebitda_ttm
+    ttm_row = {
+        "year": "TTM", "price": _strip_nan(price_now), "price_growth": None,
+        "eps": _strip_nan(eps_ttm), "eps_growth": None,
+        "ebitda_mm":  _strip_nan(ebitda_ttm  / 1e6) if ebitda_ttm  is not None else None,
+        "revenue_mm": _strip_nan(revenue_ttm / 1e6) if revenue_ttm is not None else None,
+        "fcf_mm":     _strip_nan(fcf_ttm     / 1e6) if fcf_ttm     is not None else None,
+        "pe": _strip_nan(pe_ttm), "ev_ebitda": _strip_nan(ev_ebitda_ttm),
+        "ps": _strip_nan(ps_ttm), "p_fcf": _strip_nan(p_fcf_ttm),
+    }
+
+    # ── 10yr averages ─────────────────────────────────────────────────────────
+    hist_10 = rows[-10:] if len(rows) > 10 else rows
+
+    def _avg10(key):
+        vals = [r[key] for r in hist_10 if isinstance(r.get(key), (int, float))]
+        return sum(vals) / len(vals) if vals else None
+
+    avg_10yr = {
+        "year": "Avg. 10yr", "price": _strip_nan(_avg10("price")),
+        "price_growth": _strip_nan(_avg10("price_growth")),
+        "eps": _strip_nan(_avg10("eps")), "eps_growth": _strip_nan(_avg10("eps_growth")),
+        "ebitda_mm": _strip_nan(_avg10("ebitda_mm")), "revenue_mm": _strip_nan(_avg10("revenue_mm")),
+        "fcf_mm": _strip_nan(_avg10("fcf_mm")),
+        "pe": _strip_nan(_avg10("pe")), "ev_ebitda": _strip_nan(_avg10("ev_ebitda")),
+        "ps": _strip_nan(_avg10("ps")), "p_fcf": _strip_nan(_avg10("p_fcf")),
+    }
+    avg_ebitda_mm  = _avg10("ebitda_mm")
+    avg_ebitda_raw = (avg_ebitda_mm * 1e6) if avg_ebitda_mm is not None else None
+    return {
+        "ticker":             ticker,
+        "sector":             str(ov.get("sector")   or ""),
+        "industry":           str(ov.get("industry") or ""),
+        "currency":           str(ov.get("currency") or "USD"),
+        "hist":               rows,
+        "ttm":                ttm_row,
+        "avg_10yr":           avg_10yr,
+        "avg_eps":            _strip_nan(_avg10("eps")),
+        "avg_ebitda_mm":      _strip_nan(avg_ebitda_mm),
+        "avg_ebitda_raw":     _strip_nan(avg_ebitda_raw),
+        "net_debt_mm":        _strip_nan(net_debt_raw / 1e6) if net_debt_raw is not None else None,
+        "net_debt_raw":       _strip_nan(net_debt_raw),
+        "shares_outstanding": _strip_nan(shares_ttm),
+        "price_now":          _strip_nan(price_now),
+    }
+
+
+@app.get("/api/piotroski/{ticker}", tags=["Valuation"])
+def piotroski(ticker: str):
+    """
+    Piotroski F-Score (9-point).
+    Uses TTM and PREV TTM quarterly data; balance sheet snapshots for asset denominators.
+    """
+    raw_data = _gw.fetch_all(ticker)
+    q_is = (raw_data.get("quarterly_income_statement") or [])
+    q_bs = (raw_data.get("quarterly_balance_sheet")    or [])
+    q_cf = (raw_data.get("quarterly_cash_flow")        or [])
+
+    # ── Helpers ──────────────────────────────────────────────────────────────
+    def _ttm_sum(src, key, start=0):
+        """Sum of 4 quarters starting at `start` (0 = newest)."""
+        return _ssum(src[start:start + 4], key)
+
+    def _bs_val(src, idx, key):
+        """Balance sheet snapshot at quarterly index `idx`."""
+        if idx < len(src) and isinstance(src[idx], dict):
+            return _sf(src[idx].get(key))
+        return None
+
+    # ── Raw inputs ────────────────────────────────────────────────────────────
+    # Income statement TTM / PREV TTM  (sums of 4 qtrs)
+    ni_ttm  = _ttm_sum(q_is, "netIncome",    0)
+    ni_prev = _ttm_sum(q_is, "netIncome",    4)
+    gp_ttm  = _ttm_sum(q_is, "grossProfit",  0)
+    gp_prev = _ttm_sum(q_is, "grossProfit",  4)
+    rev_ttm = _ttm_sum(q_is, "revenue",      0)
+    rev_prev= _ttm_sum(q_is, "revenue",      4)
+
+    # Cash flow TTM / PREV TTM
+    ocf_ttm  = _ttm_sum(q_cf, "operatingCashFlow", 0)
+    ocf_prev = _ttm_sum(q_cf, "operatingCashFlow", 4)
+
+    # Balance sheet snapshots (most-recent=0, ~1yr ago=4, ~2yr ago=8)
+    ta_ttm   = _bs_val(q_bs, 0, "totalAssets")     # end of TTM window
+    ta_prev  = _bs_val(q_bs, 4, "totalAssets")     # beginning of TTM (= end of PREV)
+    ta_2prev = _bs_val(q_bs, 8, "totalAssets")     # beginning of PREV window
+    ltd_ttm  = _bs_val(q_bs, 0, "longTermDebt")
+    ltd_prev = _bs_val(q_bs, 4, "longTermDebt")
+    ca_ttm   = _bs_val(q_bs, 0, "totalCurrentAssets")
+    ca_prev  = _bs_val(q_bs, 4, "totalCurrentAssets")
+    cl_ttm   = _bs_val(q_bs, 0, "totalCurrentLiabilities")
+    cl_prev  = _bs_val(q_bs, 4, "totalCurrentLiabilities")
+    sh_ttm   = _bs_val(q_bs, 0, "weightedAverageShsOutDil") or \
+               _ttm_sum(q_is, "weightedAverageShsOutDil", 0)
+    sh_prev  = _bs_val(q_bs, 4, "weightedAverageShsOutDil") or \
+               _ttm_sum(q_is, "weightedAverageShsOutDil", 4)
+
+    # ── Computed ratios ───────────────────────────────────────────────────────
+    def _div(a, b):
+        if a is None or b is None or b == 0:
+            return None
+        return a / b
+
+    roa_ttm   = _div(ni_ttm,  ta_prev)
+    roa_prev  = _div(ni_prev, ta_2prev)
+    ocfr_ttm  = _div(ocf_ttm,  ta_prev)
+    ocfr_prev = _div(ocf_prev, ta_2prev)
+
+    # Leverage = LT Debt / Total Assets (using end-of-period assets)
+    lev_ttm  = _div(ltd_ttm,  ta_ttm)
+    lev_prev = _div(ltd_prev, ta_prev)
+
+    cr_ttm   = _div(ca_ttm,  cl_ttm)
+    cr_prev  = _div(ca_prev, cl_prev)
+
+    gm_ttm   = _div(gp_ttm,  rev_ttm)
+    gm_prev  = _div(gp_prev, rev_prev)
+
+    # Asset turnover = Revenue / beginning-of-period assets
+    at_ttm   = _div(rev_ttm,  ta_prev)
+    at_prev  = _div(rev_prev, ta_2prev)
+
+    # ── Scoring ───────────────────────────────────────────────────────────────
+    def _score(condition) -> int:
+        return 1 if condition else 0
+
+    f1 = _score(roa_ttm  is not None and roa_ttm  > 0)
+    f2 = _score(ocfr_ttm is not None and ocfr_ttm > 0)
+    f3 = _score(roa_ttm  is not None and roa_prev  is not None and roa_ttm  > roa_prev)
+    f4 = _score(ocfr_ttm is not None and roa_ttm   is not None and ocfr_ttm > roa_ttm)
+    f5 = _score(lev_ttm  is not None and lev_prev  is not None and lev_ttm  < lev_prev)
+    f6 = _score(cr_ttm   is not None and cr_prev   is not None and cr_ttm   > cr_prev)
+    f7 = _score(sh_ttm   is not None and sh_prev   is not None and sh_ttm   <= sh_prev)
+    f8 = _score(gm_ttm   is not None and gm_prev   is not None and gm_ttm   > gm_prev)
+    f9 = _score(at_ttm   is not None and at_prev   is not None and at_ttm   > at_prev)
+
+    total = f1 + f2 + f3 + f4 + f5 + f6 + f7 + f8 + f9
+
+    def _pct(v):
+        return round(v * 100, 4) if v is not None else None
+
+    return {
+        "ticker":   ticker.upper(),
+        "currency": (raw_data.get("quarterly_income_statement") or [{}])[0].get("reportedCurrency", "USD"),
+
+        # Raw inputs
+        "net_income_ttm":           _strip_nan(ni_ttm),
+        "net_income_prev":          _strip_nan(ni_prev),
+        "total_assets_ttm":         _strip_nan(ta_ttm),
+        "total_assets_prev":        _strip_nan(ta_prev),
+        "total_assets_2prev":       _strip_nan(ta_2prev),
+        "ocf_ttm":                  _strip_nan(ocf_ttm),
+        "ocf_prev":                 _strip_nan(ocf_prev),
+        "ltd_ttm":                  _strip_nan(ltd_ttm),
+        "ltd_prev":                 _strip_nan(ltd_prev),
+        "current_assets_ttm":       _strip_nan(ca_ttm),
+        "current_assets_prev":      _strip_nan(ca_prev),
+        "current_liabilities_ttm":  _strip_nan(cl_ttm),
+        "current_liabilities_prev": _strip_nan(cl_prev),
+        "shares_ttm":               _strip_nan(sh_ttm),
+        "shares_prev":              _strip_nan(sh_prev),
+        "gross_profit_ttm":         _strip_nan(gp_ttm),
+        "gross_profit_prev":        _strip_nan(gp_prev),
+        "revenue_ttm":              _strip_nan(rev_ttm),
+        "revenue_prev":             _strip_nan(rev_prev),
+
+        # Computed ratios (as percentages where applicable)
+        "roa_ttm":             _strip_nan(_pct(roa_ttm)),
+        "roa_prev":            _strip_nan(_pct(roa_prev)),
+        "ocf_ratio_ttm":       _strip_nan(_pct(ocfr_ttm)),
+        "ocf_ratio_prev":      _strip_nan(_pct(ocfr_prev)),
+        "leverage_ttm":        _strip_nan(_pct(lev_ttm)),
+        "leverage_prev":       _strip_nan(_pct(lev_prev)),
+        "current_ratio_ttm":   _strip_nan(cr_ttm),
+        "current_ratio_prev":  _strip_nan(cr_prev),
+        "gross_margin_ttm":    _strip_nan(_pct(gm_ttm)),
+        "gross_margin_prev":   _strip_nan(_pct(gm_prev)),
+        "asset_turnover_ttm":  _strip_nan(at_ttm),
+        "asset_turnover_prev": _strip_nan(at_prev),
+
+        # Scores
+        "f1_positive_roa":          f1,
+        "f2_positive_ocf":          f2,
+        "f3_higher_roa":            f3,
+        "f4_accruals":              f4,
+        "f5_lower_leverage":        f5,
+        "f6_higher_current_ratio":  f6,
+        "f7_less_shares":           f7,
+        "f8_higher_gross_margin":   f8,
+        "f9_higher_asset_turnover": f9,
+        "total_score":              total,
+    }
+
+
+@app.get("/api/search", tags=["Meta"])
+def search_tickers(q: str = Query("", min_length=1), limit: int = Query(8, le=20)):
+    """
+    Ticker / company name search.
+    Primary: FMP /v3/search. Fallback: EODHD search when FMP returns 0 results.
+    Returns list of {ticker, name, exchange, country, type}.
+    """
+    from backend.services.fmp_service import FMPService as _FMPSvc
+    from backend.services.eodhd_service import EODHDService as _EodSvc
+    from backend.services._key_loader import load_key as _lk
+
+    # ── 1. FMP primary (stable search-symbol endpoint) ────────────────────────
+    _fmp = _FMPSvc()
+    raw = _fmp._get(f"{_fmp._STABLE}/search-symbol", {"query": q, "limit": limit})
+    if isinstance(raw, list) and raw:
+        return [
+            {
+                "ticker":   item.get("symbol", ""),
+                "name":     item.get("name", ""),
+                "exchange": item.get("exchange", ""),
+                "country":  None,
+                "type":     "ETF" if str(item.get("type", "")).lower() in ("etf", "fund") else "Equity",
+            }
+            for item in raw
+            if item.get("symbol")
+        ][:limit]
+
+    # ── 2. EODHD fallback (non-US / FMP miss) ────────────────────────────────
+    try:
+        import requests as _req
+        eodhd_key = _lk("EODHD_API_KEY")
+        if not eodhd_key:
+            return []
+        r = _req.get(
+            f"https://eodhistoricaldata.com/api/search/{q}",
+            params={"api_token": eodhd_key, "limit": limit},
+            timeout=6,
+        )
+        data = r.json() if r.ok else []
+        if not isinstance(data, list):
+            return []
+        results = []
+        for item in data:
+            code = item.get("Code", "")
+            exchange = item.get("Exchange", "")
+            if not code:
+                continue
+            ticker = code if exchange.upper() == "US" else f"{code}.{exchange}"
+            type_str = (item.get("Type") or "").lower()
+            results.append({
+                "ticker":   ticker,
+                "name":     item.get("Name", ""),
+                "exchange": exchange,
+                "country":  item.get("Country"),
+                "type":     "ETF" if "etf" in type_str or "fund" in type_str else "Equity",
+            })
+        return results[:limit]
+    except Exception:
+        return []
+
+
+@app.get("/api/price-history/{ticker}", summary="Stock price + volume history", tags=["Profile"])
+def get_price_history(ticker: str, range: str = Query("1Y")):
+    """
+    Returns price + volume series for the given range.
+    1D/5D  -> FMP 15-min intraday
+    others -> FMP historical-price-full with `from` date filter (direct call, no fetch_all)
+    """
+    from backend.services.fmp_service import FMPService as _FMPSvc
+    _fmp = _FMPSvc()
+    range = range.upper()
+    today = datetime.date.today()
+
+    try:
+        if range in ("1D", "5D"):
+            # Intraday 15-min bars
+            raw = _fmp._get(f"{_fmp._V3}/historical-chart/15min/{ticker.upper()}", {})
+            if not isinstance(raw, list):
+                return {"ticker": ticker, "range": range, "points": []}
+            raw = sorted(raw, key=lambda x: x.get("date", ""))
+            days = 1 if range == "1D" else 5
+            cutoff = (today - datetime.timedelta(days=days)).isoformat()
+            points = [
+                {"date": r["date"], "price": float(r.get("close", 0) or 0), "volume": r.get("volume")}
+                for r in raw if r.get("date", "") >= cutoff
+            ]
+            return {"ticker": ticker, "range": range, "points": points}
+
+        # All daily ranges: use FMPService.fetch_prices() (stable endpoint, proven)
+        # fetch_prices returns newest-first; filter by cutoff then reverse to oldest-first
+        if range == "1M":
+            cutoff = (today - datetime.timedelta(days=35)).isoformat()
+        elif range == "6M":
+            cutoff = (today - datetime.timedelta(days=190)).isoformat()
+        elif range == "YTD":
+            cutoff = f"{today.year}-01-01"
+        elif range == "1Y":
+            cutoff = (today - datetime.timedelta(days=370)).isoformat()
+        elif range == "5Y":
+            cutoff = (today - datetime.timedelta(days=365 * 5 + 10)).isoformat()
+        else:  # 10Y
+            cutoff = (today - datetime.timedelta(days=365 * 10 + 10)).isoformat()
+
+        # stable/historical-price-eod/light returns [{date, price, volume}] newest-first
+        all_prices = _fmp._get(
+            f"{_fmp._STABLE}/historical-price-eod/light",
+            {"symbol": ticker.upper()},
+        )
+        if not isinstance(all_prices, list):
+            return {"ticker": ticker, "range": range, "points": []}
+        hist = [h for h in all_prices if h.get("date", "") >= cutoff]
+        hist = sorted(hist, key=lambda x: x.get("date", ""))
+        points = [
+            {"date": h["date"], "price": float(h.get("price", 0) or 0), "volume": h.get("volume")}
+            for h in hist
+        ]
+        return {"ticker": ticker, "range": range, "points": points}
+
+    except Exception:
+        return {"ticker": ticker, "range": range, "points": []}
+
+
+@app.post("/api/news-insights/{ticker}", summary="AI news analysis via Claude Haiku", tags=["Profile"])
+def get_news_insights(ticker: str, body: dict = Body(default={})):
+    """
+    Fetches 8 FMP news items, sends them to Claude Haiku with a buy-side analyst
+    system prompt, and returns structured NewsInsight objects.
+    """
+    import json as _json
+    from backend.services.fmp_service import FMPService as _FMPSvc
+    from backend.services._key_loader import load_key as _lk
+
+    _fmp = _FMPSvc()
+    empty = {"ticker": ticker, "insights": []}
+
+    try:
+        # 1. Fetch news from FMP stable endpoint
+        news_raw = _fmp._get(
+            f"{_fmp._STABLE}/news/stock",
+            {"symbols": ticker.upper(), "limit": 8},
+        )
+        if not isinstance(news_raw, list) or not news_raw:
+            return empty
+
+        news_items = [
+            {
+                "headline": item.get("title", ""),
+                "date":     (item.get("publishedDate") or item.get("date") or "")[:10],
+                "url":      item.get("url", ""),
+            }
+            for item in news_raw
+            if item.get("title")
+        ]
+        if not news_items:
+            return empty
+
+        # 2. Build company context
+        company_name = body.get("company_name", ticker)
+        sector       = body.get("sector", "")
+        industry     = body.get("industry", "")
+        description  = body.get("description", "")
+
+        context_str = (
+            f"Company: {company_name} ({ticker.upper()})\n"
+            f"Sector: {sector} | Industry: {industry}\n"
+            f"Description: {description[:400]}"
+        )
+
+        user_msg = (
+            f"Company context:\n{context_str}\n\n"
+            f"Recent news headlines (analyze ALL of them):\n"
+            + _json.dumps(news_items, indent=2)
+        )
+
+        # 3. Call Claude Haiku
+        claude_key = _lk("CLAUDE_API_KEY")
+        if not claude_key:
+            return empty
+
+        import anthropic as _anthropic
+        client = _anthropic.Anthropic(api_key=claude_key)
+
+        system_prompt = """You are an institutional-grade Equity Research Analyst.
+
+Your task: analyze the provided news headlines for the given company and produce a structured JSON response.
+
+Return ONLY valid JSON with this exact structure (no markdown, no extra text):
+{
+  "executive_summary": "2-3 sentence high-level strategic overview of the company's current situation based on these events.",
+  "events": [
+    {
+      "headline": "copy the original headline",
+      "date": "YYYY-MM-DD",
+      "summary": "What happened? 1 clear sentence, investor-focused, present tense, ≤25 words.",
+      "model_impact": "2-3 sentences: (1) Name the exact financial statement line affected (Revenue, EBITDA, Net Income, FCF, etc.). (2) Distinguish GAAP vs Non-GAAP if relevant and state whether it is recurring or one-time. (3) Conclude whether this changes the long-term DCF terminal value or is immaterial to the valuation model.",
+      "educational_insight": "A 'Did you know?' style tip (1-2 sentences) linking this event to a core investment or accounting principle. Make it educational for a junior analyst.",
+      "url": "copy the original url"
+    }
+  ]
+}
+
+Constraints:
+- Output MUST be valid JSON. No conversational filler.
+- Use precise Wall Street terminology.
+- Cover all provided headlines."""
+
+        response = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=3000,
+            timeout=30,
+            system=system_prompt,
+            messages=[{"role": "user", "content": user_msg}],
+        )
+
+        raw_text = response.content[0].text.strip()
+
+        # Strip markdown fences if present
+        if raw_text.startswith("```"):
+            raw_text = raw_text.split("```")[1]
+            if raw_text.startswith("json"):
+                raw_text = raw_text[4:]
+            raw_text = raw_text.strip()
+
+        parsed = _json.loads(raw_text)
+
+        # Support both new {executive_summary, events} and legacy flat array
+        if isinstance(parsed, list):
+            return {"ticker": ticker, "executive_summary": "", "insights": parsed}
+
+        events = parsed.get("events") or parsed.get("insights") or []
+        return {
+            "ticker":             ticker,
+            "executive_summary":  parsed.get("executive_summary", ""),
+            "insights":           events,
+        }
+
+    except Exception:
+        return empty
+
+
+@app.get("/api/ownership/{ticker}", summary="Ownership structure (insider + AI-estimated institutional/retail)", tags=["Profile"])
+def get_ownership(ticker: str):
+    import json as _json
+    from backend.services.fmp_service import FMPService as _FMPSvc
+    from backend.services._key_loader import load_key as _lk
+
+    _fmp = _FMPSvc()
+    t = ticker.upper()
+    empty = {"ticker": ticker, "insider_pct": 0.0, "institutional_pct": 0.0, "retail_pct": 100.0, "power_dynamics": ""}
+
+    try:
+        # 1. Real insider % from SEC-sourced shares-float
+        sf = _fmp._get(f"{_fmp._STABLE}/shares-float", {"symbol": t})
+        if not isinstance(sf, list) or not sf:
+            return empty
+        row = sf[0]
+        free_float = float(row.get("freeFloat", 100) or 100)
+        insider_pct = round(100.0 - free_float, 2)
+
+        # 2. Profile context for Claude
+        prof = _fmp._get(f"{_fmp._STABLE}/profile", {"symbol": t})
+        p = prof[0] if isinstance(prof, list) and prof else {}
+        mkt_cap_b = round(float(p.get("marketCap", 0) or 0) / 1e9, 1)
+        sector    = p.get("sector", "")
+        beta      = float(p.get("beta", 1.0) or 1.0)
+        ceo       = p.get("ceo", "")
+
+        # 3. Claude estimates institutional/retail split of the float
+        claude_key = _lk("CLAUDE_API_KEY")
+        if not claude_key:
+            return {**empty, "insider_pct": insider_pct, "retail_pct": round(100 - insider_pct, 2)}
+
+        import anthropic as _anthropic
+        client = _anthropic.Anthropic(api_key=claude_key)
+
+        prompt = (
+            f"Company: {t} | Sector: {sector} | Market Cap: ${mkt_cap_b}B | Beta: {beta} | CEO: {ceo}\n"
+            f"Known: insider/strategic ownership = {insider_pct:.1f}% (from SEC filings).\n"
+            f"The remaining {free_float:.1f}% is public float.\n\n"
+            "Estimate how that public float is split between institutional investors and retail investors.\n"
+            "Base your estimate on typical ownership patterns for this company's size, sector, and profile.\n\n"
+            "Return ONLY valid JSON, no markdown:\n"
+            '{"institutional_pct": <number>, "retail_pct": <number>, "power_dynamics": "<2-sentence analysis of what this ownership structure means for investors. Mention insider alignment, institutional conviction, or retail sentiment as appropriate.>"}'
+        )
+
+        resp = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=300,
+            timeout=20,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        raw = resp.content[0].text.strip()
+        if raw.startswith("```"):
+            raw = raw.split("```")[1].lstrip("json").strip()
+
+        ai = _json.loads(raw)
+        inst  = float(ai.get("institutional_pct", 0) or 0)
+        ret   = float(ai.get("retail_pct", 0) or 0)
+        dyn   = ai.get("power_dynamics", "")
+
+        # Normalise so all three sum to 100
+        total = insider_pct + inst + ret
+        if total > 0 and abs(total - 100) > 1:
+            scale = 100 / total
+            inst  = round(inst  * scale, 1)
+            ret   = round(ret   * scale, 1)
+            insider_pct = round(100 - inst - ret, 1)
+
+        return {
+            "ticker":            ticker,
+            "insider_pct":       round(insider_pct, 1),
+            "institutional_pct": round(inst, 1),
+            "retail_pct":        round(ret, 1),
+            "power_dynamics":    dyn,
+        }
+
+    except Exception:
+        return empty
+
+
+@app.post("/api/condense-description", summary="AI-condensed company description", tags=["Profile"])
+def condense_description(body: dict = Body(default={})):
+    import json as _json
+    from backend.services._key_loader import load_key as _lk
+
+    ticker      = body.get("ticker", "")
+    description = body.get("description", "")
+    sector      = body.get("sector", "")
+    industry    = body.get("industry", "")
+
+    if not description or len(description) < 100:
+        return {"ticker": ticker, "summary": description}
+
+    try:
+        claude_key = _lk("CLAUDE_API_KEY")
+        if not claude_key:
+            return {"ticker": ticker, "summary": description[:400]}
+
+        import anthropic as _anthropic
+        client = _anthropic.Anthropic(api_key=claude_key)
+
+        prompt = (
+            f"Company: {ticker} | Sector: {sector} | Industry: {industry}\n\n"
+            f"Full description:\n{description}\n\n"
+            "Rewrite this as a punchy, professional 3-sentence executive summary for a buy-side investor. "
+            "Focus on: (1) core business model, (2) primary revenue drivers, (3) competitive positioning. "
+            "Remove all boilerplate. Be direct and specific. Return ONLY the 3-sentence text, no JSON, no labels."
+        )
+
+        resp = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=200,
+            timeout=20,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        summary = resp.content[0].text.strip()
+        return {"ticker": ticker, "summary": summary}
+
+    except Exception:
+        return {"ticker": ticker, "summary": description[:400]}
+
 
 
 @app.get("/health", include_in_schema=False)

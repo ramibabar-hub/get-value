@@ -20,18 +20,17 @@ class FMPService:
     def __init__(self):
         self.api_key = load_key("FMP_API_KEY")
         if not self.api_key:
-            print("[FMPService] WARNING: FMP_API_KEY not found")
+            pass
 
     # ── internal helpers ──────────────────────────────────────────────────────
 
     def _get(self, url: str, params: dict, timeout: int = 10):
-        """GET → parsed JSON or None."""
+        """GET -> parsed JSON or None."""
         try:
             res = requests.get(url, params={**params, "apikey": self.api_key},
                                timeout=timeout)
             return res.json()
-        except Exception as exc:
-            print(f"[FMPService] GET {url} ERROR: {exc}")
+        except Exception:
             return None
 
     def _first(self, body) -> dict:
@@ -46,7 +45,7 @@ class FMPService:
     def fetch_statements(self, endpoint: str, ticker: str,
                          quarterly: bool = False, limit: int = 15) -> list:
         """
-        Fetch one financial statement endpoint with stable → v3 fallback.
+        Fetch one financial statement endpoint with stable -> v3 fallback.
 
         Returns a list of period dicts (newest first) or [].
         """
@@ -70,7 +69,7 @@ class FMPService:
         return []
 
     def fetch_historical_prices(self, ticker: str) -> list:
-        """Return flat list of daily price dicts with stable → v3 fallback."""
+        """Return flat list of daily price dicts with stable -> v3 fallback."""
         if not self.api_key:
             return []
 

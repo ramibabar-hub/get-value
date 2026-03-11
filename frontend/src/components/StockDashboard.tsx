@@ -11,20 +11,27 @@
  * • No data is re-fetched when only a tab, slider, or scale changes.
  */
 import { useState, useEffect, useRef, memo } from "react";
-import type { Dispatch, SetStateAction } from "react";
+import GlobalSearchBar from "./GlobalSearchBar";
 import type {
   OverviewData, FinancialsData, InsightsData, WaccData,
   FinancialsExtendedData, NormalizedPEResult, Scale, Period,
 } from "../types";
 import FinancialsTab from "./FinancialsTab";
 import InsightsTab   from "./InsightsTab";
-import CfIrrTab      from "./CfIrrTab";
-import SegmentsTab   from "./SegmentsTab";
+import CfIrrTab        from "./CfIrrTab";
+import CfIrrSpecialTab from "./CfIrrSpecialTab";
+import DDMTab              from "./DDMTab";
+import IndustryMultipleTab from "./IndustryMultipleTab";
+import PiotroskiTab        from "./PiotroskiTab";
+import SegmentsTab              from "./SegmentsTab";
+import StockPriceChart          from "./StockPriceChart";
+import CompanyInsightsFeed      from "./CompanyInsightsFeed";
+import CompanyOwnershipChart    from "./CompanyOwnershipChart";
 
 // ── Palette ───────────────────────────────────────────────────────────────────
 const NAVY    = "#1c2b46";
 const BLUE    = "#007bff";
-const RED_BTN = "#ff4b4b";   // Streamlit primary button colour
+// const RED_BTN = "#ff4b4b"; // removed — Analyze button replaced by GlobalSearchBar
 
 const C = {
   Y_BG: "#fef9c3", Y_FG: "#78350f",
@@ -82,6 +89,17 @@ function SubHeader({ title }: { title: string }) {
     </div>
   );
 }
+function DescriptionSkeleton() {
+  return (
+    <div>
+      <style>{`@keyframes ds{0%{background-position:-200% 0}100%{background-position:200% 0}}.ds{background:linear-gradient(90deg,#f0f2f5 25%,#e2e6ea 50%,#f0f2f5 75%);background-size:200% 100%;animation:ds 1.4s infinite;border-radius:4px;}`}</style>
+      {[90, 75, 85].map((w, i) => (
+        <div key={i} className="ds" style={{ height: 13, width: `${w}%`, marginBottom: 8 }} />
+      ))}
+    </div>
+  );
+}
+
 function Legend() {
   return (
     <div style={{ fontSize: "0.75em", color: "#6b7280", marginTop: 6 }}>
@@ -97,7 +115,7 @@ function Legend() {
 const MAIN_TABS = ["Overview", "Financials", "Insights", "Valuations"] as const;
 type MainTab = typeof MAIN_TABS[number];
 
-const VAL_TABS_DEFAULT = ["CF + IRR", "Normalized PE", "DCF"] as string[];
+const VAL_TABS_DEFAULT = ["CF + IRR", "CF + IRR Special", "Normalized PE", "DDM", "Industry Multiple", "Piotroski"] as string[];
 type ValTab = string;
 
 function TabBar({ tabs, active, onSelect, size = "md", scrollable = false }: {
@@ -191,17 +209,6 @@ function DraggableTabBar({ tabs, active, onSelect, onReorder }: {
   );
 }
 
-// ── Placeholder ───────────────────────────────────────────────────────────────
-
-function Placeholder({ icon, title, body }: { icon: string; title: string; body: string }) {
-  return (
-    <div style={{ padding: "56px 0", textAlign: "center", color: "#9ca3af" }}>
-      <div style={{ fontSize: "2.8em", marginBottom: 14 }}>{icon}</div>
-      <div style={{ fontSize: "1.1em", fontWeight: 700, color: "#6b7280", marginBottom: 8 }}>{title}</div>
-      <div style={{ fontSize: "0.88em" }}>{body}</div>
-    </div>
-  );
-}
 
 // ── Slider ────────────────────────────────────────────────────────────────────
 
@@ -394,15 +401,17 @@ function NormalizedPETab({ ticker, externalWacc }: { ticker: string; externalWac
 
 export interface StockDashboardProps {
   ticker: string;
-  onSearch: Dispatch<SetStateAction<string | null>>;
+  onSearch: (t: string | null) => void;
 }
 
 export default function StockDashboard({ ticker, onSearch }: StockDashboardProps) {
 
   // ── Overview ──────────────────────────────────────────────────────────────
-  const [ov,      setOv]      = useState<OverviewData | null>(null);
-  const [ovErr,   setOvErr]   = useState<string | null>(null);
-  const [ovLoad,  setOvLoad]  = useState(true);
+  const [ov,         setOv]         = useState<OverviewData | null>(null);
+  const [ovErr,      setOvErr]      = useState<string | null>(null);
+  const [ovLoad,     setOvLoad]     = useState(true);
+  const [descSummary,setDescSummary]= useState<string | null>(null);
+  const [descLoad,   setDescLoad]   = useState(false);
 
   // ── Financials (annual cached at load; quarterly lazy) ────────────────────
   const [finA,    setFinA]    = useState<FinancialsData | null>(null);
@@ -420,24 +429,36 @@ export default function StockDashboard({ ticker, onSearch }: StockDashboardProps
   const [insLoad, setInsLoad] = useState(true);
 
   // ── WACC ──────────────────────────────────────────────────────────────────
-  const [waccData,   setWaccData]   = useState<WaccData | null>(null);
-  const [manualWacc, setManualWacc] = useState<number>(10);
+  const [waccData,    setWaccData]    = useState<WaccData | null>(null);
+  const [manualWacc,  setManualWacc]  = useState<number>(10);
+
+  // ── Filing links: SEC iXBRL for US, EODHD portal URLs for intl ───────────
+  const [filingLinks, setFilingLinks] = useState<Record<string, string>>({});
 
   // ── UI state ──────────────────────────────────────────────────────────────
-  const [activeTab, setActiveTab]   = useState<MainTab>("Overview");
+  const [activeTab, setActiveTab]   = useState<MainTab>(() => {
+    // Restore the last active tab so a browser refresh keeps the user in place
+    const saved = sessionStorage.getItem("gv_tab") as MainTab | null;
+    return saved && (MAIN_TABS as readonly string[]).includes(saved) ? saved : "Overview";
+  });
   const [activeVal, setActiveVal]   = useState<ValTab>("CF + IRR");
   const [valTabs,   setValTabs]     = useState<string[]>(VAL_TABS_DEFAULT);
   const [period,    setPeriod]      = useState<Period>("annual");
   const [scale,     setScale]       = useState<Scale>("MM");
-  const [searchQ,   setSearchQ]     = useState("");
+  const [, setSearchQ] = useState("");
+  // Fair values exported from individual valuation tabs (for future Outlook summary)
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [_ddmFairValue, setDdmFairValue] = useState<number | null>(null);
 
   // ── Parallel fetch on ticker change ──────────────────────────────────────
   useEffect(() => {
-    setOv(null);     setOvErr(null);   setOvLoad(true);
-    setFinA(null);   setFinQ(null);    setFinLoad(true);
-    setFinExt(null); setFinExtLoad(true);
-    setIns(null);    setInsErr(null);  setInsLoad(true);
+    setOv(null);          setOvErr(null);   setOvLoad(true);
+    setDescSummary(null); setDescLoad(false);
+    setFinA(null);     setFinQ(null);    setFinLoad(true);
+    setFinExt(null);   setFinExtLoad(true);
+    setIns(null);      setInsErr(null);  setInsLoad(true);
     setWaccData(null);
+    setFilingLinks({});
     setPeriod("annual");
 
     const load = <T,>(url: string, set: (d: T) => void, setErr: (e: string | null) => void, setLoading: (b: boolean) => void) =>
@@ -452,6 +473,14 @@ export default function StockDashboard({ ticker, onSearch }: StockDashboardProps
     load<FinancialsExtendedData>(`/api/financials-extended/${ticker}?period=annual`, setFinExt,() => {},  setFinExtLoad);
     load<InsightsData>          (`/api/insights/${ticker}`,                          setIns,   setInsErr, setInsLoad);
 
+    // Fetch filing links (US → SEC EDGAR iXBRL; intl → EODHD portal; non-critical)
+    fetch(`/api/sec-filings/${encodeURIComponent(ticker)}`)
+      .then(r => r.ok ? r.json() : {})
+      .then((d: Record<string, string>) => setFilingLinks(d))
+      .catch(() => { /* best-effort */ });
+
+    // Description condensing triggered by ov load (see separate useEffect below)
+
     // Fetch WACC components (non-critical — silently ignore errors)
     fetch(`/api/wacc/${ticker}`)
       .then((r) => r.ok ? r.json() : Promise.reject())
@@ -464,6 +493,26 @@ export default function StockDashboard({ ticker, onSearch }: StockDashboardProps
       })
       .catch(() => { /* WACC is best-effort */ });
   }, [ticker]);
+
+  // ── Condense description once ov loads ───────────────────────────────────
+  useEffect(() => {
+    if (!ov?.description || ov.description.length < 100) return;
+    setDescLoad(true);
+    fetch("/api/condense-description", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ticker:      ov.ticker,
+        description: ov.description,
+        sector:      ov.sector,
+        industry:    ov.industry,
+      }),
+    })
+      .then(r => r.json())
+      .then(d => setDescSummary(d.summary ?? null))
+      .catch(() => setDescSummary(null))
+      .finally(() => setDescLoad(false));
+  }, [ov?.ticker]);
 
   // ── Lazy-fetch quarterly financials ──────────────────────────────────────
   function handlePeriodChange(p: Period) {
@@ -480,12 +529,6 @@ export default function StockDashboard({ ticker, onSearch }: StockDashboardProps
 
   const currentFin   = period === "annual" ? finA : finQ;
   const currentFinLoad = period === "annual" ? finLoad : finQLoad;
-
-  // ── Search ────────────────────────────────────────────────────────────────
-  function handleSearch() {
-    const t = searchQ.trim().toUpperCase();
-    if (t) { onSearch(t); setSearchQ(""); }
-  }
 
   // ── Price display ─────────────────────────────────────────────────────────
   const price    = ov?.price ?? null;
@@ -508,20 +551,10 @@ export default function StockDashboard({ ticker, onSearch }: StockDashboardProps
         boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
       }}>
         <div style={{ flexShrink: 0 }}>
-          <span style={{ color: BLUE, fontWeight: 900, fontSize: "1.35em", letterSpacing: "-0.01em" }}>get</span>
-          <span style={{ color: NAVY, fontWeight: 900, fontSize: "1.35em", letterSpacing: "-0.01em" }}>Value</span>
+          <img src="/logo.svg" alt="getValue" style={{ height: 38, display: "block" }} />
         </div>
-        <div style={{ flex: 1, display: "flex", gap: 8, maxWidth: 560, margin: "0 auto" }}>
-          <input
-            value={searchQ}
-            onChange={(e) => setSearchQ(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-            placeholder="Search another company or ticker… (AAPL · NICE.TA · VOD.L)"
-            style={{ flex: 1, padding: "8px 14px", border: "1.5px solid #d1d5db", borderRadius: 6, fontSize: "0.88em", outline: "none", background: "#f9fafb", fontFamily: "inherit" }}
-          />
-          <button onClick={handleSearch} style={{ padding: "8px 20px", background: RED_BTN, color: "#fff", border: "none", borderRadius: 6, fontWeight: 700, fontSize: "0.88em", cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>
-            Analyze →
-          </button>
+        <div style={{ flex: 1, maxWidth: 560, margin: "0 auto" }}>
+          <GlobalSearchBar onSelect={(t) => { onSearch(t); setSearchQ(""); }} />
         </div>
       </div>
 
@@ -587,23 +620,51 @@ export default function StockDashboard({ ticker, onSearch }: StockDashboardProps
         {/* ════ TABS ═══════════════════════════════════════════════════════════ */}
         {!ovLoad && (
           <>
-            <TabBar tabs={MAIN_TABS} active={activeTab} onSelect={(t) => setActiveTab(t as MainTab)} />
+            <TabBar tabs={MAIN_TABS} active={activeTab} onSelect={(t) => {
+              const tab = t as MainTab;
+              setActiveTab(tab);
+              sessionStorage.setItem("gv_tab", tab);
+            }} />
 
             {/* ══ Overview ══ */}
             {activeTab === "Overview" && (
               ov
-                ? <div style={{ maxWidth: 900, marginTop: 8 }}>
-                    <h4 style={{
-                      fontSize: "0.72em", fontWeight: 700,
-                      textTransform: "uppercase", letterSpacing: "0.09em",
-                      color: "#4d6b88", margin: "0 0 8px",
-                    }}>
-                      About
-                    </h4>
-                    {ov.description
-                      ? <p style={{ color: "#4d6b88", fontSize: "0.92em", lineHeight: 1.75, margin: 0 }}>{ov.description}</p>
-                      : <p style={{ color: "#9ca3af", fontStyle: "italic", margin: 0 }}>No company description available.</p>
-                    }
+                ? <div style={{ maxWidth: 960, marginTop: 8 }}>
+
+                    {/* Row 1: AI Description (left) + Price Chart (right) */}
+                    <div style={{ display: "flex", gap: 24, flexWrap: "wrap", alignItems: "flex-start" }}>
+
+                      {/* Left: Condensed About */}
+                      <div style={{ flex: 1, minWidth: 280 }}>
+                        <h4 style={{ fontSize: "0.72em", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.09em", color: "#4d6b88", margin: "0 0 8px" }}>
+                          About
+                        </h4>
+                        {descLoad ? (
+                          <DescriptionSkeleton />
+                        ) : (descSummary || ov.description) ? (
+                          <p style={{ color: "#4d6b88", fontSize: "0.91em", lineHeight: 1.75, margin: 0 }}>
+                            {descSummary || ov.description}
+                          </p>
+                        ) : (
+                          <p style={{ color: "#9ca3af", fontStyle: "italic", margin: 0 }}>No description available.</p>
+                        )}
+                      </div>
+
+                      {/* Right: Price Chart */}
+                      <div style={{ flex: "1.4 1 360px", minWidth: 340 }}>
+                        <h4 style={{ fontSize: "0.72em", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.09em", color: "#4d6b88", margin: "0 0 8px" }}>
+                          Price History
+                        </h4>
+                        <StockPriceChart ticker={ticker} />
+                      </div>
+                    </div>
+
+                    {/* Row 2: Ownership Structure */}
+                    <CompanyOwnershipChart ticker={ticker} />
+
+                    {/* Row 3: News & Insights feed */}
+                    <CompanyInsightsFeed ticker={ticker} ov={ov} />
+
                     <SegmentsTab ticker={ticker} />
                   </div>
                 : null
@@ -612,6 +673,7 @@ export default function StockDashboard({ ticker, onSearch }: StockDashboardProps
             {/* ══ Financials ══ */}
             {activeTab === "Financials" && (
               <FinancialsTab
+                ticker={ticker}
                 data={currentFin}
                 loading={currentFinLoad}
                 extData={finExt}
@@ -620,6 +682,7 @@ export default function StockDashboard({ ticker, onSearch }: StockDashboardProps
                 scale={scale}
                 onPeriodChange={handlePeriodChange}
                 onScaleChange={setScale}
+                filingLinks={filingLinks}
               />
             )}
 
@@ -644,9 +707,22 @@ export default function StockDashboard({ ticker, onSearch }: StockDashboardProps
                   onSelect={setActiveVal}
                   onReorder={setValTabs}
                 />
-                {activeVal === "CF + IRR"     && <CfIrrTab ticker={ticker} externalWacc={manualWacc} ov={ov} />}
-                {activeVal === "Normalized PE" && <NormalizedPETab ticker={ticker} externalWacc={manualWacc} />}
-                {activeVal === "DCF"           && <Placeholder icon="📉" title="DCF Model — Coming Soon" body="Discounted Cash Flow valuation with customisable WACC and terminal growth rate." />}
+                {activeVal === "CF + IRR"         && <CfIrrTab ticker={ticker} externalWacc={manualWacc} ov={ov} />}
+                {activeVal === "CF + IRR Special" && <CfIrrSpecialTab ticker={ticker} externalWacc={manualWacc} ov={ov} />}
+                {activeVal === "Normalized PE"    && <NormalizedPETab ticker={ticker} externalWacc={manualWacc} />}
+                {activeVal === "DDM"              && (
+                  <DDMTab
+                    ticker={ticker}
+                    externalWacc={manualWacc}
+                    onFairValueChange={setDdmFairValue}
+                  />
+                )}
+                {activeVal === "Industry Multiple" && (
+                  <IndustryMultipleTab ticker={ticker} />
+                )}
+                {activeVal === "Piotroski" && (
+                  <PiotroskiTab ticker={ticker} />
+                )}
               </div>
             )}
           </>
