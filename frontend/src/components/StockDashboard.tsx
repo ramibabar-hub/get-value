@@ -378,6 +378,7 @@ export default function StockDashboard({ ticker, onSearch }: StockDashboardProps
   const [filingLinks, setFilingLinks] = useState<Record<string, string>>({});
 
   // ── UI state ──────────────────────────────────────────────────────────────
+  const [insightsEnabled, setInsightsEnabled] = useState(true);
   const [activeTab, setActiveTab]   = useState<MainTab>(() => {
     // Restore the last active tab so a browser refresh keeps the user in place
     const saved = sessionStorage.getItem("gv_tab") as MainTab | null;
@@ -497,7 +498,23 @@ export default function StockDashboard({ ticker, onSearch }: StockDashboardProps
         <div style={{ flex: 1, maxWidth: 560, margin: "0 auto" }}>
           <GlobalSearchBar onSelect={(t) => { onSearch(t); setSearchQ(""); }} />
         </div>
-        <div style={{ flexShrink: 0, marginLeft: "auto" }}>
+        <div style={{ flexShrink: 0, marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
+          <button
+            onClick={() => setInsightsEnabled(e => !e)}
+            title={insightsEnabled ? "Hide AI Insights" : "Show AI Insights"}
+            style={{
+              display: "flex", alignItems: "center", gap: 5,
+              background: insightsEnabled ? "var(--gv-green-bg)" : "var(--gv-data-bg)",
+              border: "1px solid var(--gv-border)",
+              borderRadius: "var(--gv-radius-sm)",
+              padding: "4px 10px",
+              cursor: "pointer", fontSize: "0.78em",
+              color: insightsEnabled ? "var(--gv-green)" : "var(--gv-text-muted)",
+              fontWeight: 600, transition: "all 0.15s",
+            }}
+          >
+            ✨ {insightsEnabled ? "Insights ON" : "Insights OFF"}
+          </button>
           <LanguageSelector />
         </div>
       </div>
@@ -553,12 +570,14 @@ export default function StockDashboard({ ticker, onSearch }: StockDashboardProps
                     </div>
                     <div style={{ fontSize: "0.86em", fontWeight: 700, color: m.color ?? "var(--gv-text)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", display: "flex", alignItems: "center", gap: 2 }}>
                       {m.value}
-                      <InsightTooltip
-                        metric={m.label}
-                        value={m.value}
-                        ticker={ticker}
-                        context={{ sector: ov.sector, industry: ov.industry, company_name: ov.company_name }}
-                      />
+                      {insightsEnabled && (
+                        <InsightTooltip
+                          metric={m.label}
+                          value={m.value}
+                          ticker={ticker}
+                          context={{ sector: ov.sector, industry: ov.industry, company_name: ov.company_name }}
+                        />
+                      )}
                     </div>
                   </div>
                 ))}
