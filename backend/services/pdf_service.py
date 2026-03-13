@@ -107,11 +107,11 @@ def _make_chart(hist_prices: list, ticker: str) -> bytes:
         dates, prices = zip(*pts)
         xs = list(range(len(prices)))
 
-        fig, ax = plt.subplots(figsize=(7.64, 2.1), dpi=150)
+        fig, ax = plt.subplots(figsize=(7.64, 1.4), dpi=150)
         fig.patch.set_facecolor("#f8fafc")
         ax.set_facecolor("#f8fafc")
 
-        ax.plot(xs, prices, color="#1c2b46", linewidth=1.1, zorder=3)
+        ax.plot(xs, prices, color="#1c2b46", linewidth=1.0, zorder=3)
         ax.fill_between(xs, prices, min(prices) * 0.97,
                         alpha=0.10, color="#1c2b46")
 
@@ -121,22 +121,22 @@ def _make_chart(hist_prices: list, ticker: str) -> bytes:
         ax.set_xticks(idxs)
         ax.set_xticklabels(
             [dates[i].strftime("%b '%y") for i in idxs],
-            fontsize=6, color="#475569",
+            fontsize=5.5, color="#475569",
         )
-        ax.tick_params(axis="y", labelsize=6, colors="#475569")
+        ax.tick_params(axis="y", labelsize=5.5, colors="#475569")
         ax.spines[["top", "right"]].set_visible(False)
         ax.spines["left"].set_color("#e2e8f0")
         ax.spines["bottom"].set_color("#e2e8f0")
         ax.grid(axis="y", color="#e2e8f0", linewidth=0.3, linestyle="--")
         ax.set_title(
-            f"{ticker}  —  Historical Stock Price  (7-Year)",
-            fontsize=7, color="#1c2b46", fontweight="bold", pad=3,
+            f"{ticker}  -  Historical Stock Price  (7-Year)",
+            fontsize=6.5, color="#1c2b46", fontweight="bold", pad=2,
         )
         ax.yaxis.set_major_formatter(
             plt.FuncFormatter(lambda v, _: f"${v:,.0f}")
         )
 
-        plt.tight_layout(pad=0.4)
+        plt.tight_layout(pad=0.3)
         buf = io.BytesIO()
         fig.savefig(buf, format="png", bbox_inches="tight", dpi=150)
         plt.close(fig)
@@ -171,38 +171,38 @@ class _PDF(FPDF):
 #  Block renderers
 # ─────────────────────────────────────────────────────────────────────────────
 def _draw_banner(pdf: _PDF, ticker, company, sector, industry, date_str):
-    H = 16.0
+    H = 14.0
     pdf.fc(_NAVY)
     pdf.rect(0, 0, _PW, H, "F")
 
     # Left: TICKER (large) then full company name on the line below
-    pdf.set_xy(_LM, 2.5)
-    pdf.set_font("Helvetica", "B", 13)
+    pdf.set_xy(_LM, 2.0)
+    pdf.set_font("Helvetica", "B", 12)
     pdf.tc(_WHITE)
-    pdf.cell(0, 7, ticker, new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="L")
+    pdf.cell(0, 6, ticker, new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="L")
 
     pdf.set_x(_LM)
-    pdf.set_font("Helvetica", "", 7)
+    pdf.set_font("Helvetica", "", 6.5)
     pdf.tc((170, 200, 225))
     safe_co = company.encode("latin-1", "replace").decode("latin-1")
-    pdf.cell(110, 5, safe_co, new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="L")
+    pdf.cell(110, 4.5, safe_co, new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="L")
 
     # Right-aligned metadata
-    pdf.set_xy(_LM, 3.0)
-    pdf.set_font("Helvetica", "", 6.0)
+    pdf.set_xy(_LM, 2.5)
+    pdf.set_font("Helvetica", "", 5.5)
     pdf.tc((145, 175, 210))
     meta = "  |  ".join(x for x in [sector, industry, date_str] if x)
     safe_meta = meta.encode("latin-1", "replace").decode("latin-1")
-    pdf.cell(_BW, 7, safe_meta, align="R", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.cell(_BW, 6, safe_meta, align="R", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
-    pdf.set_y(H + 2)
+    pdf.set_y(H + 1)
 
 
 def _draw_metric_boxes(pdf: _PDF, boxes: list):
     """boxes = [(label, value, verdict: bool | None), ...]"""
     n   = len(boxes)
     bw  = _BW / n
-    bh  = 12.0
+    bh  = 9.0
     y0  = pdf.get_y()
 
     for i, (label, value, verdict) in enumerate(boxes):
@@ -213,25 +213,25 @@ def _draw_metric_boxes(pdf: _PDF, boxes: list):
         pdf.fc(bg)
         pdf.rect(x, y0, bw - 0.5, bh, "F")
 
-        pdf.set_xy(x + 2, y0 + 1.5)
-        pdf.set_font("Helvetica", "", 5.5)
+        pdf.set_xy(x + 1.5, y0 + 1.2)
+        pdf.set_font("Helvetica", "", 5.0)
         pdf.tc(_SLATE)
-        pdf.cell(bw - 4, 3.5, label, new_x=XPos.LEFT, new_y=YPos.NEXT)
+        pdf.cell(bw - 3, 3.0, label, new_x=XPos.LEFT, new_y=YPos.NEXT)
 
-        pdf.set_x(x + 2)
-        pdf.set_font("Helvetica", "B", 9)
+        pdf.set_x(x + 1.5)
+        pdf.set_font("Helvetica", "B", 7.5)
         pdf.tc(fg)
-        pdf.cell(bw - 4, 5.5, value, new_x=XPos.LEFT, new_y=YPos.NEXT)
+        pdf.cell(bw - 3, 4.5, value, new_x=XPos.LEFT, new_y=YPos.NEXT)
 
-    pdf.set_y(y0 + bh + 2)
+    pdf.set_y(y0 + bh + 1)
 
 
-def _draw_chart(pdf: _PDF, chart_png: bytes, h: float = 50.0):
+def _draw_chart(pdf: _PDF, chart_png: bytes, h: float = 22.0):
     if not chart_png:
         return
     y0 = pdf.get_y()
     pdf.image(io.BytesIO(chart_png), x=_LM, y=y0, w=_BW, h=h)
-    pdf.set_y(y0 + h + 2)
+    pdf.set_y(y0 + h + 1)
 
 
 def _draw_table(
@@ -240,9 +240,9 @@ def _draw_table(
     title: str,
     headers: list, col_w: list,
     rows: list,
-    row_h: float = 4.0,
-    hdr_h: float = 4.3,
-    title_h: float = 4.8,
+    row_h: float = 3.0,
+    hdr_h: float = 3.2,
+    title_h: float = 3.5,
 ) -> float:
     """
     Draw a titled, header-row table inside column at (x, y) with width w.
@@ -253,16 +253,16 @@ def _draw_table(
     # Section title bar
     pdf.fc(_NAVY)
     pdf.tc(_WHITE)
-    pdf.set_font("Helvetica", "B", 6.2)
+    pdf.set_font("Helvetica", "B", 5.8)
     pdf.cell(w, title_h, f"  {title}", fill=True, border=0, align="L",
              new_x=XPos.LEFT, new_y=YPos.NEXT)
-    pdf.ln(0.4)
+    pdf.ln(0.3)
     pdf.set_x(x)
 
     # Header row
     pdf.fc(_NAVY)
     pdf.tc(_WHITE)
-    pdf.set_font("Helvetica", "B", 5.0)
+    pdf.set_font("Helvetica", "B", 4.8)
     for hdr, cw in zip(headers, col_w):
         pdf.cell(cw, hdr_h, hdr, fill=True, border=0, align="C",
                  new_x=XPos.RIGHT, new_y=YPos.TOP)
@@ -275,13 +275,13 @@ def _draw_table(
 
         if special:
             pdf.fc(_MID_GREY); pdf.tc(_NAVY)
-            pdf.set_font("Helvetica", "B", 5.0)
+            pdf.set_font("Helvetica", "B", 4.8)
         elif ri % 2 == 0:
             pdf.fc(_LT_GREY); pdf.tc(_BODY_TXT)
-            pdf.set_font("Helvetica", "", 5.0)
+            pdf.set_font("Helvetica", "", 4.8)
         else:
             pdf.fc(_WHITE); pdf.tc(_BODY_TXT)
-            pdf.set_font("Helvetica", "", 5.0)
+            pdf.set_font("Helvetica", "", 4.8)
 
         pdf.set_x(x)
         for ci, (v, cw) in enumerate(zip(row, col_w)):
@@ -297,10 +297,10 @@ def _draw_final_output(pdf: _PDF, x, y, w, final_rows) -> float:
     """final_rows = [(metric_label, value_str, verdict: bool | None), ...]"""
     pdf.set_xy(x, y)
     pdf.fc(_NAVY); pdf.tc(_WHITE)
-    pdf.set_font("Helvetica", "B", 6.2)
-    pdf.cell(w, 4.8, "  5 -Final Output", fill=True, border=0, align="L",
+    pdf.set_font("Helvetica", "B", 5.8)
+    pdf.cell(w, 3.5, "  5 -Final Output", fill=True, border=0, align="L",
              new_x=XPos.LEFT, new_y=YPos.NEXT)
-    pdf.ln(0.4)
+    pdf.ln(0.3)
 
     c_lbl = round(w * 0.61)
     c_val = w - c_lbl
@@ -311,11 +311,11 @@ def _draw_final_output(pdf: _PDF, x, y, w, final_rows) -> float:
         pdf.fc(bg); pdf.tc(fg)
 
         pdf.set_x(x)
-        pdf.set_font("Helvetica", "", 5.5)
-        pdf.cell(c_lbl, 4.8, f"  {metric}", fill=True, border=0, align="L",
+        pdf.set_font("Helvetica", "", 5.0)
+        pdf.cell(c_lbl, 3.8, f"  {metric}", fill=True, border=0, align="L",
                  new_x=XPos.RIGHT, new_y=YPos.TOP)
-        pdf.set_font("Helvetica", "B", 5.5)
-        pdf.cell(c_val, 4.8, value, fill=True, border=0, align="R",
+        pdf.set_font("Helvetica", "B", 5.0)
+        pdf.cell(c_val, 3.8, value, fill=True, border=0, align="R",
                  new_x=XPos.LEFT, new_y=YPos.NEXT)
 
     return pdf.get_y()
@@ -325,10 +325,10 @@ def _draw_checklist(pdf: _PDF, x, y, w, checklist) -> float:
     """checklist = [(label, val, passed: bool | None, threshold), ...]"""
     pdf.set_xy(x, y)
     pdf.fc(_NAVY); pdf.tc(_WHITE)
-    pdf.set_font("Helvetica", "B", 6.2)
-    pdf.cell(w, 4.8, "  Quality Checklist", fill=True, border=0, align="L",
+    pdf.set_font("Helvetica", "B", 5.8)
+    pdf.cell(w, 3.5, "  Quality Checklist", fill=True, border=0, align="L",
              new_x=XPos.LEFT, new_y=YPos.NEXT)
-    pdf.ln(0.4)
+    pdf.ln(0.3)
     pdf.set_x(x)
 
     c1 = round(w * 0.50)
@@ -337,13 +337,13 @@ def _draw_checklist(pdf: _PDF, x, y, w, checklist) -> float:
 
     # Sub-header
     pdf.fc(_MID_GREY); pdf.tc(_NAVY)
-    pdf.set_font("Helvetica", "B", 4.8)
+    pdf.set_font("Helvetica", "B", 4.5)
     pdf.set_x(x)
-    pdf.cell(c1, 3.8, "  Metric",    fill=True, border=0, align="L",
+    pdf.cell(c1, 3.0, "  Metric",    fill=True, border=0, align="L",
              new_x=XPos.RIGHT, new_y=YPos.TOP)
-    pdf.cell(c2, 3.8, "Value",       fill=True, border=0, align="C",
+    pdf.cell(c2, 3.0, "Value",       fill=True, border=0, align="C",
              new_x=XPos.RIGHT, new_y=YPos.TOP)
-    pdf.cell(c3, 3.8, "Status",      fill=True, border=0, align="C",
+    pdf.cell(c3, 3.0, "Status",      fill=True, border=0, align="C",
              new_x=XPos.LEFT,  new_y=YPos.NEXT)
 
     for item in checklist:
@@ -362,13 +362,13 @@ def _draw_checklist(pdf: _PDF, x, y, w, checklist) -> float:
 
         pdf.fc(bg); pdf.tc(fg)
         pdf.set_x(x)
-        pdf.set_font("Helvetica", "", 5.2)
-        pdf.cell(c1, 5.0, f"  {label}", fill=True, border=0, align="L",
+        pdf.set_font("Helvetica", "", 4.8)
+        pdf.cell(c1, 3.8, f"  {label}", fill=True, border=0, align="L",
                  new_x=XPos.RIGHT, new_y=YPos.TOP)
-        pdf.cell(c2, 5.0, val,          fill=True, border=0, align="C",
+        pdf.cell(c2, 3.8, val,          fill=True, border=0, align="C",
                  new_x=XPos.RIGHT, new_y=YPos.TOP)
-        pdf.set_font("Helvetica", "B", 5.2)
-        pdf.cell(c3, 5.0, icon,         fill=True, border=0, align="C",
+        pdf.set_font("Helvetica", "B", 4.8)
+        pdf.cell(c3, 3.8, icon,         fill=True, border=0, align="C",
                  new_x=XPos.LEFT,  new_y=YPos.NEXT)
 
     return pdf.get_y()
@@ -379,10 +379,10 @@ def _draw_weighting_table(pdf: _PDF, ebitda_price, fcf_price, avg_target) -> flo
     y0 = pdf.get_y()
     pdf.set_xy(_LM, y0)
     pdf.fc(_NAVY); pdf.tc(_WHITE)
-    pdf.set_font("Helvetica", "B", 6.2)
-    pdf.cell(_BW, 4.8, "  2 · Weighting  -  Avg. Target Price", fill=True, border=0, align="L",
+    pdf.set_font("Helvetica", "B", 5.8)
+    pdf.cell(_BW, 3.5, "  2 · Weighting  -  Avg. Target Price", fill=True, border=0, align="L",
              new_x=XPos.LEFT, new_y=YPos.NEXT)
-    pdf.ln(0.4)
+    pdf.ln(0.3)
 
     c1 = round(_BW * 0.50)
     c2 = round(_BW * 0.25)
@@ -390,11 +390,11 @@ def _draw_weighting_table(pdf: _PDF, ebitda_price, fcf_price, avg_target) -> flo
 
     # Header
     pdf.fc(_NAVY); pdf.tc(_WHITE)
-    pdf.set_font("Helvetica", "B", 5.0)
+    pdf.set_font("Helvetica", "B", 4.8)
     pdf.set_x(_LM)
     for txt, w, align in [("Valuation Method", c1, "L"), ("Weighting", c2, "C"), ("Est. Stock Price", c3, "R")]:
-        pdf.cell(w, 3.8, txt, fill=True, border=0, align=align, new_x=XPos.RIGHT, new_y=YPos.TOP)
-    pdf.ln(3.8)
+        pdf.cell(w, 2.8, txt, fill=True, border=0, align=align, new_x=XPos.RIGHT, new_y=YPos.TOP)
+    pdf.ln(2.8)
 
     rows = [
         ("EV/EBITDA Method", "50%", ebitda_price),
@@ -404,121 +404,110 @@ def _draw_weighting_table(pdf: _PDF, ebitda_price, fcf_price, avg_target) -> flo
         pdf.fc(_LT_GREY if i % 2 == 0 else _WHITE)
         pdf.tc(_BODY_TXT)
         pdf.set_x(_LM)
-        pdf.set_font("Helvetica", "", 5.2)
-        pdf.cell(c1, 4.5, f"  {method}", fill=True, border=0, align="L", new_x=XPos.RIGHT, new_y=YPos.TOP)
-        pdf.cell(c2, 4.5, weight,       fill=True, border=0, align="C", new_x=XPos.RIGHT, new_y=YPos.TOP)
-        pdf.set_font("Helvetica", "B", 5.2)
+        pdf.set_font("Helvetica", "", 5.0)
+        pdf.cell(c1, 3.5, f"  {method}", fill=True, border=0, align="L", new_x=XPos.RIGHT, new_y=YPos.TOP)
+        pdf.cell(c2, 3.5, weight,       fill=True, border=0, align="C", new_x=XPos.RIGHT, new_y=YPos.TOP)
+        pdf.set_font("Helvetica", "B", 5.0)
         price_str = _fp(price) if price is not None else "N/A"
-        pdf.cell(c3, 4.5, price_str,    fill=True, border=0, align="R", new_x=XPos.LEFT, new_y=YPos.NEXT)
+        pdf.cell(c3, 3.5, price_str,    fill=True, border=0, align="R", new_x=XPos.LEFT, new_y=YPos.NEXT)
 
     # Footer — avg target
     pdf.fc(_MID_GREY); pdf.tc(_NAVY)
     pdf.set_x(_LM)
-    pdf.set_font("Helvetica", "B", 5.5)
+    pdf.set_font("Helvetica", "B", 5.2)
     avg_str = _fp(avg_target) if avg_target is not None else "N/A"
-    pdf.cell(c1, 5.0, "  Avg. Target Price", fill=True, border=0, align="L", new_x=XPos.RIGHT, new_y=YPos.TOP)
-    pdf.cell(c2, 5.0, "100%",               fill=True, border=0, align="C", new_x=XPos.RIGHT, new_y=YPos.TOP)
-    pdf.cell(c3, 5.0, avg_str,              fill=True, border=0, align="R", new_x=XPos.LEFT, new_y=YPos.NEXT)
+    pdf.cell(c1, 3.8, "  Avg. Target Price", fill=True, border=0, align="L", new_x=XPos.RIGHT, new_y=YPos.TOP)
+    pdf.cell(c2, 3.8, "100%",               fill=True, border=0, align="C", new_x=XPos.RIGHT, new_y=YPos.TOP)
+    pdf.cell(c3, 3.8, avg_str,              fill=True, border=0, align="R", new_x=XPos.LEFT, new_y=YPos.NEXT)
 
     return pdf.get_y()
 
 
-def _draw_irr_schedule(pdf: _PDF, rows: list, irr_val) -> float:
-    """IRR section header + Cash Flow Schedule table."""
+def _draw_irr_schedule(pdf: _PDF, x: float, y: float, w: float,
+                       rows: list, irr_val) -> float:
+    """IRR Cash Flow Schedule — positioned at (x, y) with width w."""
     if not rows:
-        return pdf.get_y()
-    pdf.ln(3)
+        return y
 
-    # ── Section header bar: "4 · IRR Analysis"  +  IRR badge on the right ──
-    irr_str = f"IRR: {irr_val * 100:.1f}%" if irr_val is not None else "IRR: N/A"
+    irr_str  = f"IRR: {irr_val * 100:.1f}%" if irr_val is not None else "IRR: N/A"
     irr_pass = irr_val is not None and irr_val >= 0.12
     irr_warn = irr_val is not None and 0.08 <= irr_val < 0.12
     badge_fg = _GRN_FG if irr_pass else ((180, 100, 0) if irr_warn else _RED_FG)
 
-    y0 = pdf.get_y()
+    pdf.set_xy(x, y)
+
+    # Title bar with IRR badge
     pdf.fc(_NAVY)
-    pdf.rect(_LM, y0, _BW, 6.0, "F")
-
-    pdf.set_xy(_LM + 2, y0 + 0.8)
-    pdf.set_font("Helvetica", "B", 7.0)
+    pdf.rect(x, y, w, 4.5, "F")
+    pdf.set_xy(x + 2, y + 0.5)
+    pdf.set_font("Helvetica", "B", 5.8)
     pdf.tc(_WHITE)
-    pdf.cell(_BW - 4, 5.0, "4 · IRR Analysis", border=0, align="L",
+    pdf.cell(w - 4, 4.0, "4 · IRR Cash Flow Schedule", border=0, align="L",
+             new_x=XPos.LEFT, new_y=YPos.NEXT)
+    # IRR badge right side
+    pdf.set_xy(x, y + 0.5)
+    pdf.set_font("Helvetica", "B", 5.8)
+    pdf.tc(tuple(min(c + 80, 255) for c in badge_fg))
+    pdf.cell(w - 2, 4.0, irr_str, border=0, align="R",
              new_x=XPos.LEFT, new_y=YPos.NEXT)
 
-    # Badge overlay — right-aligned, drawn on top of the header
-    pdf.set_xy(_LM, y0 + 0.8)
-    pdf.set_font("Helvetica", "B", 7.0)
-    pdf.tc(tuple(min(c + 80, 255) for c in badge_fg))   # lighter tint for contrast
-    pdf.cell(_BW - 3, 5.0, irr_str, border=0, align="R",
-             new_x=XPos.LEFT, new_y=YPos.NEXT)
+    pdf.set_y(y + 4.5 + 0.3)
 
-    pdf.set_y(y0 + 6.0 + 1.5)
-
-    # ── Sub-title: IRR Cash Flow Schedule ─────────────────────────────────
-    pdf.set_xy(_LM, pdf.get_y())
-    pdf.fc(_NAVY); pdf.tc(_WHITE)
-    pdf.set_font("Helvetica", "B", 6.2)
-    pdf.cell(_BW, 4.8, "  IRR Cash Flow Schedule", fill=True, border=0, align="L",
-             new_x=XPos.LEFT, new_y=YPos.NEXT)
-    pdf.ln(0.4)
-
-    hdrs = ["Year", "Price", "Est. Adj. FCF/s", "Total Cash Flow"]
-    cw   = _col_widths(_BW, [0.12, 0.22, 0.33, 0.33])
+    # Column headers
+    hdrs = ["Year", "Price", "Est. Adj. FCF/s", "Total CF"]
+    cw   = _col_widths(w, [0.13, 0.22, 0.33, 0.32])
 
     pdf.fc(_NAVY); pdf.tc(_WHITE)
-    pdf.set_font("Helvetica", "B", 5.0)
-    pdf.set_x(_LM)
-    for h, w in zip(hdrs, cw):
+    pdf.set_font("Helvetica", "B", 4.8)
+    pdf.set_x(x)
+    for h, cw_ in zip(hdrs, cw):
         align = "L" if h == "Year" else "R"
-        pdf.cell(w, 3.8, h, fill=True, border=0, align=align, new_x=XPos.RIGHT, new_y=YPos.TOP)
-    pdf.ln(3.8)
+        pdf.cell(cw_, 3.0, h, fill=True, border=0, align=align, new_x=XPos.RIGHT, new_y=YPos.TOP)
+    pdf.ln(3.0)
 
     for ri, row in enumerate(rows):
         pdf.fc(_LT_GREY if ri % 2 == 0 else _WHITE)
         pdf.tc(_BODY_TXT)
-        pdf.set_font("Helvetica", "", 5.0)
-        pdf.set_x(_LM)
-        for ci, (v, w) in enumerate(zip(row, cw)):
+        pdf.set_font("Helvetica", "", 4.8)
+        pdf.set_x(x)
+        for ci, (v, cw_) in enumerate(zip(row, cw)):
             align = "L" if ci == 0 else "R"
-            pdf.cell(w, 4.0, str(v), fill=True, border=0, align=align, new_x=XPos.RIGHT, new_y=YPos.TOP)
-        pdf.ln(4.0)
+            pdf.cell(cw_, 3.2, str(v), fill=True, border=0, align=align, new_x=XPos.RIGHT, new_y=YPos.TOP)
+        pdf.ln(3.2)
 
-    # IRR footer row
+    # IRR footer
     if irr_val is not None:
-        irr_str  = f"{irr_val * 100:.1f}%"
-        irr_pass = irr_val >= 0.12
-        irr_warn = 0.08 <= irr_val < 0.12
+        irr_disp = f"{irr_val * 100:.1f}%"
         bg = _GRN_BG if irr_pass else (_LT_GREY if irr_warn else _RED_BG)
         fg = _GRN_FG if irr_pass else (_NAVY    if irr_warn else _RED_FG)
         pdf.fc(bg); pdf.tc(fg)
-        pdf.set_font("Helvetica", "B", 5.5)
-        pdf.set_x(_LM)
+        pdf.set_font("Helvetica", "B", 5.0)
+        pdf.set_x(x)
         total_w = sum(cw[:-1])
-        pdf.cell(total_w, 5.0, "  IRR", fill=True, border=0, align="L", new_x=XPos.RIGHT, new_y=YPos.TOP)
-        pdf.cell(cw[-1],  5.0, irr_str, fill=True, border=0, align="R", new_x=XPos.LEFT,  new_y=YPos.NEXT)
+        pdf.cell(total_w, 4.0, "  IRR", fill=True, border=0, align="L", new_x=XPos.RIGHT, new_y=YPos.TOP)
+        pdf.cell(cw[-1],  4.0, irr_disp, fill=True, border=0, align="R", new_x=XPos.LEFT, new_y=YPos.NEXT)
 
     return pdf.get_y()
 
 
-def _draw_irr_sensitivity(pdf: _PDF, irr_sensitivity: dict, price_now) -> float:
-    """IRR Sensitivity — Entry Price vs Exit FCF Yield."""
+def _draw_irr_sensitivity(pdf: _PDF, x: float, y: float, w: float,
+                          irr_sensitivity: dict, price_now) -> float:
+    """IRR Sensitivity Matrix — positioned at (x, y) with width w."""
     row_labels = irr_sensitivity.get("row_labels") or []
     col_labels = irr_sensitivity.get("col_labels") or []
     matrix     = irr_sensitivity.get("matrix")     or []
     if not row_labels or not col_labels or not matrix:
-        return pdf.get_y()
+        return y
 
-    pdf.ln(3)
-    y0 = pdf.get_y()
-    pdf.set_xy(_LM, y0)
+    pdf.set_xy(x, y)
     pdf.fc(_NAVY); pdf.tc(_WHITE)
-    pdf.set_font("Helvetica", "B", 6.2)
-    pdf.cell(_BW, 4.8,
-             "  IRR Sensitivity  -  Entry Price vs. Exit FCF Yield  |  >=12% green  |  8-12% amber  |  <8% red",
+    pdf.set_font("Helvetica", "B", 5.8)
+    pdf.cell(w, 4.5,
+             "  IRR Sensitivity  |  >=12% green  |  8-12% amber  |  <8% red",
              fill=True, border=0, align="L", new_x=XPos.LEFT, new_y=YPos.NEXT)
-    pdf.ln(0.4)
+    pdf.ln(0.3)
 
-    # Find highlight row (closest to price_now)
+    # Find highlight row
     highlight_row = None
     if price_now is not None and row_labels:
         best_diff = None
@@ -532,33 +521,32 @@ def _draw_irr_sensitivity(pdf: _PDF, irr_sensitivity: dict, price_now) -> float:
                 best_diff = diff
                 highlight_row = i
 
-    n_cols = len(col_labels)
-    label_w = round(_BW * 0.16)
-    data_w  = round((_BW - label_w) / n_cols, 1)
-    row_h   = 4.2
+    n_cols   = len(col_labels)
+    label_w  = round(w * 0.18)
+    data_w   = round((w - label_w) / n_cols, 1)
+    row_h    = 3.8
 
     # Column headers
     pdf.fc(_NAVY); pdf.tc(_WHITE)
-    pdf.set_font("Helvetica", "B", 4.8)
-    pdf.set_x(_LM)
-    pdf.cell(label_w, 3.8, "Entry Price", fill=True, border=0, align="C", new_x=XPos.RIGHT, new_y=YPos.TOP)
+    pdf.set_font("Helvetica", "B", 4.5)
+    pdf.set_x(x)
+    pdf.cell(label_w, 3.0, "Entry Price", fill=True, border=0, align="C", new_x=XPos.RIGHT, new_y=YPos.TOP)
     for col in col_labels:
-        pdf.cell(data_w, 3.8, str(col), fill=True, border=0, align="C", new_x=XPos.RIGHT, new_y=YPos.TOP)
-    pdf.ln(3.8)
+        pdf.cell(data_w, 3.0, str(col), fill=True, border=0, align="C", new_x=XPos.RIGHT, new_y=YPos.TOP)
+    pdf.ln(3.0)
 
     # Data rows
     for ri, (row_label, row_vals) in enumerate(zip(row_labels, matrix)):
         is_highlight = (ri == highlight_row)
-        # Row label cell
         label_bg = (28, 43, 100) if is_highlight else _NAVY
         pdf.fc(label_bg); pdf.tc(_WHITE)
-        pdf.set_font("Helvetica", "B" if is_highlight else "", 4.8)
-        pdf.set_x(_LM)
+        pdf.set_font("Helvetica", "B" if is_highlight else "", 4.5)
+        pdf.set_x(x)
         pdf.cell(label_w, row_h, str(row_label), fill=True, border=0, align="C",
                  new_x=XPos.RIGHT, new_y=YPos.TOP)
 
         for irr_cell in (row_vals or []):
-            v = irr_cell  # float or None
+            v = irr_cell
             if v is None:
                 bg, fg, txt = _LT_GREY, _SLATE, "N/A"
             elif v >= 0.12:
@@ -568,12 +556,7 @@ def _draw_irr_sensitivity(pdf: _PDF, irr_sensitivity: dict, price_now) -> float:
             else:
                 bg, fg, txt = _RED_BG, _RED_FG, f"{v * 100:.1f}%"
 
-            if is_highlight:
-                # slightly darker border effect — bold text
-                pdf.set_font("Helvetica", "B", 4.8)
-            else:
-                pdf.set_font("Helvetica", "", 4.8)
-
+            pdf.set_font("Helvetica", "B" if is_highlight else "", 4.5)
             pdf.fc(bg); pdf.tc(fg)
             pdf.cell(data_w, row_h, txt, fill=True, border=0, align="C",
                      new_x=XPos.RIGHT, new_y=YPos.TOP)
@@ -584,30 +567,30 @@ def _draw_irr_sensitivity(pdf: _PDF, irr_sensitivity: dict, price_now) -> float:
 
 
 def _draw_description(pdf: _PDF, text: str, company: str) -> None:
-    """Render a company description block at the current Y position."""
+    """Render a compact company description block at the current Y position."""
     if not text or len(text.strip()) < 30:
         return
-    pdf.ln(2)
+    pdf.ln(1)
     y0 = pdf.get_y()
     pdf.set_xy(_LM, y0)
 
     # Title bar
     pdf.fc(_NAVY); pdf.tc(_WHITE)
-    pdf.set_font("Helvetica", "B", 6.2)
+    pdf.set_font("Helvetica", "B", 5.8)
     title = f"About {company}".encode("latin-1", "replace").decode("latin-1") if company else "Business Description"
-    pdf.cell(_BW, 4.8, f"  {title}", fill=True, border=0, align="L",
+    pdf.cell(_BW, 3.5, f"  {title}", fill=True, border=0, align="L",
              new_x=XPos.LEFT, new_y=YPos.NEXT)
-    pdf.ln(0.4)
+    pdf.ln(0.3)
     pdf.set_x(_LM)
 
-    # Body text — truncate at 900 chars, encode safe
+    # Body text — truncate at 600 chars
     safe = text.encode("latin-1", "replace").decode("latin-1")
-    if len(safe) > 900:
-        safe = safe[:897] + "..."
+    if len(safe) > 600:
+        safe = safe[:597] + "..."
 
     pdf.fc(_LT_GREY); pdf.tc(_BODY_TXT)
-    pdf.set_font("Helvetica", "", 5.5)
-    pdf.multi_cell(_BW, 3.8, f"  {safe}", fill=True, border=0, align="L")
+    pdf.set_font("Helvetica", "", 5.0)
+    pdf.multi_cell(_BW, 3.2, f"  {safe}", fill=True, border=0, align="L")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -627,10 +610,10 @@ def generate_cfirr_pdf(
     fcf_cagr: dict,
     fcf_avg: dict,
     fcf_ttm: dict,
-    ebt_fc_rows: list,      # _ebt_fc_ss — list of {Year, Est. Growth Rate (%), Est. EBITDA ($MM)}
-    fcf_fc_rows: list,      # _fcf_fc_ss — list of {Year, Est. Growth Rate (%), Est. Adj. FCF/s}
-    checklist: list,        # [(label, val, passed, threshold), ...]
-    final_rows: list,       # [(metric, value, verdict), ...]
+    ebt_fc_rows: list,
+    fcf_fc_rows: list,
+    checklist: list,
+    final_rows: list,
     price_now,
     avg_target_ss,
     ebitda_price=None,
@@ -656,7 +639,7 @@ def generate_cfirr_pdf(
 
     # ── Initialise PDF ────────────────────────────────────────────────────────
     pdf = _PDF(orientation="P", unit="mm", format="A4")
-    pdf.set_auto_page_break(auto=True, margin=12)
+    pdf.set_auto_page_break(auto=False, margin=10)
     pdf.add_page()
     pdf.set_margins(_LM, 0, _RM)
 
@@ -680,14 +663,13 @@ def generate_cfirr_pdf(
     _draw_metric_boxes(pdf, boxes)
 
     # ── PRICE CHART ───────────────────────────────────────────────────────────
-    _draw_chart(pdf, chart_png, h=50.0)
+    _draw_chart(pdf, chart_png, h=22.0)
 
     # ─────────────────────────────────────────────────────────────────────────
     # HISTORICAL TABLES  (two columns)
     # ─────────────────────────────────────────────────────────────────────────
     y_hist = pdf.get_y()
 
-    # Left: 2.1 EV/EBITDA Historical
     ebt_all   = ebt_hist + [ebt_cagr, ebt_avg, ebt_ttm]
     ebt_hdrs  = ["Year", "Rev ($MM)", "EBITDA ($MM)", "EV ($MM)", "EV/EBITDA", "ND/EBITDA"]
     ebt_cw    = _col_widths(_CL, [0.13, 0.17, 0.18, 0.17, 0.18, 0.17])
@@ -706,7 +688,6 @@ def generate_cfirr_pdf(
                         "2.1 -EV/EBITDA Historical",
                         ebt_hdrs, ebt_cw, ebt_rows)
 
-    # Right: 3.1 Adj. FCF/s Historical
     fcf_all   = fcf_hist + [fcf_cagr, fcf_avg, fcf_ttm]
     fcf_hdrs  = ["Year", "FCF ($MM)", "SBC ($MM)", "Adj.FCF/s", "Price", "FCF Yield"]
     fcf_cw    = _col_widths(_CR, [0.13, 0.17, 0.17, 0.17, 0.19, 0.17])
@@ -725,14 +706,13 @@ def generate_cfirr_pdf(
                         "3.1 -Adj. FCF/s Historical",
                         fcf_hdrs, fcf_cw, fcf_rows)
 
-    pdf.set_y(max(y_l1, y_r1) + 2)
+    pdf.set_y(max(y_l1, y_r1) + 1)
 
     # ─────────────────────────────────────────────────────────────────────────
     # FORECAST TABLES  (two columns)
     # ─────────────────────────────────────────────────────────────────────────
     y_fc = pdf.get_y()
 
-    # Left: 2.2 EBITDA Forecast
     ebt_fc_avg = None
     if ebt_fc_rows:
         vals = [_s(r.get("Est. EBITDA ($MM)")) for r in ebt_fc_rows]
@@ -753,7 +733,6 @@ def generate_cfirr_pdf(
                         ["Year", "Est. Growth %", "Est. EBITDA ($MM)"],
                         efc_cw, ebt_fc_display)
 
-    # Right: 3.2 FCF/s Forecast
     fcf_fc_avg = None
     if fcf_fc_rows:
         vals = [_s(r.get("Est. Adj. FCF/s")) for r in fcf_fc_rows]
@@ -774,13 +753,13 @@ def generate_cfirr_pdf(
                         ["Year", "Est. Growth %", "Est. Adj. FCF/s"],
                         ffc_cw, fcf_fc_display)
 
-    pdf.set_y(max(y_l2, y_r2) + 2)
+    pdf.set_y(max(y_l2, y_r2) + 1)
 
     # ─────────────────────────────────────────────────────────────────────────
-    # WEIGHTING TABLE
+    # WEIGHTING TABLE (full width)
     # ─────────────────────────────────────────────────────────────────────────
     _draw_weighting_table(pdf, ebitda_price, fcf_price, avg_target_ss)
-    pdf.ln(2)
+    pdf.ln(1)
 
     # ─────────────────────────────────────────────────────────────────────────
     # FINAL OUTPUT  +  QUALITY CHECKLIST  (two columns)
@@ -790,24 +769,32 @@ def generate_cfirr_pdf(
     y_l3 = _draw_final_output(pdf, _LM, y_bot, _CL, final_rows)
     y_r3 = _draw_checklist(pdf, _LM + _CL + _GAP, y_bot, _CR, checklist)
 
-    pdf.set_y(max(y_l3, y_r3))
+    pdf.set_y(max(y_l3, y_r3) + 1)
 
     # ─────────────────────────────────────────────────────────────────────────
-    # IRR CASH FLOW SCHEDULE
+    # IRR SCHEDULE (left)  +  IRR SENSITIVITY (right)  — side by side
     # ─────────────────────────────────────────────────────────────────────────
+    y_irr = pdf.get_y()
+
     if irr_schedule_rows:
-        _draw_irr_schedule(pdf, irr_schedule_rows, irr_val)
+        y_after_sched = _draw_irr_schedule(
+            pdf, _LM, y_irr, _CL, irr_schedule_rows, irr_val
+        )
+    else:
+        y_after_sched = y_irr
 
-    # ─────────────────────────────────────────────────────────────────────────
-    # IRR SENSITIVITY MATRIX
-    # ─────────────────────────────────────────────────────────────────────────
     if irr_sensitivity:
-        _draw_irr_sensitivity(pdf, irr_sensitivity, price_now)
+        y_after_sens = _draw_irr_sensitivity(
+            pdf, _LM + _CL + _GAP, y_irr, _CR, irr_sensitivity, price_now
+        )
+    else:
+        y_after_sens = y_irr
+
+    pdf.set_y(max(y_after_sched, y_after_sens) + 1)
 
     # ── COMPANY DESCRIPTION ───────────────────────────────────────────────────
     if description:
         _draw_description(pdf, description, company)
 
     # ── Return bytes ──────────────────────────────────────────────────────────
-    # fpdf2.output() returns bytearray; FastAPI Response requires bytes.
     return bytes(pdf.output())
