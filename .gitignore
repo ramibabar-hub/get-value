@@ -4,3 +4,15 @@
 __pycache__/
 *.pyc
 *.pyo
+
+# Logs
+logs/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node installers / large binaries
+*.msi
+*.exe

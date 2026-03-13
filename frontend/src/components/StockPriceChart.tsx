@@ -15,8 +15,9 @@ import type { PriceHistoryData, PriceRange, PricePoint } from "../types";
 // ── Palette ────────────────────────────────────────────────────────────────────
 const NAVY  = "var(--gv-navy)";
 const BLUE  = "var(--gv-blue)";
-const MA50  = "#f59e0b";   // amber
-const MA200 = "#10b981";   // emerald
+const MA50    = "#f59e0b";   // amber
+const MA200   = "#10b981";   // emerald
+const SPY_CLR = "#a78bfa";   // violet — S&P 500 benchmark
 
 const RANGES: PriceRange[] = ["1D", "5D", "1M", "6M", "YTD", "1Y", "5Y", "10Y"];
 
@@ -58,15 +59,18 @@ function fmtVol(v: number | null): string {
 }
 
 // ── Custom Tooltip ─────────────────────────────────────────────────────────────
-function ChartTooltip({ active, payload }: {
+function ChartTooltip({ active, payload, benchmarkOn }: {
   active?: boolean;
-  payload?: { name: string; value: number | null; color?: string; payload: { date: string; price: number; volume: number | null } }[];
+  benchmarkOn?: boolean;
+  payload?: { name: string; value: number | null; color?: string; payload: { date: string; price: number; volume: number | null; priceNorm?: number; spyNorm?: number } }[];
 }) {
   if (!active || !payload?.length) return null;
   const base = payload[0].payload;
-  const priceRow = payload.find(p => p.name === "price");
-  const ma50Row  = payload.find(p => p.name === "ma50");
-  const ma200Row = payload.find(p => p.name === "ma200");
+  const priceRow  = payload.find(p => p.name === "price");
+  const normRow   = payload.find(p => p.name === "priceNorm");
+  const spyRow    = payload.find(p => p.name === "spyNorm");
+  const ma50Row   = payload.find(p => p.name === "ma50");
+  const ma200Row  = payload.find(p => p.name === "ma200");
 
   return (
     <div style={{
@@ -79,9 +83,19 @@ function ChartTooltip({ active, payload }: {
       minWidth: 120,
     }}>
       <div style={{ color: "#7b8899", marginBottom: 6, fontWeight: 500 }}>{base.date}</div>
-      {priceRow?.value != null && (
+      {!benchmarkOn && priceRow?.value != null && (
         <div style={{ display: "flex", justifyContent: "space-between", gap: 16, fontWeight: 700, color: NAVY }}>
           <span>Price</span><span>{fmtPrice(priceRow.value)}</span>
+        </div>
+      )}
+      {benchmarkOn && normRow?.value != null && (
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 16, fontWeight: 700, color: BLUE }}>
+          <span>Stock</span><span>{normRow.value.toFixed(1)}</span>
+        </div>
+      )}
+      {benchmarkOn && spyRow?.value != null && (
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 16, color: SPY_CLR, marginTop: 3 }}>
+          <span>S&amp;P 500</span><span>{spyRow.value.toFixed(1)}</span>
         </div>
       )}
       {ma50Row?.value != null && (
@@ -130,10 +144,12 @@ interface Props {
 }
 
 export default function StockPriceChart({ ticker }: Props) {
-  const [range, setRange]     = useState<PriceRange>("1Y");
-  const [data, setData]       = useState<PriceHistoryData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [, setError]          = useState<string | null>(null);
+  const [range, setRange]           = useState<PriceRange>("1Y");
+  const [data, setData]             = useState<PriceHistoryData | null>(null);
+  const [loading, setLoading]       = useState(true);
+  const [, setError]                = useState<string | null>(null);
+  const [showBenchmark, setShowBenchmark] = useState(false);
+  const [spyPoints, setSpyPoints]   = useState<PricePoint[]>([]);
 
   useEffect(() => {
     if (!ticker) return;
@@ -148,27 +164,57 @@ export default function StockPriceChart({ ticker }: Props) {
       .finally(() => setLoading(false));
   }, [ticker, range]);
 
+  // Fetch SPY whenever benchmark is toggled on or range changes
+  useEffect(() => {
+    if (!showBenchmark) { setSpyPoints([]); return; }
+    const ctrl = new AbortController();
+    fetch(`/api/price-history/SPY?range=${range}`, { signal: ctrl.signal })
+      .then(r => r.json())
+      .then((d: PriceHistoryData) => setSpyPoints(d.points ?? []))
+      .catch(() => setSpyPoints([]));
+    return () => ctrl.abort();
+  }, [showBenchmark, range]);
+
   const points = data?.points ?? [];
   const showMA50  = SHOW_MA50[range];
   const showMA200 = SHOW_MA200[range];
 
-  // Compute MAs and merge into chart data
+  // Compute MAs and merge into chart data; add normalized + SPY fields when benchmark is on
   const chartData = useMemo(() => {
     const ma50s  = showMA50  ? computeMA(points, 50)  : [];
     const ma200s = showMA200 ? computeMA(points, 200) : [];
-    return points.map((p, i) => ({
-      ...p,
-      ma50:  showMA50  ? ma50s[i]  : undefined,
-      ma200: showMA200 ? ma200s[i] : undefined,
-    }));
-  }, [points, showMA50, showMA200]);
 
-  // Y-axis domain using price + MA values for accurate padding
-  const allValues = chartData.flatMap(d => [
-    d.price,
-    d.ma50  ?? null,
-    d.ma200 ?? null,
-  ]).filter((v): v is number => v != null && v > 0);
+    // Build SPY lookup by date
+    const spyMap = new Map<string, number>();
+    spyPoints.forEach(p => spyMap.set(p.date, p.price));
+
+    const priceBase = points[0]?.price || 1;
+    // Find first SPY price that aligns with stock dates
+    let spyBase: number | null = null;
+    for (const p of points) {
+      const sp = spyMap.get(p.date);
+      if (sp != null) { spyBase = sp; break; }
+    }
+
+    return points.map((p, i) => {
+      const spyPrice = spyMap.get(p.date) ?? null;
+      return {
+        ...p,
+        ma50:      showMA50  ? ma50s[i]  : undefined,
+        ma200:     showMA200 ? ma200s[i] : undefined,
+        priceNorm: showBenchmark ? (p.price / priceBase) * 100 : undefined,
+        spyNorm:   showBenchmark && spyBase != null && spyPrice != null
+          ? (spyPrice / spyBase) * 100
+          : undefined,
+      };
+    });
+  }, [points, showMA50, showMA200, showBenchmark, spyPoints]);
+
+  // Y-axis domain — switch to normalized values when benchmark is on
+  const allValues = chartData.flatMap(d => showBenchmark
+    ? [d.priceNorm ?? null, d.spyNorm ?? null]
+    : [d.price, d.ma50 ?? null, d.ma200 ?? null]
+  ).filter((v): v is number => v != null && v > 0);
 
   const minP = allValues.length ? Math.min(...allValues) : 0;
   const maxP = allValues.length ? Math.max(...allValues) : 100;
@@ -182,8 +228,8 @@ export default function StockPriceChart({ ticker }: Props) {
 
   return (
     <div>
-      {/* Range buttons */}
-      <div style={{ display: "flex", gap: 4, marginBottom: 10, flexWrap: "wrap" }}>
+      {/* Range buttons + benchmark toggle */}
+      <div style={{ display: "flex", gap: 4, marginBottom: 10, flexWrap: "wrap", alignItems: "center" }}>
         {RANGES.map(r => (
           <button
             key={r}
@@ -203,19 +249,45 @@ export default function StockPriceChart({ ticker }: Props) {
             {r}
           </button>
         ))}
+        {/* S&P 500 benchmark toggle */}
+        <button
+          onClick={() => setShowBenchmark(b => !b)}
+          style={{
+            marginLeft: 8,
+            padding: "4px 10px",
+            fontSize: "0.75em",
+            fontWeight: showBenchmark ? 700 : 500,
+            borderRadius: 6,
+            border: `1px solid ${showBenchmark ? SPY_CLR : "#d1d5db"}`,
+            background: showBenchmark ? SPY_CLR : "#fff",
+            color: showBenchmark ? "#fff" : "var(--gv-text-muted)",
+            cursor: "pointer",
+            transition: "all 0.15s",
+          }}
+        >
+          vs S&amp;P 500
+        </button>
       </div>
 
-      {/* MA legend (only when visible) */}
-      {(showMA50 || showMA200) && !loading && points.length > 0 && (
-        <div style={{ display: "flex", gap: 16, marginBottom: 8, fontSize: "0.72em" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-            <svg width="22" height="8"><line x1="0" y1="4" x2="22" y2="4" stroke={MA50} strokeWidth="2" strokeDasharray="4 2" /></svg>
-            <span style={{ color: MA50, fontWeight: 600 }}>MA 50</span>
-          </div>
+      {/* Legend: MA lines + benchmark */}
+      {(showMA50 || showMA200 || showBenchmark) && !loading && points.length > 0 && (
+        <div style={{ display: "flex", gap: 16, marginBottom: 8, fontSize: "0.72em", flexWrap: "wrap" }}>
+          {showMA50 && (
+            <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+              <svg width="22" height="8"><line x1="0" y1="4" x2="22" y2="4" stroke={MA50} strokeWidth="2" strokeDasharray="4 2" /></svg>
+              <span style={{ color: MA50, fontWeight: 600 }}>MA 50</span>
+            </div>
+          )}
           {showMA200 && (
             <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
               <svg width="22" height="8"><line x1="0" y1="4" x2="22" y2="4" stroke={MA200} strokeWidth="2" strokeDasharray="4 2" /></svg>
               <span style={{ color: MA200, fontWeight: 600 }}>MA 200</span>
+            </div>
+          )}
+          {showBenchmark && (
+            <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+              <svg width="22" height="8"><line x1="0" y1="4" x2="22" y2="4" stroke={SPY_CLR} strokeWidth="2" /></svg>
+              <span style={{ color: SPY_CLR, fontWeight: 600 }}>S&amp;P 500 (indexed)</span>
             </div>
           )}
         </div>
@@ -252,15 +324,16 @@ export default function StockPriceChart({ ticker }: Props) {
               tickLine={false}
             />
 
-            {/* Left Y: price */}
+            {/* Left Y: price (raw) or indexed (benchmark mode) */}
             <YAxis
               yAxisId="price"
               domain={[minP - pad, maxP + pad]}
-              tickFormatter={v => `$${(v as number).toFixed(0)}`}
+              tickFormatter={v => showBenchmark ? `${(v as number).toFixed(0)}` : `$${(v as number).toFixed(0)}`}
               tick={{ fontSize: 10, fill: "var(--gv-text-muted)" }}
               axisLine={false}
               tickLine={false}
-              width={52}
+              width={showBenchmark ? 36 : 52}
+              label={showBenchmark ? { value: "base 100", angle: -90, position: "insideLeft", fontSize: 9, fill: "var(--gv-text-muted)", offset: 12 } : undefined}
             />
 
             {/* Right Y: volume */}
@@ -274,29 +347,45 @@ export default function StockPriceChart({ ticker }: Props) {
               width={42}
             />
 
-            <Tooltip content={<ChartTooltip />} />
+            <Tooltip content={<ChartTooltip benchmarkOn={showBenchmark} />} />
 
-            {/* Volume bars */}
-            <Bar
-              yAxisId="vol"
-              dataKey="volume"
-              fill="#94a3b8"
-              opacity={0.35}
-              radius={[2, 2, 0, 0]}
-              maxBarSize={8}
-            />
+            {/* Volume bars — hidden in benchmark mode */}
+            {!showBenchmark && (
+              <Bar
+                yAxisId="vol"
+                dataKey="volume"
+                fill="#94a3b8"
+                opacity={0.35}
+                radius={[2, 2, 0, 0]}
+                maxBarSize={8}
+              />
+            )}
 
-            {/* Price area */}
+            {/* Price area — raw price OR indexed (benchmark mode) */}
             <Area
               yAxisId="price"
               type="monotone"
-              dataKey="price"
+              dataKey={showBenchmark ? "priceNorm" : "price"}
               stroke={BLUE}
               strokeWidth={2}
-              fill="url(#priceGrad)"
+              fill={showBenchmark ? "none" : "url(#priceGrad)"}
               dot={false}
               activeDot={{ r: 4, fill: BLUE, stroke: "#fff", strokeWidth: 2 }}
             />
+
+            {/* S&P 500 benchmark line */}
+            {showBenchmark && (
+              <Line
+                yAxisId="price"
+                type="monotone"
+                dataKey="spyNorm"
+                stroke={SPY_CLR}
+                strokeWidth={2}
+                dot={false}
+                activeDot={{ r: 3, fill: SPY_CLR }}
+                connectNulls
+              />
+            )}
 
             {/* MA 50 */}
             {showMA50 && (

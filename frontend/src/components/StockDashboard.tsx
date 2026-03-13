@@ -28,7 +28,6 @@ import CompanyOwnershipChart    from "./CompanyOwnershipChart";
 import GrokSentimentBadge from "./GrokSentimentBadge";
 import AnalystConsensusBar from "./AnalystConsensusBar";
 import Valueground from "./Valueground";
-import FilingAuditPanel from "./FilingAuditPanel";
 
 // ── Palette ───────────────────────────────────────────────────────────────────
 const NAVY    = "var(--gv-navy)";
@@ -649,8 +648,6 @@ export default function StockDashboard({ ticker, onSearch }: StockDashboardProps
 
                     <SegmentsTab ticker={ticker} />
 
-                    {/* 10-K Filing Audit — Gemini Analyst Hook */}
-                    <FilingAuditPanel ticker={ticker} />
                   </div>
                 : null
             ) : null}

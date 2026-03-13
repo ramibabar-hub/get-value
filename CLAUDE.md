@@ -10,7 +10,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Two parallel UI implementations exist and are both maintained:
 
-1. **Streamlit app** (`app.py`) — original production UI. Runs locally with `streamlit run app.py`.
+1. **Streamlit app** (`app.py`) — original production UI. Runs locally with `streamlit run streamlit/app.py`.
 2. **React + FastAPI** (`frontend/` + `backend/`) — primary active implementation. FastAPI serves financial data via REST; React renders the dashboard.
 
 Both UIs share the same Python agent layer (`agents/`) and data normalisation logic.
@@ -39,7 +39,7 @@ Vite dev server proxies all `/api/*` requests to `http://localhost:8000` — no 
 ### Streamlit (original UI)
 ```bash
 pip install -r requirements.txt
-streamlit run app.py
+streamlit run streamlit/app.py
 ```
 
 ---
