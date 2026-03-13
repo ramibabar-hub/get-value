@@ -880,7 +880,7 @@ def cf_irr(
         raise HTTPException(status_code=502, detail=f"Data fetch failed: {exc}")
 
     try:
-        from cf_irr_tab import (
+        from streamlit.cf_irr_tab import (
             _ebitda_hist, _fcf_hist,
             _ebitda_forecast_yoy, _fcf_forecast_yoy,
             _irr_calc, _irr_sensitivity_yield,
@@ -934,7 +934,7 @@ def cf_irr(
     base_year = 2024
     if norm.is_l and isinstance(norm.is_l[0], dict):
         try:
-            from cf_irr_tab import _year_label
+            from streamlit.cf_irr_tab import _year_label
             base_year = int(_year_label(norm.is_l[0]))
         except Exception:
             pass
@@ -1247,7 +1247,7 @@ def cf_irr_special(
         raise HTTPException(status_code=502, detail=f"Data fetch failed: {exc}")
 
     try:
-        from cf_irr_tab import _irr_calc, _s as _sf
+        from streamlit.cf_irr_tab import _irr_calc, _s as _sf
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Logic import failed: {exc}")
 
