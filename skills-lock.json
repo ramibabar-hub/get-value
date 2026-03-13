@@ -1,10 +1,30 @@
 {
   "version": 1,
   "skills": {
+    "agent-browser": {
+      "source": "vercel-labs/agent-browser",
+      "sourceType": "github",
+      "computedHash": "7232a19fdb4b5abde1f3fe11f1ebd6bf76a4793acfc8bb2c2017701dfc62212b"
+    },
     "expo-tailwind-setup": {
       "source": "expo/skills",
       "sourceType": "github",
       "computedHash": "16c53e80cacd65369acfd8a4f5cf06a60083cc6d980127b4b2e384b81ce0e547"
+    },
+    "finance-expert": {
+      "source": "personamanagmentlayer/pcl",
+      "sourceType": "github",
+      "computedHash": "83ff6d943fe47f1cec6c79b2d364303c2e058366c3fdfc6bc5938539cc914b33"
+    },
+    "openbb-app-builder": {
+      "source": "openbb-finance/backends-for-openbb",
+      "sourceType": "github",
+      "computedHash": "58e2313b8e53bd424892571f123f4110840c17d1d94cf393e0ec5c0f239b44a1"
+    },
+    "remotion-best-practices": {
+      "source": "remotion-dev/skills",
+      "sourceType": "github",
+      "computedHash": "46a55d68886d6c104bde7803c55a479f91b45ae01441e37c800373bcb0bf3719"
     },
     "senior-architect": {
       "source": "sickn33/antigravity-awesome-skills",
@@ -16,10 +36,20 @@
       "sourceType": "github",
       "computedHash": "42804288d4f9036199a5e8ff73ceda214ae8c12bf04e712577b0eb9751c69710"
     },
+    "tushare-finance": {
+      "source": "stanleychanh/tushare-finance-skill-for-claude-code",
+      "sourceType": "github",
+      "computedHash": "1d11bbc461c26dafb634746bfbfcbcedb6b7a8a5a5321e22940cd64276749277"
+    },
     "typescript-expert": {
       "source": "sickn33/antigravity-awesome-skills",
       "sourceType": "github",
       "computedHash": "6a90334060f03a9885eaafe683f14f3b0015c83085e10a511626bc4f4388aa47"
+    },
+    "vercel-react-best-practices": {
+      "source": "vercel-labs/agent-skills",
+      "sourceType": "github",
+      "computedHash": "3ff06f0712886f7c2660d6746856c22d3127bd6568ddde29ddad8b72dbaaa226"
     }
   }
 }
