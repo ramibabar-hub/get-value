@@ -29,18 +29,18 @@ import CompanyInsightsFeed      from "./CompanyInsightsFeed";
 import CompanyOwnershipChart    from "./CompanyOwnershipChart";
 
 // ── Palette ───────────────────────────────────────────────────────────────────
-const NAVY    = "#1c2b46";
-const BLUE    = "#007bff";
+const NAVY    = "var(--gv-navy)";
+const BLUE    = "var(--gv-blue)";
 // const RED_BTN = "#ff4b4b"; // removed — Analyze button replaced by GlobalSearchBar
 
 const C = {
-  Y_BG: "#fef9c3", Y_FG: "#78350f",
-  G_BG: "#d1fae5", G_FG: "#065f46",
-  D_BG: "#f3f4f6", D_FG: "#374151",
-  GN_BG: "#86efac", GN_FG: "#14532d",
-  RD_BG: "#fca5a5", RD_FG: "#7f1d1d",
-  POS_BG: "#d1fae5", POS_FG: "#065f46",
-  NEG_BG: "#fee2e2", NEG_FG: "#991b1b",
+  Y_BG:  "var(--gv-yellow-bg)",  Y_FG:  "var(--gv-yellow-fg)",
+  G_BG:  "var(--gv-green-bg)",   G_FG:  "var(--gv-green)",
+  D_BG:  "var(--gv-data-bg)",    D_FG:  "var(--gv-data-fg)",
+  GN_BG: "var(--gv-green-mid)",  GN_FG: "#14532d",
+  RD_BG: "var(--gv-red-mid)",    RD_FG: "#7f1d1d",
+  POS_BG:"var(--gv-green-bg)",   POS_FG:"var(--gv-green)",
+  NEG_BG:"var(--gv-red-bg)",     NEG_FG:"var(--gv-red)",
 };
 
 // ── Formatters ────────────────────────────────────────────────────────────────
@@ -59,8 +59,8 @@ const fUpside = (v: number | null) => {
 
 function Spinner({ label = "Loading…" }: { label?: string }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "48px 0", color: "#6b7280" }}>
-      <div style={{ width: 30, height: 30, borderRadius: "50%", border: "3px solid #e5e7eb", borderTop: `3px solid ${BLUE}`, animation: "gvSD 0.75s linear infinite", flexShrink: 0 }} />
+    <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "48px 0", color: "var(--gv-text-muted)" }}>
+      <div style={{ width: 30, height: 30, borderRadius: "50%", border: "3px solid var(--gv-border)", borderTop: `3px solid ${BLUE}`, animation: "gvSD 0.75s linear infinite", flexShrink: 0 }} />
       <span style={{ fontSize: "0.88em" }}>{label}</span>
       <style>{`@keyframes gvSD { to { transform: rotate(360deg); } }`}</style>
     </div>
@@ -69,7 +69,7 @@ function Spinner({ label = "Loading…" }: { label?: string }) {
 
 function ErrBox({ msg }: { msg: string }) {
   return (
-    <div style={{ background: "#fee2e2", border: "1px solid #fca5a5", borderRadius: 8, padding: "12px 16px", color: "#991b1b" }}>
+    <div style={{ background: "var(--gv-red-bg)", border: "1px solid var(--gv-red-mid)", borderRadius: 8, padding: "12px 16px", color: "var(--gv-red)" }}>
       <strong>Error:</strong> {msg}
     </div>
   );
@@ -77,7 +77,7 @@ function ErrBox({ msg }: { msg: string }) {
 
 function SecHeader({ title }: { title: string }) {
   return (
-    <div style={{ fontSize: "1.05em", fontWeight: "bold", color: "#fff", background: NAVY, padding: "6px 15px", borderRadius: 4, marginTop: 24, marginBottom: 6 }}>
+    <div style={{ fontSize: "1.05em", fontWeight: "bold", color: "var(--gv-surface)", background: NAVY, padding: "6px 15px", borderRadius: 4, marginTop: 24, marginBottom: 6 }}>
       {title}
     </div>
   );
@@ -102,7 +102,7 @@ function DescriptionSkeleton() {
 
 function Legend() {
   return (
-    <div style={{ fontSize: "0.75em", color: "#6b7280", marginTop: 6 }}>
+    <div style={{ fontSize: "0.75em", color: "var(--gv-text-muted)", marginTop: 6 }}>
       {[{ bg: C.Y_BG, fg: C.Y_FG, lbl: "Editable" }, { bg: C.G_BG, fg: C.G_FG, lbl: "Formula" }, { bg: C.D_BG, fg: C.D_FG, lbl: "Data" }].map(({ bg, fg, lbl }) => (
         <span key={lbl} style={{ background: bg, padding: "2px 7px", borderRadius: 3, color: fg, marginRight: 8 }}>&#9632; {lbl}</span>
       ))}
@@ -128,7 +128,7 @@ function TabBar({ tabs, active, onSelect, size = "md", scrollable = false }: {
   return (
     <div style={{
       display: "flex",
-      borderBottom: `2px solid #e5e7eb`,
+      borderBottom: `2px solid var(--gv-border)`,
       marginBottom: size === "md" ? 20 : 12,
       overflowX: scrollable ? "auto" : undefined,
       scrollbarWidth: "none",
@@ -140,7 +140,7 @@ function TabBar({ tabs, active, onSelect, size = "md", scrollable = false }: {
             padding: size === "md" ? "10px 22px" : "7px 16px",
             border: "none", background: "none", cursor: "pointer",
             fontWeight: active_ ? 700 : 500,
-            color: active_ ? BLUE : "#6b7280",
+            color: active_ ? BLUE : "var(--gv-text-muted)",
             borderBottom: active_ ? `2px solid ${BLUE}` : "2px solid transparent",
             marginBottom: -2,
             fontSize: size === "md" ? "0.93em" : "0.86em",
@@ -178,7 +178,7 @@ function DraggableTabBar({ tabs, active, onSelect, onReorder }: {
   const onDrop = (e: React.DragEvent) => { e.preventDefault(); dragIdx.current = null; };
 
   return (
-    <div style={{ display: "flex", borderBottom: `2px solid #e5e7eb`, marginBottom: 12, overflowX: "auto", scrollbarWidth: "none" }}>
+    <div style={{ display: "flex", borderBottom: `2px solid var(--gv-border)`, marginBottom: 12, overflowX: "auto", scrollbarWidth: "none" }}>
       {tabs.map((t, i) => {
         const active_ = t === active;
         return (
@@ -194,7 +194,7 @@ function DraggableTabBar({ tabs, active, onSelect, onReorder }: {
               padding: "7px 16px",
               border: "none", background: "none", cursor: "grab",
               fontWeight: active_ ? 700 : 500,
-              color: active_ ? BLUE : "#6b7280",
+              color: active_ ? BLUE : "var(--gv-text-muted)",
               borderBottom: active_ ? `2px solid ${BLUE}` : "2px solid transparent",
               marginBottom: -2, fontSize: "0.86em",
               fontFamily: "inherit", whiteSpace: "nowrap",
@@ -225,7 +225,7 @@ function SliderInput({ label, value, min, max, step, unit = "", disabled = false
         onChange={(e) => onChange(Number(e.target.value))}
         style={{ accentColor: "#f59e0b", width: "100%", cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.4 : 1 }}
       />
-      <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.68em", color: "#9ca3af" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.68em", color: "var(--gv-text-muted)" }}>
         <span>{min}{unit}</span><span>{max}{unit}</span>
       </div>
     </div>
@@ -238,7 +238,7 @@ interface T1Row { label: string; value: string; bg?: string; fg?: string; kind: 
 interface T2Row { label: string; value: string; note: string; bg: string; fg: string; }
 
 const ValTable1 = memo(function ValTable1({ rows }: { rows: T1Row[] }) {
-  const th: React.CSSProperties = { background: NAVY, color: "#fff", fontWeight: 700, padding: "7px 12px", border: "1px solid #334" };
+  const th: React.CSSProperties = { background: NAVY, color: "var(--gv-surface)", fontWeight: 700, padding: "7px 12px", border: "1px solid #334" };
   return (
     <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.82em" }}>
       <thead><tr><th style={{ ...th, textAlign: "left" }}>Metric</th><th style={{ ...th, textAlign: "right" }}>Value</th></tr></thead>
@@ -248,8 +248,8 @@ const ValTable1 = memo(function ValTable1({ rows }: { rows: T1Row[] }) {
           const fg = r.fg ?? (r.kind === "formula" ? C.G_FG : r.kind === "edit" ? C.Y_FG : C.D_FG);
           return (
             <tr key={i} style={{ background: bg }}>
-              <td style={{ padding: "6px 12px", border: "1px solid #e5e7eb", color: fg, fontWeight: 600 }}>{r.label}</td>
-              <td style={{ padding: "6px 12px", border: "1px solid #e5e7eb", color: fg, fontWeight: r.bold ? 700 : 500, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{r.value}</td>
+              <td style={{ padding: "6px 12px", border: "1px solid var(--gv-border)", color: fg, fontWeight: 600 }}>{r.label}</td>
+              <td style={{ padding: "6px 12px", border: "1px solid var(--gv-border)", color: fg, fontWeight: r.bold ? 700 : 500, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{r.value}</td>
             </tr>
           );
         })}
@@ -259,16 +259,16 @@ const ValTable1 = memo(function ValTable1({ rows }: { rows: T1Row[] }) {
 });
 
 const ValTable2 = memo(function ValTable2({ rows }: { rows: T2Row[] }) {
-  const th: React.CSSProperties = { background: NAVY, color: "#fff", fontWeight: 700, padding: "7px 12px", border: "1px solid #334", textAlign: "left" };
+  const th: React.CSSProperties = { background: NAVY, color: "var(--gv-surface)", fontWeight: 700, padding: "7px 12px", border: "1px solid #334", textAlign: "left" };
   return (
     <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.82em" }}>
       <thead><tr><th style={th}>Component</th><th style={{ ...th, textAlign: "right" }}>Value</th><th style={th}>Note</th></tr></thead>
       <tbody>
         {rows.map((r, i) => (
           <tr key={i} style={{ background: r.bg }}>
-            <td style={{ padding: "6px 12px", border: "1px solid #e5e7eb", color: r.fg, fontWeight: 700 }}>{r.label}</td>
-            <td style={{ padding: "6px 12px", border: "1px solid #e5e7eb", color: r.fg, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{r.value}</td>
-            <td style={{ padding: "6px 12px", border: "1px solid #e5e7eb", color: "#6b7280", fontStyle: "italic", fontSize: "0.93em" }}>{r.note}</td>
+            <td style={{ padding: "6px 12px", border: "1px solid var(--gv-border)", color: r.fg, fontWeight: 700 }}>{r.label}</td>
+            <td style={{ padding: "6px 12px", border: "1px solid var(--gv-border)", color: r.fg, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{r.value}</td>
+            <td style={{ padding: "6px 12px", border: "1px solid var(--gv-border)", color: "var(--gv-text-muted)", fontStyle: "italic", fontSize: "0.93em" }}>{r.note}</td>
           </tr>
         ))}
       </tbody>
@@ -376,7 +376,7 @@ function NormalizedPETab({ ticker, externalWacc }: { ticker: string; externalWac
           <div style={{ fontSize: "0.78em", fontWeight: 600, color: NAVY }}>Use WACC</div>
           <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4, cursor: "pointer" }}>
             <input type="checkbox" checked={sliders.useWacc} onChange={(e) => applySliders({ ...sliders, useWacc: e.target.checked })} style={{ accentColor: BLUE, width: 16, height: 16 }} />
-            <span style={{ fontSize: "0.85em", color: "#374151" }}>WACC = {effectiveWaccPct}%</span>
+            <span style={{ fontSize: "0.85em", color: "var(--gv-data-fg)" }}>WACC = {effectiveWaccPct}%</span>
           </label>
         </div>
         <SliderInput label="Discount Rate"    value={sliders.discPct} min={1}  max={40} step={0.5} unit="%" disabled={sliders.useWacc} onChange={(v) => applySliders({ ...sliders, discPct: v })} />
@@ -385,10 +385,10 @@ function NormalizedPETab({ ticker, externalWacc }: { ticker: string; externalWac
 
       <div style={{ marginTop: 22 }} />
       <SubHeader title="EPS CAGR  \u00b7  Used for default growth rate" />
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", border: "1px solid #e5e7eb", borderRadius: 6, overflow: "hidden" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", border: "1px solid var(--gv-border)", borderRadius: 6, overflow: "hidden" }}>
         {[{ lbl: "3-Year", val: fCagr(data.eps_3yr) }, { lbl: "5-Year", val: fCagr(data.eps_5yr) }, { lbl: "10-Year", val: fCagr(data.eps_10yr) }].map(({ lbl, val }, i) => (
-          <div key={lbl} style={{ background: C.D_BG, padding: 16, textAlign: "center", borderRight: i < 2 ? "1px solid #e5e7eb" : "none" }}>
-            <div style={{ fontSize: "0.68em", color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 4 }}>{lbl} CAGR</div>
+          <div key={lbl} style={{ background: C.D_BG, padding: 16, textAlign: "center", borderRight: i < 2 ? "1px solid var(--gv-border)" : "none" }}>
+            <div style={{ fontSize: "0.68em", color: "var(--gv-text-muted)", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 4 }}>{lbl} CAGR</div>
             <div style={{ fontSize: "1.25em", fontWeight: 700, color: C.D_FG }}>{val}</div>
           </div>
         ))}
@@ -541,11 +541,11 @@ export default function StockDashboard({ ticker, onSearch }: StockDashboardProps
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div style={{ minHeight: "100vh", background: "#fff", fontFamily: "'Segoe UI', system-ui, -apple-system, sans-serif", color: NAVY }}>
+    <div style={{ minHeight: "100vh", background: "var(--gv-surface)", fontFamily: "'Segoe UI', system-ui, -apple-system, sans-serif", color: NAVY }}>
 
       {/* ════ TOP BAR ════════════════════════════════════════════════════════ */}
       <div style={{
-        background: "#fff", borderBottom: "1px solid #e5e7eb",
+        background: "var(--gv-surface)", borderBottom: "1px solid var(--gv-border)",
         padding: "10px 24px", display: "flex", alignItems: "center", gap: 16,
         position: "sticky", top: 0, zIndex: 20,
         boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
@@ -587,7 +587,7 @@ export default function StockDashboard({ ticker, onSearch }: StockDashboardProps
               <div style={{ fontSize: "1.22em", fontWeight: 700, color: "#0d1b2a", lineHeight: 1.2 }}>
                 {ov.flag}&nbsp;{ov.company_name}
               </div>
-              <div style={{ fontSize: "0.80em", color: "#4d6b88", marginTop: 3 }}>
+              <div style={{ fontSize: "0.80em", color: "var(--gv-text-dim)", marginTop: 3 }}>
                 {[ticker, ov.exchange, ov.sector].filter(Boolean).join(" · ")}
               </div>
               <div style={{ marginTop: 8 }}>
@@ -601,10 +601,10 @@ export default function StockDashboard({ ticker, onSearch }: StockDashboardProps
 
             {/* 15-cell metric grid (5 cols × 3 rows) */}
             {ov.metrics.length > 0 && (
-              <div style={{ flex: 1, display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: "10px 12px", paddingLeft: 20, borderLeft: "1px solid #d0d8e8" }}>
+              <div style={{ flex: 1, display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: "10px 12px", paddingLeft: 20, borderLeft: "1px solid var(--gv-border-dark)" }}>
                 {ov.metrics.map((m) => (
                   <div key={m.label} style={{ minWidth: 0 }}>
-                    <div style={{ fontSize: "0.60em", textTransform: "uppercase", letterSpacing: "0.07em", color: "#4d6b88", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", marginBottom: 2 }}>
+                    <div style={{ fontSize: "0.60em", textTransform: "uppercase", letterSpacing: "0.07em", color: "var(--gv-text-dim)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", marginBottom: 2 }}>
                       {m.label}
                     </div>
                     <div style={{ fontSize: "0.86em", fontWeight: 700, color: m.color ?? "#0d1b2a", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
@@ -636,23 +636,23 @@ export default function StockDashboard({ ticker, onSearch }: StockDashboardProps
 
                       {/* Left: Condensed About */}
                       <div style={{ flex: 1, minWidth: 280 }}>
-                        <h4 style={{ fontSize: "0.72em", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.09em", color: "#4d6b88", margin: "0 0 8px" }}>
+                        <h4 style={{ fontSize: "0.72em", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.09em", color: "var(--gv-text-dim)", margin: "0 0 8px" }}>
                           About
                         </h4>
                         {descLoad ? (
                           <DescriptionSkeleton />
                         ) : (descSummary || ov.description) ? (
-                          <p style={{ color: "#4d6b88", fontSize: "0.91em", lineHeight: 1.75, margin: 0 }}>
+                          <p style={{ color: "var(--gv-text-dim)", fontSize: "0.91em", lineHeight: 1.75, margin: 0 }}>
                             {descSummary || ov.description}
                           </p>
                         ) : (
-                          <p style={{ color: "#9ca3af", fontStyle: "italic", margin: 0 }}>No description available.</p>
+                          <p style={{ color: "var(--gv-text-muted)", fontStyle: "italic", margin: 0 }}>No description available.</p>
                         )}
                       </div>
 
                       {/* Right: Price Chart */}
                       <div style={{ flex: "1.4 1 360px", minWidth: 340 }}>
-                        <h4 style={{ fontSize: "0.72em", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.09em", color: "#4d6b88", margin: "0 0 8px" }}>
+                        <h4 style={{ fontSize: "0.72em", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.09em", color: "var(--gv-text-dim)", margin: "0 0 8px" }}>
                           Price History
                         </h4>
                         <StockPriceChart ticker={ticker} />
