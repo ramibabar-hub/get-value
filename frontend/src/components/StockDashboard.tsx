@@ -18,16 +18,12 @@ import type {
 } from "../types";
 import FinancialsTab from "./FinancialsTab";
 import InsightsTab   from "./InsightsTab";
-import CfIrrTab        from "./CfIrrTab";
-import CfIrrSpecialTab from "./CfIrrSpecialTab";
-import DDMTab              from "./DDMTab";
-import IndustryMultipleTab from "./IndustryMultipleTab";
-import PiotroskiTab        from "./PiotroskiTab";
 import SegmentsTab              from "./SegmentsTab";
 import StockPriceChart          from "./StockPriceChart";
 import CompanyInsightsFeed      from "./CompanyInsightsFeed";
 import CompanyOwnershipChart    from "./CompanyOwnershipChart";
 import GrokSentimentBadge from "./GrokSentimentBadge";
+import Valueground from "./Valueground";
 
 // ── Palette ───────────────────────────────────────────────────────────────────
 const NAVY    = "var(--gv-navy)";
@@ -113,11 +109,8 @@ function Legend() {
 
 // ── Tab bars ──────────────────────────────────────────────────────────────────
 
-const MAIN_TABS = ["Overview", "Financials", "Insights", "Valuations"] as const;
+const MAIN_TABS = ["Overview", "Financials", "Insights", "Valueground"] as const;
 type MainTab = typeof MAIN_TABS[number];
-
-const VAL_TABS_DEFAULT = ["CF + IRR", "CF + IRR Special", "Normalized PE", "DDM", "Industry Multiple", "Piotroski"] as string[];
-type ValTab = string;
 
 function TabBar({ tabs, active, onSelect, size = "md", scrollable = false }: {
   tabs: readonly string[];
@@ -155,61 +148,6 @@ function TabBar({ tabs, active, onSelect, size = "md", scrollable = false }: {
     </div>
   );
 }
-
-// ── Draggable tab bar (for Valuations sub-tabs) ───────────────────────────────
-
-function DraggableTabBar({ tabs, active, onSelect, onReorder }: {
-  tabs: string[];
-  active: string;
-  onSelect: (t: string) => void;
-  onReorder: (tabs: string[]) => void;
-}) {
-  const dragIdx = useRef<number | null>(null);
-
-  const onDragStart = (i: number) => { dragIdx.current = i; };
-  const onDragOver  = (e: React.DragEvent, i: number) => {
-    e.preventDefault();
-    if (dragIdx.current === null || dragIdx.current === i) return;
-    const next = [...tabs];
-    const [moved] = next.splice(dragIdx.current, 1);
-    next.splice(i, 0, moved);
-    dragIdx.current = i;
-    onReorder(next);
-  };
-  const onDrop = (e: React.DragEvent) => { e.preventDefault(); dragIdx.current = null; };
-
-  return (
-    <div style={{ display: "flex", borderBottom: `2px solid var(--gv-border)`, marginBottom: 12, overflowX: "auto", scrollbarWidth: "none" }}>
-      {tabs.map((t, i) => {
-        const active_ = t === active;
-        return (
-          <button
-            key={t}
-            draggable
-            onDragStart={() => onDragStart(i)}
-            onDragOver={(e) => onDragOver(e, i)}
-            onDrop={onDrop}
-            onClick={() => onSelect(t)}
-            title="Drag to reorder"
-            style={{
-              padding: "7px 16px",
-              border: "none", background: "none", cursor: "grab",
-              fontWeight: active_ ? 700 : 500,
-              color: active_ ? BLUE : "var(--gv-text-muted)",
-              borderBottom: active_ ? `2px solid ${BLUE}` : "2px solid transparent",
-              marginBottom: -2, fontSize: "0.86em",
-              fontFamily: "inherit", whiteSpace: "nowrap",
-              transition: "color 0.12s", userSelect: "none",
-            }}
-          >
-            {t}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
 
 // ── Slider ────────────────────────────────────────────────────────────────────
 
@@ -442,8 +380,6 @@ export default function StockDashboard({ ticker, onSearch }: StockDashboardProps
     const saved = sessionStorage.getItem("gv_tab") as MainTab | null;
     return saved && (MAIN_TABS as readonly string[]).includes(saved) ? saved : "Overview";
   });
-  const [activeVal, setActiveVal]   = useState<ValTab>("CF + IRR");
-  const [valTabs,   setValTabs]     = useState<string[]>(VAL_TABS_DEFAULT);
   const [period,    setPeriod]      = useState<Period>("annual");
   const [scale,     setScale]       = useState<Scale>("MM");
   const [, setSearchQ] = useState("");
@@ -707,32 +643,15 @@ export default function StockDashboard({ ticker, onSearch }: StockDashboardProps
               />
             )}
 
-            {/* ══ Valuations ══ */}
-            {activeTab === "Valuations" && (
-              <div>
-                <DraggableTabBar
-                  tabs={valTabs}
-                  active={activeVal}
-                  onSelect={setActiveVal}
-                  onReorder={setValTabs}
-                />
-                {activeVal === "CF + IRR"         && <CfIrrTab ticker={ticker} externalWacc={manualWacc} ov={ov} />}
-                {activeVal === "CF + IRR Special" && <CfIrrSpecialTab ticker={ticker} externalWacc={manualWacc} ov={ov} />}
-                {activeVal === "Normalized PE"    && <NormalizedPETab ticker={ticker} externalWacc={manualWacc} />}
-                {activeVal === "DDM"              && (
-                  <DDMTab
-                    ticker={ticker}
-                    externalWacc={manualWacc}
-                    onFairValueChange={setDdmFairValue}
-                  />
-                )}
-                {activeVal === "Industry Multiple" && (
-                  <IndustryMultipleTab ticker={ticker} />
-                )}
-                {activeVal === "Piotroski" && (
-                  <PiotroskiTab ticker={ticker} />
-                )}
-              </div>
+            {/* ══ Valueground ══ */}
+            {activeTab === "Valueground" && (
+              <Valueground
+                ticker={ticker}
+                externalWacc={manualWacc ?? 0}
+                ov={ov}
+                onDdmFairValue={setDdmFairValue}
+                NormalizedPENode={<NormalizedPETab ticker={ticker} externalWacc={manualWacc ?? 0} />}
+              />
             )}
           </>
         )}
