@@ -12,6 +12,8 @@
  */
 import { useState, useEffect, useRef, memo } from "react";
 import GlobalSearchBar from "./GlobalSearchBar";
+import { InsightTooltip } from "./InsightTooltip";
+import { clearInsightCache } from "../hooks/useInsight";
 import type {
   OverviewData, FinancialsData, InsightsData, WaccData,
   FinancialsExtendedData, NormalizedPEResult, Scale, Period,
@@ -389,6 +391,7 @@ export default function StockDashboard({ ticker, onSearch }: StockDashboardProps
 
   // ── Parallel fetch on ticker change ──────────────────────────────────────
   useEffect(() => {
+    clearInsightCache();
     setOv(null);          setOvErr(null);   setOvLoad(true);
     setDescSummary(null); setDescLoad(false);
     setFinA(null);     setFinQ(null);    setFinLoad(true);
@@ -544,8 +547,14 @@ export default function StockDashboard({ ticker, onSearch }: StockDashboardProps
                     <div style={{ fontSize: "0.60em", textTransform: "uppercase", letterSpacing: "0.07em", color: "var(--gv-text-dim)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", marginBottom: 2 }}>
                       {m.label}
                     </div>
-                    <div style={{ fontSize: "0.86em", fontWeight: 700, color: m.color ?? "#0d1b2a", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                    <div style={{ fontSize: "0.86em", fontWeight: 700, color: m.color ?? "var(--gv-text)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", display: "flex", alignItems: "center", gap: 2 }}>
                       {m.value}
+                      <InsightTooltip
+                        metric={m.label}
+                        value={m.value}
+                        ticker={ticker}
+                        context={{ sector: ov.sector, industry: ov.industry, company_name: ov.company_name }}
+                      />
                     </div>
                   </div>
                 ))}
