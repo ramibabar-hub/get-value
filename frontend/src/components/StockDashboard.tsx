@@ -14,6 +14,7 @@ import { useState, useEffect, useRef, memo } from "react";
 import GlobalSearchBar from "./GlobalSearchBar";
 import { InsightTooltip } from "./InsightTooltip";
 import { clearInsightCache } from "../hooks/useInsight";
+import LanguageSelector from "./LanguageSelector";
 import type {
   OverviewData, FinancialsData, InsightsData, WaccData,
   FinancialsExtendedData, NormalizedPEResult, Scale, Period,
@@ -495,6 +496,9 @@ export default function StockDashboard({ ticker, onSearch }: StockDashboardProps
         </div>
         <div style={{ flex: 1, maxWidth: 560, margin: "0 auto" }}>
           <GlobalSearchBar onSelect={(t) => { onSearch(t); setSearchQ(""); }} />
+        </div>
+        <div style={{ flexShrink: 0, marginLeft: "auto" }}>
+          <LanguageSelector />
         </div>
       </div>
 
