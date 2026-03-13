@@ -65,28 +65,28 @@ export default function FilingAuditPanel({
         <span style={{ color: "var(--gv-text-muted)", fontSize: "0.8em" }}>{open ? "▲" : "▼"}</span>
       </button>
 
-      {open && (
+      {open ? (
         <div style={{ padding: "16px 20px" }}>
-          {loading && (
+          {loading ? (
             <div style={{ color: "var(--gv-text-muted)", fontStyle: "italic", fontSize: "0.85em" }}>
               Analysing filing…
             </div>
-          )}
+          ) : null}
 
-          {data?.error && !loading && (
+          {data?.error && !loading ? (
             <div style={{ color: "var(--gv-red)", fontSize: "0.85em" }}>{data.error}</div>
-          )}
+          ) : null}
 
-          {data && !data.error && !loading && (
+          {data && !data.error && !loading ? (
             <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-              {data.summary && (
+              {data.summary ? (
                 <div>
                   <div style={{ fontWeight: 700, fontSize: "0.78em", textTransform: "uppercase", letterSpacing: "0.07em", color: "var(--gv-text-dim)", marginBottom: 6 }}>Executive Summary</div>
                   <p style={{ fontSize: "0.85em", lineHeight: 1.65, color: "var(--gv-text)", margin: 0 }}>{data.summary}</p>
                 </div>
-              )}
+              ) : null}
 
-              {data.risk_factors.length > 0 && (
+              {data.risk_factors.length > 0 ? (
                 <div>
                   <div style={{ fontWeight: 700, fontSize: "0.78em", textTransform: "uppercase", letterSpacing: "0.07em", color: "var(--gv-red)", marginBottom: 6 }}>⚠ Key Risk Factors</div>
                   <ul style={{ margin: 0, paddingLeft: 18, display: "flex", flexDirection: "column", gap: 4 }}>
@@ -95,9 +95,9 @@ export default function FilingAuditPanel({
                     ))}
                   </ul>
                 </div>
-              )}
+              ) : null}
 
-              {data.red_flags.length > 0 && (
+              {data.red_flags.length > 0 ? (
                 <div>
                   <div style={{ fontWeight: 700, fontSize: "0.78em", textTransform: "uppercase", letterSpacing: "0.07em", color: "var(--gv-yellow-fg)", marginBottom: 6 }}>🚩 Red Flags</div>
                   <ul style={{ margin: 0, paddingLeft: 18, display: "flex", flexDirection: "column", gap: 4 }}>
@@ -106,9 +106,9 @@ export default function FilingAuditPanel({
                     ))}
                   </ul>
                 </div>
-              )}
+              ) : null}
 
-              {data.moat_signals.length > 0 && (
+              {data.moat_signals.length > 0 ? (
                 <div>
                   <div style={{ fontWeight: 700, fontSize: "0.78em", textTransform: "uppercase", letterSpacing: "0.07em", color: "var(--gv-green)", marginBottom: 6 }}>🏰 Moat Signals</div>
                   <ul style={{ margin: 0, paddingLeft: 18, display: "flex", flexDirection: "column", gap: 4 }}>
@@ -117,15 +117,15 @@ export default function FilingAuditPanel({
                     ))}
                   </ul>
                 </div>
-              )}
+              ) : null}
 
               <div style={{ fontSize: "0.72em", color: "var(--gv-text-muted)", marginTop: 4 }}>
                 Powered by {data.model} · Based on most recent 10-K filing
               </div>
             </div>
-          )}
+          ) : null}
         </div>
-      )}
+      ) : null}
     </div>
   );
 }

@@ -10,7 +10,7 @@
  * • React.memo is applied to the heavy table components inside the tabs.
  * • No data is re-fetched when only a tab, slider, or scale changes.
  */
-import { useState, useEffect, useRef, memo } from "react";
+import { useState, useEffect, useRef, memo, useCallback } from "react";
 import GlobalSearchBar from "./GlobalSearchBar";
 import { InsightTooltip } from "./InsightTooltip";
 import { clearInsightCache } from "../hooks/useInsight";
@@ -458,7 +458,7 @@ export default function StockDashboard({ ticker, onSearch }: StockDashboardProps
   }, [ov?.ticker]);
 
   // ── Lazy-fetch quarterly financials ──────────────────────────────────────
-  function handlePeriodChange(p: Period) {
+  const handlePeriodChange = useCallback((p: Period) => {
     setPeriod(p);
     if (p === "quarterly" && !finQ) {
       setFinQLoad(true);
@@ -468,7 +468,7 @@ export default function StockDashboard({ ticker, onSearch }: StockDashboardProps
         .catch(console.error)
         .finally(() => setFinQLoad(false));
     }
-  }
+  }, [ticker, finQ]);
 
   const currentFin   = period === "annual" ? finA : finQ;
   const currentFinLoad = period === "annual" ? finLoad : finQLoad;
@@ -524,10 +524,10 @@ export default function StockDashboard({ ticker, onSearch }: StockDashboardProps
       <div style={{ maxWidth: 1200, margin: "0 auto", padding: "0 20px" }}>
 
         {/* ── Company header strip ─────────────────────────────────────────── */}
-        {ovLoad && <Spinner label={`Loading ${ticker}…`} />}
-        {ovErr  && <div style={{ padding: "16px 0" }}><ErrBox msg={ovErr} /></div>}
+        {ovLoad ? <Spinner label={`Loading ${ticker}…`} /> : null}
+        {ovErr  ? <div style={{ padding: "16px 0" }}><ErrBox msg={ovErr} /></div> : null}
 
-        {ov && !ovLoad && (
+        {ov && !ovLoad ? (
           <div style={{ display: "flex", alignItems: "center", gap: 18, padding: "16px 0 20px", borderBottom: `2px solid ${NAVY}`, marginBottom: 6 }}>
 
             {/* Logo */}
@@ -562,7 +562,7 @@ export default function StockDashboard({ ticker, onSearch }: StockDashboardProps
             </div>
 
             {/* 15-cell metric grid (5 cols × 3 rows) */}
-            {ov.metrics.length > 0 && (
+            {ov.metrics.length > 0 ? (
               <div style={{ flex: 1, display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: "10px 12px", paddingLeft: 20, borderLeft: "1px solid var(--gv-border-dark)" }}>
                 {ov.metrics.map((m) => (
                   <div key={m.label} style={{ minWidth: 0 }}>
@@ -571,24 +571,24 @@ export default function StockDashboard({ ticker, onSearch }: StockDashboardProps
                     </div>
                     <div style={{ fontSize: "0.86em", fontWeight: 700, color: m.color ?? "var(--gv-text)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", display: "flex", alignItems: "center", gap: 2 }}>
                       {m.value}
-                      {insightsEnabled && (
+                      {insightsEnabled ? (
                         <InsightTooltip
                           metric={m.label}
                           value={m.value}
                           ticker={ticker}
                           context={{ sector: ov.sector, industry: ov.industry, company_name: ov.company_name }}
                         />
-                      )}
+                      ) : null}
                     </div>
                   </div>
                 ))}
               </div>
-            )}
+            ) : null}
           </div>
-        )}
+        ) : null}
 
         {/* ════ TABS ═══════════════════════════════════════════════════════════ */}
-        {!ovLoad && (
+        {!ovLoad ? (
           <>
             <TabBar tabs={MAIN_TABS} active={activeTab} onSelect={(t) => {
               const tab = t as MainTab;
@@ -597,7 +597,7 @@ export default function StockDashboard({ ticker, onSearch }: StockDashboardProps
             }} />
 
             {/* ══ Overview ══ */}
-            {activeTab === "Overview" && (
+            {activeTab === "Overview" ? (
               ov
                 ? <div style={{ maxWidth: 960, marginTop: 8 }}>
 
@@ -649,10 +649,10 @@ export default function StockDashboard({ ticker, onSearch }: StockDashboardProps
                     <FilingAuditPanel ticker={ticker} />
                   </div>
                 : null
-            )}
+            ) : null}
 
             {/* ══ Financials ══ */}
-            {activeTab === "Financials" && (
+            {activeTab === "Financials" ? (
               <FinancialsTab
                 ticker={ticker}
                 data={currentFin}
@@ -665,10 +665,10 @@ export default function StockDashboard({ ticker, onSearch }: StockDashboardProps
                 onScaleChange={setScale}
                 filingLinks={filingLinks}
               />
-            )}
+            ) : null}
 
             {/* ══ Insights ══ */}
-            {activeTab === "Insights" && (
+            {activeTab === "Insights" ? (
               <InsightsTab
                 data={ins}
                 loading={insLoad}
@@ -677,10 +677,10 @@ export default function StockDashboard({ ticker, onSearch }: StockDashboardProps
                 manualWacc={manualWacc}
                 onWaccChange={setManualWacc}
               />
-            )}
+            ) : null}
 
             {/* ══ Valueground ══ */}
-            {activeTab === "Valueground" && (
+            {activeTab === "Valueground" ? (
               <Valueground
                 ticker={ticker}
                 externalWacc={manualWacc ?? 0}
@@ -688,9 +688,9 @@ export default function StockDashboard({ ticker, onSearch }: StockDashboardProps
                 onDdmFairValue={setDdmFairValue}
                 NormalizedPENode={<NormalizedPETab ticker={ticker} externalWacc={manualWacc ?? 0} />}
               />
-            )}
+            ) : null}
           </>
-        )}
+        ) : null}
 
         <div style={{ height: 48 }} />
       </div>

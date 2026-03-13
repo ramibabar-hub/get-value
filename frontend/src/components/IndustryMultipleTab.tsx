@@ -15,7 +15,7 @@
  * 4. Combined Valuation — 50/50 weighted Fair Value, single MoS, Buy Price
  */
 
-import { useState, useEffect, useMemo, memo } from "react";
+import { useState, useEffect, useMemo, memo, useRef } from "react";
 import {
   ComposedChart,
   Line,
@@ -413,7 +413,7 @@ export default function IndustryMultipleTab({ ticker, onFairValueChange }: Props
   const [mosEbitda,    setMosEbitda]    = useState(10);
   const [mosCombined,  setMosCombined]  = useState(10);
 
-  const seeded = { current: false };
+  const seeded = useRef(false);
 
   // ── Fetch ──────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -555,12 +555,12 @@ export default function IndustryMultipleTab({ ticker, onFairValueChange }: Props
             <span style={{ color: "var(--gv-text-dim)", fontWeight: 500, fontSize: "0.87em" }}>Company on sale?</span>
             <OnSaleBadge onSale={onSalePe} />
           </div>
-          {fvPe != null && priceNow != null && (
+          {fvPe != null && priceNow != null ? (
             <div style={{ display: "flex", gap: 20, fontSize: "0.80em", color: "var(--gv-text-muted)", paddingTop: 6, borderTop: "1px solid #f0f3f7" }}>
               <span>Upside to FV: <strong style={{ color: (fvPe > priceNow ? GREEN : RED) }}>{fUpside(fvPe, priceNow)}</strong></span>
               <span>Upside to Buy: <strong style={{ color: (buyPricePe != null && buyPricePe > priceNow ? GREEN : RED) }}>{fUpside(buyPricePe, priceNow)}</strong></span>
             </div>
-          )}
+          ) : null}
         </ValCard>
       </div>
 
@@ -612,12 +612,12 @@ export default function IndustryMultipleTab({ ticker, onFairValueChange }: Props
             <span style={{ color: "var(--gv-text-dim)", fontWeight: 500, fontSize: "0.87em" }}>Company on sale?</span>
             <OnSaleBadge onSale={onSaleEb} />
           </div>
-          {fvEbitdaPs != null && priceNow != null && (
+          {fvEbitdaPs != null && priceNow != null ? (
             <div style={{ display: "flex", gap: 20, fontSize: "0.80em", color: "var(--gv-text-muted)", paddingTop: 6, borderTop: "1px solid #f0f3f7" }}>
               <span>Upside to FV: <strong style={{ color: (fvEbitdaPs > priceNow ? GREEN : RED) }}>{fUpside(fvEbitdaPs, priceNow)}</strong></span>
               <span>Upside to Buy: <strong style={{ color: (buyPriceEb != null && buyPriceEb > priceNow ? GREEN : RED) }}>{fUpside(buyPriceEb, priceNow)}</strong></span>
             </div>
-          )}
+          ) : null}
         </ValCard>
       </div>
 
@@ -670,7 +670,7 @@ export default function IndustryMultipleTab({ ticker, onFairValueChange }: Props
           <DataRow label="Buy Price" value={fPrice(buyPriceComb)} color={AMBER} bold />
           <DataRow label="Current Price" value={fPrice(priceNow)} />
 
-          {fvCombined != null && priceNow != null && (
+          {fvCombined != null && priceNow != null ? (
             <>
               <div style={{ marginTop: 10, paddingTop: 8, borderTop: "1px solid #e5e7eb", display: "flex", justifyContent: "space-between", fontSize: "0.85em" }}>
                 <span style={{ color: "var(--gv-text-dim)" }}>Upside to Fair Value</span>
@@ -685,7 +685,7 @@ export default function IndustryMultipleTab({ ticker, onFairValueChange }: Props
                 </span>
               </div>
             </>
-          )}
+          ) : null}
         </div>
       </div>
 

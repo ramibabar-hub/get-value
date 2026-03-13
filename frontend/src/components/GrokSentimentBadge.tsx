@@ -100,7 +100,7 @@ export default function GrokSentimentBadge({ ticker }: { ticker: string }) {
         <span style={{ color: "var(--gv-text-muted)", fontWeight: 400 }}> · Why?</span>
       </button>
 
-      {hover && data.reason && (
+      {hover && data.reason ? (
         <div style={{
           position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 50,
           background: "var(--gv-navy)", color: "#fff",
@@ -117,7 +117,7 @@ export default function GrokSentimentBadge({ ticker }: { ticker: string }) {
             Powered by Grok · {data.cached_until ? `fresh until ${data.cached_until.slice(11, 16)} UTC` : ""}
           </div>
         </div>
-      )}
+      ) : null}
     </div>
   );
 }

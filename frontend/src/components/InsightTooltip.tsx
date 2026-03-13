@@ -55,7 +55,7 @@ export function InsightTooltip({
       </button>
 
       {/* Tooltip */}
-      {open && (
+      {open ? (
         <div style={{
           position: "absolute", bottom: "calc(100% + 8px)", left: "50%",
           transform: "translateX(-50%)",
@@ -85,7 +85,7 @@ export function InsightTooltip({
             <div>{insight}</div>
           )}
         </div>
-      )}
+      ) : null}
     </span>
   );
 }

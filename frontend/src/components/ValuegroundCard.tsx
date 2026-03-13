@@ -91,11 +91,11 @@ export const ValuegroundCard = memo(function ValuegroundCard({
       </div>
 
       {/* Card body */}
-      {!isCollapsed && (
+      {!isCollapsed ? (
         <div style={{ padding: "16px 20px" }}>
           {children}
         </div>
-      )}
+      ) : null}
     </div>
   );
 });

@@ -497,7 +497,7 @@ export default function InsightsTab({
       {data.groups.map((group) => (
         <GroupTable key={group.title} group={group} />
       ))}
-      {waccData && (
+      {waccData ? (
         <>
           <WaccTable wacc={waccData} />
           <WaccSelector
@@ -506,7 +506,7 @@ export default function InsightsTab({
             onChange={onWaccChange}
           />
         </>
-      )}
+      ) : null}
     </div>
   );
 }

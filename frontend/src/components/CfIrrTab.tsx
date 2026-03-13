@@ -657,7 +657,7 @@ export default function CfIrrTab({ ticker, externalWacc, ov }: Props) {
       </div>
 
       {/* ═══ SECTION 4 — IRR Sensitivity Matrix ════════════════════════════════ */}
-      {data.irr_sensitivity.matrix.length > 0 && (
+      {data.irr_sensitivity.matrix.length > 0 ? (
         <>
           <SecHeader title="4 · IRR Sensitivity Matrix" />
           <SubHeader title="Entry Price vs. Exit FCF Yield  —  IRR ≥ 12% green · 8–12% amber · < 8% red" />
@@ -667,7 +667,7 @@ export default function CfIrrTab({ ticker, externalWacc, ov }: Props) {
             matrix={data.irr_sensitivity.matrix}
           />
         </>
-      )}
+      ) : null}
 
       <div style={{ height: 32 }} />
     </div>

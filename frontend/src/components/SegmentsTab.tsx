@@ -374,8 +374,8 @@ function SegmentsTable({
           <th style={{ ...thStyle }}>Segment</th>
           <th style={{ ...thStyle, textAlign: "right" }}>Revenue ({latestYear})</th>
           <th style={{ ...thStyle, textAlign: "right" }}>YoY</th>
-          {hasOI     && <th style={{ ...thStyle, textAlign: "right" }}>Op. Income</th>}
-          {hasAssets && <th style={{ ...thStyle, textAlign: "right" }}>Assets</th>}
+          {hasOI     ? <th style={{ ...thStyle, textAlign: "right" }}>Op. Income</th> : null}
+          {hasAssets ? <th style={{ ...thStyle, textAlign: "right" }}>Assets</th> : null}
           <th style={{ ...thStyle, width: 26, textAlign: "center" }} />
         </tr>
       </thead>
@@ -414,11 +414,11 @@ function SegmentsTable({
                 {/* Name */}
                 <td style={{ ...tdBase, cursor: "pointer" }} onClick={() => toggle(seg.name)}>
                   <span style={{ fontWeight: 600 }}>{seg.name}</span>
-                  {share && (
+                  {share ? (
                     <span style={{ marginLeft: 6, fontSize: "0.80em", color: "var(--gv-text-muted)" }}>
                       {share}%
                     </span>
-                  )}
+                  ) : null}
                 </td>
 
                 {/* Revenue */}
@@ -444,23 +444,23 @@ function SegmentsTable({
                   {yoy.str}
                 </td>
 
-                {hasOI && (
+                {hasOI ? (
                   <td
                     style={{ ...tdBase, textAlign: "right", fontFamily: "monospace", fontVariantNumeric: "tabular-nums", color: oi != null && oi < 0 ? "#dc2626" : NAVY, cursor: "pointer" }}
                     onClick={() => toggle(seg.name)}
                   >
                     {fRev(oi)}
                   </td>
-                )}
+                ) : null}
 
-                {hasAssets && (
+                {hasAssets ? (
                   <td
                     style={{ ...tdBase, textAlign: "right", fontFamily: "monospace", fontVariantNumeric: "tabular-nums", cursor: "pointer" }}
                     onClick={() => toggle(seg.name)}
                   >
                     {fRev(assets)}
                   </td>
-                )}
+                ) : null}
 
                 {/* Expand chevron */}
                 <td
@@ -472,7 +472,7 @@ function SegmentsTable({
               </tr>
 
               {/* Expanded history sub-row */}
-              {isOpen && (
+              {isOpen ? (
                 <tr>
                   <td
                     colSpan={colSpanTotal}
@@ -518,13 +518,13 @@ function SegmentsTable({
                     </div>
                   </td>
                 </tr>
-              )}
+              ) : null}
             </Fragment>
           );
         })}
 
         {/* Totals row — hidden when filtered to single segment */}
-        {selected === null && (
+        {selected === null ? (
           <tr style={{ background: "#f0f4f9" }}>
             <td style={{ ...tdBase, padding: "7px 4px 7px 8px" }} />
             <td style={{ ...tdBase, fontWeight: 700 }}>Total</td>
@@ -532,19 +532,19 @@ function SegmentsTable({
               {fRev(totalRev)}
             </td>
             <td style={{ ...tdBase }} />
-            {hasOI && (
+            {hasOI ? (
               <td style={{ ...tdBase, textAlign: "right", fontFamily: "monospace", fontVariantNumeric: "tabular-nums", fontWeight: 700, color: totalOI < 0 ? "#dc2626" : NAVY }}>
                 {fRev(totalOI)}
               </td>
-            )}
-            {hasAssets && (
+            ) : null}
+            {hasAssets ? (
               <td style={{ ...tdBase, textAlign: "right", fontFamily: "monospace", fontVariantNumeric: "tabular-nums", fontWeight: 700 }}>
                 {fRev(totalAssets)}
               </td>
-            )}
+            ) : null}
             <td style={{ ...tdBase }} />
           </tr>
-        )}
+        ) : null}
       </tbody>
     </table>
   );
@@ -607,14 +607,14 @@ export default function SegmentsTab({ ticker }: { ticker: string }) {
             </div>
           );
         })}
-        {selected !== null && (
+        {selected !== null ? (
           <button
             onClick={() => setSelected(null)}
             className="ml-auto text-xs px-2.5 py-0.5 rounded border border-slate-300 bg-white text-slate-500 hover:bg-slate-50 cursor-pointer"
           >
             Clear filter
           </button>
-        )}
+        ) : null}
       </div>
 
       {/* ── Top row: Bar chart (left, ~65%) + Donut (right, ~35%) ── */}

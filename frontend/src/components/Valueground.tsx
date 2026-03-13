@@ -8,6 +8,7 @@
  * Senior Partner rule: each model component is passed unmodified.
  * This file is layout-only.
  */
+import { useMemo } from "react";
 import {
   DndContext, closestCenter, PointerSensor,
   useSensor, useSensors, type DragEndEvent,
@@ -53,14 +54,14 @@ export default function Valueground({
     setOrder(arrayMove(cardOrder, oldIdx, newIdx));
   }
 
-  const CARD_CONTENT: Record<string, React.ReactNode> = {
+  const CARD_CONTENT = useMemo<Record<string, React.ReactNode>>(() => ({
     "CF + IRR":          <CfIrrTab        ticker={ticker} externalWacc={externalWacc} ov={ov} />,
     "CF + IRR Special":  <CfIrrSpecialTab ticker={ticker} externalWacc={externalWacc} ov={ov} />,
     "Normalized PE":     NormalizedPENode,
     "DDM":               <DDMTab          ticker={ticker} externalWacc={externalWacc} onFairValueChange={onDdmFairValue} />,
     "Industry Multiple": <IndustryMultipleTab ticker={ticker} />,
     "Piotroski":         <PiotroskiTab    ticker={ticker} />,
-  };
+  }), [ticker, externalWacc, ov, NormalizedPENode, onDdmFairValue]);
 
   return (
     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>

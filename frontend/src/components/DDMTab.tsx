@@ -532,7 +532,7 @@ export default function DDMTab({ ticker, externalWacc, onFairValueChange }: Prop
   if (!data) return null;
 
   // ── No-dividend notice (still show historical table) ──────────────────────
-  const noDivBanner = !data.has_dividend && (
+  const noDivBanner = !data.has_dividend ? (
     <div style={{
       background: "#fffbeb", border: "1.5px solid #fde68a",
       borderRadius: 8, padding: "10px 16px", marginBottom: 16,
@@ -541,7 +541,7 @@ export default function DDMTab({ ticker, externalWacc, onFairValueChange }: Prop
       <strong>Note:</strong> {ticker} does not currently pay a dividend.
       The DDM Gordon Growth model requires a positive DPS to produce a fair value.
     </div>
-  );
+  ) : null;
 
   return (
     <div>
@@ -634,16 +634,16 @@ export default function DDMTab({ ticker, externalWacc, onFairValueChange }: Prop
           letterSpacing: "0.01em",
         }}>
           Fair Value = {fDps(dps)} × (1 + {gForecastPct.toFixed(1)}%) / ({waccPct.toFixed(1)}% − {gTerminalPct.toFixed(1)}%)
-          {modelValid && fairValue != null && (
+          {modelValid && fairValue != null ? (
             <span style={{ marginLeft: 14, fontWeight: 800, color: GREEN }}>
               = {fPrice(fairValue)}
             </span>
-          )}
-          {!modelValid && (
+          ) : null}
+          {!modelValid ? (
             <span style={{ marginLeft: 14, fontWeight: 700, color: RED }}>
               = ⚠ Invalid
             </span>
-          )}
+          ) : null}
         </div>
       </div>
 

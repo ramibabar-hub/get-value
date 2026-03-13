@@ -9,7 +9,7 @@
  * Period column headers show a hover ExternalLink icon when a filing URL
  * is available in the `filingLinks` prop.
  */
-import { memo, useState, Fragment } from "react";
+import { memo, useState, useMemo, Fragment } from "react";
 import { ExternalLink } from "lucide-react";
 import type {
   FinancialsData, FinancialRow, FinancialsExtendedData, ExtRow, FmtType, Scale, Period,
@@ -470,11 +470,11 @@ const ExtTable = memo(function ExtTable({
     : rows;
 
   // Only show Vs. Industry column when the table has at least one comparable row
-  const hasBenchmark = rows.some(row => {
+  const hasBenchmark = useMemo(() => rows.some(row => {
     const fmt = row.fmt as FmtType;
     if (fmt === "money" || fmt === "int") return false;
     return lookupBenchmark(row.label) !== null;
-  });
+  }), [rows]);
 
   // Total columns for chart colSpan: label + data cols + (optional benchmark col)
   const totalSpan = columns.length + 1 + (hasBenchmark ? 1 : 0);
@@ -717,30 +717,30 @@ export default function FinancialsTab({
           value={scale}
           onChange={onScaleChange}
         />
-        {data && (
+        {data ? (
           <span style={{ fontSize: "0.78em", color: "var(--gv-text-muted)", marginLeft: "auto" }}>
             Currency: <strong>{data.currency}</strong>
             &nbsp;·&nbsp;values in <strong>{scale}</strong>
           </span>
-        )}
+        ) : null}
       </div>
 
-      {loading && <Spinner label="Loading financials…" />}
+      {loading ? <Spinner label="Loading financials…" /> : null}
 
-      {data && !loading && (
+      {data && !loading ? (
         <>
           <FinTable title="Income Statement" columns={data.columns} rows={data.income_statement} scale={scale} ticker={ticker} filingLinks={filingLinks} />
           <FinTable title="Balance Sheet"    columns={data.columns} rows={data.balance_sheet}    scale={scale} ticker={ticker} filingLinks={filingLinks} />
           <FinTable title="Cash Flow"        columns={data.columns} rows={data.cash_flow}        scale={scale} ticker={ticker} filingLinks={filingLinks} />
-          {data.debt && data.debt.length > 0 && (
+          {data.debt && data.debt.length > 0 ? (
             <FinTable title="Debt Schedule"  columns={data.columns} rows={data.debt}             scale={scale} ticker={ticker} filingLinks={filingLinks} />
-          )}
+          ) : null}
         </>
-      )}
+      ) : null}
 
-      {extLoading && !loading && <Spinner label="Loading metric tables…" />}
+      {extLoading && !loading ? <Spinner label="Loading metric tables…" /> : null}
 
-      {extData && !extLoading && (
+      {extData && !extLoading ? (
         <>
           <ExtTable title="Market & Valuation"  columns={extData.columns} rows={extData.market_valuation}  scale={scale} ticker={ticker} filingLinks={filingLinks} />
           <ExtTable title="Capital Structure"    columns={extData.columns} rows={extData.capital_structure} scale={scale} ticker={ticker} filingLinks={filingLinks} />
@@ -750,7 +750,7 @@ export default function FinancialsTab({
           <ExtTable title="Dividends"            columns={extData.columns} rows={extData.dividends}         scale={scale} ticker={ticker} filingLinks={filingLinks} />
           <ExtTable title="Efficiency"           columns={extData.columns} rows={extData.efficiency}        scale={scale} ticker={ticker} filingLinks={filingLinks} />
         </>
-      )}
+      ) : null}
     </div>
   );
 }

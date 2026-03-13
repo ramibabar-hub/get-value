@@ -62,7 +62,7 @@ export default function LanguageSelector() {
         <span style={{ color: "var(--gv-text-muted)", fontSize: "0.8em" }}>▾</span>
       </button>
 
-      {open && (
+      {open ? (
         <div style={{
           position: "absolute", top: "calc(100% + 6px)", right: 0,
           background: "var(--gv-surface)",
@@ -89,7 +89,7 @@ export default function LanguageSelector() {
                 <span>{l.flag}</span>
                 <span style={{ fontWeight: l.code === lang ? 700 : 400 }}>{l.label}</span>
               </span>
-              {!l.active && (
+              {!l.active ? (
                 <span style={{
                   fontSize: "0.72em", fontWeight: 600,
                   background: "var(--gv-data-bg)",
@@ -98,14 +98,14 @@ export default function LanguageSelector() {
                 }}>
                   Soon
                 </span>
-              )}
-              {l.code === lang && l.active && (
+              ) : null}
+              {l.code === lang && l.active ? (
                 <span style={{ color: "var(--gv-green)", fontWeight: 700 }}>✓</span>
-              )}
+              ) : null}
             </button>
           ))}
         </div>
-      )}
+      ) : null}
     </div>
   );
 }
