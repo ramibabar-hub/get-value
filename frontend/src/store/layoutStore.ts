@@ -17,6 +17,7 @@ export const DEFAULT_CARD_ORDER = [
   "DDM",
   "Industry Multiple",
   "Piotroski",
+  "Portfolio Impact",
 ] as const;
 
 export type ModelCardId = typeof DEFAULT_CARD_ORDER[number];
@@ -48,7 +49,7 @@ export const useLayoutStore = create<LayoutState>()(
         set({ cardOrder: [...DEFAULT_CARD_ORDER], collapsedCards: [] }),
     }),
     {
-      name: "gv_layout_v1",
+      name: "gv_layout_v2",
     }
   )
 );

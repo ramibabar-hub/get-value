@@ -113,7 +113,7 @@ function Legend() {
 
 // ── Tab bars ──────────────────────────────────────────────────────────────────
 
-const MAIN_TABS = ["Overview", "Financials", "Insights", "Valueground"] as const;
+const MAIN_TABS = ["Overview", "Financials", "Value Drivers", "Valueground"] as const;
 type MainTab = typeof MAIN_TABS[number];
 
 function TabBar({ tabs, active, onSelect, size = "md", scrollable = false }: {
@@ -667,8 +667,8 @@ export default function StockDashboard({ ticker, onSearch }: StockDashboardProps
               />
             ) : null}
 
-            {/* ══ Insights ══ */}
-            {activeTab === "Insights" ? (
+            {/* ══ Value Drivers ══ */}
+            {activeTab === "Value Drivers" ? (
               <InsightsTab
                 data={ins}
                 loading={insLoad}
