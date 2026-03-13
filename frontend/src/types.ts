@@ -464,3 +464,14 @@ export interface DescriptionSummary {
   ticker:  string;
   summary: string;
 }
+
+// ── Grok Sentiment ────────────────────────────────────────────────────────────
+export interface GrokSentiment {
+  ticker:       string;
+  score:        number | null;
+  label:        "Bullish" | "Neutral" | "Bearish" | "Unavailable";
+  reason:       string;
+  source:       string;
+  cached_until: string | null;
+  error:        string | null;
+}

@@ -2385,6 +2385,26 @@ def condense_description(body: dict = Body(default={})):
 
 
 
+@app.get("/api/grok/sentiment/{ticker}", summary="Grok live sentiment badge", tags=["AI"])
+def grok_sentiment(ticker: str):
+    """
+    Returns live sentiment analysis for *ticker* via Grok (xAI).
+    Cached 15 minutes in memory.
+    Never raises HTTP 5xx — returns error field on failure instead.
+    """
+    try:
+        from backend.services.grok_service import get_sentiment
+        return get_sentiment(ticker.strip().upper())
+    except Exception as exc:
+        # Swallow all errors — badge degrades gracefully
+        return {
+            "ticker": ticker.strip().upper(),
+            "score": None, "label": "Unavailable",
+            "reason": "", "source": "grok",
+            "cached_until": None, "error": str(exc)[:120],
+        }
+
+
 @app.get("/health", include_in_schema=False)
 def health():
     return {"status": "ok", "version": app.version}
