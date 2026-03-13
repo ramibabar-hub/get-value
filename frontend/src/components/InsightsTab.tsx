@@ -13,6 +13,8 @@ import { lazy, memo, useState, Suspense, Fragment } from "react";
 import type { InsightsData, InsightsGroup, InsightsRow, WaccData } from "../types";
 import { IndustryComparisonCell } from "./IndustryComparisonCell";
 import { lookupBenchmark } from "../utils/industryBenchmarks";
+import MetricsCatalogModal from "./MetricsCatalogModal";
+import { useLayoutStore } from "../store/layoutStore";
 
 // ── Lazy chart import ─────────────────────────────────────────────────────────
 // MiniChart.tsx is only fetched from the server when the first row is expanded.
@@ -477,6 +479,9 @@ interface Props {
 export default function InsightsTab({
   data, loading, error, waccData, manualWacc, onWaccChange,
 }: Props) {
+  const [showCatalog, setShowCatalog] = useState(false);
+  const { hiddenInsightGroups } = useLayoutStore();
+
   if (loading) return <Spinner />;
 
   if (error) {
@@ -492,9 +497,27 @@ export default function InsightsTab({
 
   if (!data) return null;
 
+  const visibleGroups = data.groups.filter(
+    (g) => !hiddenInsightGroups.some(
+      (hidden) =>
+        g.title.toLowerCase().includes(hidden.toLowerCase()) ||
+        hidden.toLowerCase().includes(g.title.toLowerCase())
+    )
+  );
+
   return (
     <div>
-      {data.groups.map((group) => (
+      {/* Customize button */}
+      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
+        <button
+          onClick={() => setShowCatalog(true)}
+          style={{ fontFamily: "var(--gv-font-mono)", fontSize: "0.75em", color: "var(--gv-text-muted)", background: "none", border: "1px solid var(--gv-border)", borderRadius: 4, padding: "4px 10px", cursor: "pointer" }}
+        >
+          ⚙ Customize
+        </button>
+      </div>
+
+      {visibleGroups.map((group) => (
         <GroupTable key={group.title} group={group} />
       ))}
       {waccData ? (
@@ -507,6 +530,8 @@ export default function InsightsTab({
           />
         </>
       ) : null}
+
+      {showCatalog ? <MetricsCatalogModal tab="value_drivers" onClose={() => setShowCatalog(false)} /> : null}
     </div>
   );
 }

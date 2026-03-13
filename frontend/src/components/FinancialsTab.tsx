@@ -17,6 +17,8 @@ import type {
 import { IndustryComparisonCell } from "./IndustryComparisonCell";
 import { lookupBenchmark } from "../utils/industryBenchmarks";
 import { TableToolbar, ExpandOverlay } from "./TableToolbar";
+import MetricsCatalogModal from "./MetricsCatalogModal";
+import { useLayoutStore } from "../store/layoutStore";
 
 const NAVY    = "var(--gv-navy)";
 const PERIODS: Period[] = ["annual", "quarterly"];
@@ -690,6 +692,9 @@ export default function FinancialsTab({
   ticker, data, loading, extData, extLoading, period, scale, onPeriodChange, onScaleChange,
   filingLinks,
 }: FinancialsTabProps) {
+  const [showCatalog, setShowCatalog] = useState(false);
+  const { hiddenFinancialsSections } = useLayoutStore();
+
   return (
     <div>
       {/* Filing link hover CSS — injected once at component root */}
@@ -742,15 +747,30 @@ export default function FinancialsTab({
 
       {extData && !extLoading ? (
         <>
-          <ExtTable title="Market & Valuation"  columns={extData.columns} rows={extData.market_valuation}  scale={scale} ticker={ticker} filingLinks={filingLinks} />
-          <ExtTable title="Capital Structure"    columns={extData.columns} rows={extData.capital_structure} scale={scale} ticker={ticker} filingLinks={filingLinks} />
-          <ExtTable title="Profitability"        columns={extData.columns} rows={extData.profitability}     scale={scale} ticker={ticker} filingLinks={filingLinks} />
-          <ExtTable title="Returns"              columns={extData.columns} rows={extData.returns}           scale={scale} ticker={ticker} filingLinks={filingLinks} />
-          <ExtTable title="Liquidity"            columns={extData.columns} rows={extData.liquidity}         scale={scale} ticker={ticker} filingLinks={filingLinks} />
-          <ExtTable title="Dividends"            columns={extData.columns} rows={extData.dividends}         scale={scale} ticker={ticker} filingLinks={filingLinks} />
-          <ExtTable title="Efficiency"           columns={extData.columns} rows={extData.efficiency}        scale={scale} ticker={ticker} filingLinks={filingLinks} />
+          {/* Extended metrics header + customize button */}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 28, marginBottom: 8 }}>
+            <div style={{ fontSize: "0.88em", fontWeight: 700, color: NAVY, borderLeft: "3px solid var(--gv-navy)", paddingLeft: 8 }}>
+              Extended Metrics
+            </div>
+            <button
+              onClick={() => setShowCatalog(true)}
+              style={{ fontFamily: "var(--gv-font-mono)", fontSize: "0.75em", color: "var(--gv-text-muted)", background: "none", border: "1px solid var(--gv-border)", borderRadius: 4, padding: "4px 10px", cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}
+            >
+              ⚙ Customize
+            </button>
+          </div>
+
+          {!hiddenFinancialsSections.includes("market_valuation")  ? <ExtTable title="Market & Valuation"  columns={extData.columns} rows={extData.market_valuation}  scale={scale} ticker={ticker} filingLinks={filingLinks} /> : null}
+          {!hiddenFinancialsSections.includes("capital_structure") ? <ExtTable title="Capital Structure"   columns={extData.columns} rows={extData.capital_structure} scale={scale} ticker={ticker} filingLinks={filingLinks} /> : null}
+          {!hiddenFinancialsSections.includes("profitability")     ? <ExtTable title="Profitability"       columns={extData.columns} rows={extData.profitability}     scale={scale} ticker={ticker} filingLinks={filingLinks} /> : null}
+          {!hiddenFinancialsSections.includes("returns")           ? <ExtTable title="Returns"             columns={extData.columns} rows={extData.returns}           scale={scale} ticker={ticker} filingLinks={filingLinks} /> : null}
+          {!hiddenFinancialsSections.includes("liquidity")         ? <ExtTable title="Liquidity"           columns={extData.columns} rows={extData.liquidity}         scale={scale} ticker={ticker} filingLinks={filingLinks} /> : null}
+          {!hiddenFinancialsSections.includes("dividends")         ? <ExtTable title="Dividends"           columns={extData.columns} rows={extData.dividends}         scale={scale} ticker={ticker} filingLinks={filingLinks} /> : null}
+          {!hiddenFinancialsSections.includes("efficiency")        ? <ExtTable title="Efficiency"          columns={extData.columns} rows={extData.efficiency}        scale={scale} ticker={ticker} filingLinks={filingLinks} /> : null}
         </>
       ) : null}
+
+      {showCatalog ? <MetricsCatalogModal tab="financials" onClose={() => setShowCatalog(false)} /> : null}
     </div>
   );
 }
