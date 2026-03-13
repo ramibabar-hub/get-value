@@ -475,3 +475,15 @@ export interface GrokSentiment {
   cached_until: string | null;
   error:        string | null;
 }
+
+// ── Filing Audit (Gemini 10-K Auditor) ────────────────────────────────────────
+export interface FilingAudit {
+  ticker:       string;
+  filing_url:   string | null;
+  summary:      string;
+  risk_factors: string[];
+  red_flags:    string[];
+  moat_signals: string[];
+  model:        string;
+  error:        string | null;
+}

@@ -2405,6 +2405,25 @@ def grok_sentiment(ticker: str):
         }
 
 
+@app.post("/api/gemini/audit/{ticker}", summary="Gemini 10-K filing auditor", tags=["AI"])
+def gemini_audit(ticker: str, body: dict = None):
+    """
+    Runs Gemini analysis on the most recent 10-K filing for *ticker*.
+    Optionally accepts { "filing_url": "..." } in the request body.
+    Cached 1 hour in memory.
+    """
+    filing_url = (body or {}).get("filing_url")
+    try:
+        from backend.services.pdf_auditor_service import audit_filing
+        return audit_filing(ticker.strip().upper(), filing_url)
+    except Exception as exc:
+        return {
+            "ticker": ticker.strip().upper(), "filing_url": filing_url,
+            "summary": "", "risk_factors": [], "red_flags": [], "moat_signals": [],
+            "model": "gemini-1.5-flash", "error": str(exc)[:200],
+        }
+
+
 @app.get("/health", include_in_schema=False)
 def health():
     return {"status": "ok", "version": app.version}
