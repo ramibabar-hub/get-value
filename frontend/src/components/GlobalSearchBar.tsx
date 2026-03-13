@@ -143,13 +143,13 @@ export default function GlobalSearchBar({ onSelect }: GlobalSearchBarProps) {
       {/* ── Input ─────────────────────────────────────────────────────────── */}
       <div style={{
         display: "flex", alignItems: "center",
-        background: "#fff",
-        border: `1.5px solid ${focused ? BLUE : "#d1d5db"}`,
+        background: "var(--gv-surface)",
+        border: `1.5px solid ${focused ? BLUE : "var(--gv-border)"}`,
         borderRadius,
         padding: "0 14px", gap: 10,
         boxShadow: focused
-          ? `0 0 0 3px ${BLUE}22, 0 1px 4px rgba(0,0,0,0.06)`
-          : "0 1px 4px rgba(0,0,0,0.06)",
+          ? `0 0 0 3px ${BLUE}22, var(--gv-shadow-sm)`
+          : "var(--gv-shadow-sm)",
         transition: "border-color 0.15s, box-shadow 0.15s, border-radius 0.1s",
       }}>
         {isLoading
@@ -184,12 +184,12 @@ export default function GlobalSearchBar({ onSelect }: GlobalSearchBarProps) {
       {showDropdown && (
         <div ref={listRef} style={{
           position: "absolute", top: "100%", left: 0, right: 0,
-          background: "#fff",
+          background: "var(--gv-surface)",
           border: `1.5px solid ${BLUE}`, borderTop: "none",
           borderRadius: "0 0 10px 10px",
           maxHeight: 400, overflowY: "auto",
           zIndex: 1000,
-          boxShadow: "0 8px 28px rgba(0,0,0,0.13)",
+          boxShadow: "var(--gv-shadow-lg)",
         }}>
 
           {/* Results */}
@@ -211,7 +211,7 @@ export default function GlobalSearchBar({ onSelect }: GlobalSearchBarProps) {
               color: "var(--gv-text-muted)", fontSize: "0.85em",
             }}>
               No results found for&nbsp;
-              <strong style={{ color: NAVY }}>&ldquo;{query.trim()}&rdquo;</strong>
+              <strong style={{ color: "var(--gv-text)" }}>&ldquo;{query.trim()}&rdquo;</strong>
               <br />
               <span style={{ fontSize: "0.88em" }}>
                 Try pressing Enter to search directly by ticker
@@ -222,8 +222,8 @@ export default function GlobalSearchBar({ onSelect }: GlobalSearchBarProps) {
           {/* Footer */}
           {results.length > 0 && (
             <div style={{
-              padding: "6px 16px", fontSize: "0.71em", color: "#b0b8c8",
-              borderTop: "1px solid #f0f2f5", display: "flex", alignItems: "center", gap: 6,
+              padding: "6px 16px", fontSize: "0.71em", color: "var(--gv-text-muted)",
+              borderTop: "1px solid var(--gv-border)", display: "flex", alignItems: "center", gap: 6,
             }}>
               <Kbd>↑↓</Kbd> navigate &nbsp;·&nbsp; <Kbd>Enter</Kbd> select
             </div>
@@ -251,7 +251,7 @@ function ResultRow({ result, active, query, onMouseEnter, onClick }: {
       style={{
         display: "flex", alignItems: "center", gap: 12,
         padding: "9px 16px", cursor: "pointer",
-        background: active ? "#f0f6ff" : "transparent",
+        background: active ? "color-mix(in srgb, var(--gv-blue) 10%, var(--gv-surface))" : "transparent",
         borderLeft: `3px solid ${active ? BLUE : "transparent"}`,
         transition: "background 0.1s, border-color 0.1s",
       }}
@@ -278,13 +278,13 @@ function ResultRow({ result, active, query, onMouseEnter, onClick }: {
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
           <span style={{
-            fontWeight: 600, color: NAVY, fontSize: "0.88em",
+            fontWeight: 600, color: "var(--gv-text)", fontSize: "0.88em",
             whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 220,
           }}>
             <HighlightMatch text={result.name} query={query} />
           </span>
           <span style={{
-            background: active ? BLUE : "#eaf1ff",
+            background: active ? BLUE : "color-mix(in srgb, var(--gv-blue) 12%, var(--gv-surface))",
             color: active ? "#fff" : BLUE,
             fontSize: "0.67em", fontWeight: 700, letterSpacing: "0.04em",
             padding: "2px 7px", borderRadius: 4, flexShrink: 0,

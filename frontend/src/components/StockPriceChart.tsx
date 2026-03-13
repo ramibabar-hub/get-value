@@ -17,9 +17,41 @@ const NAVY  = "var(--gv-navy)";
 const BLUE  = "var(--gv-blue)";
 const MA50    = "#f59e0b";   // amber
 const MA200   = "#10b981";   // emerald
-const SPY_CLR = "#a78bfa";   // violet — S&P 500 benchmark
+const BMK_CLR = "#a78bfa";   // violet — benchmark overlay
 
 const RANGES: PriceRange[] = ["1D", "5D", "1M", "6M", "YTD", "1Y", "5Y", "10Y"];
+
+// ── Smart benchmark mapping ────────────────────────────────────────────────────
+// Maps exchange suffix → { ticker: string (FMP-compatible), label: string }
+// US-listed ETFs are used for international exchanges (guaranteed FMP availability).
+
+const BENCHMARK_BY_SUFFIX: Record<string, { ticker: string; label: string }> = {
+  TA:  { ticker: "EIS",  label: "MSCI Israel" },
+  DE:  { ticker: "EWG",  label: "MSCI Germany" },
+  L:   { ticker: "EWU",  label: "MSCI UK" },
+  PA:  { ticker: "EWQ",  label: "MSCI France" },
+  T:   { ticker: "EWJ",  label: "MSCI Japan" },
+  HK:  { ticker: "EWH",  label: "MSCI Hong Kong" },
+  AX:  { ticker: "EWA",  label: "MSCI Australia" },
+  AS:  { ticker: "EWN",  label: "MSCI Netherlands" },
+  MI:  { ticker: "EWI",  label: "MSCI Italy" },
+  MC:  { ticker: "EWP",  label: "MSCI Spain" },
+  SW:  { ticker: "EWL",  label: "MSCI Switzerland" },
+  TO:  { ticker: "EWC",  label: "MSCI Canada" },
+  SI:  { ticker: "EWS",  label: "MSCI Singapore" },
+  KS:  { ticker: "EWY",  label: "MSCI South Korea" },
+  SS:  { ticker: "MCHI", label: "MSCI China" },
+  SZ:  { ticker: "MCHI", label: "MSCI China" },
+};
+
+const SP500_BMK = { ticker: "SPY", label: "S&P 500" };
+
+function getBenchmarkForTicker(ticker: string): { ticker: string; label: string } {
+  const dotIdx = ticker.lastIndexOf(".");
+  if (dotIdx === -1) return SP500_BMK; // US ticker — default to S&P 500
+  const suffix = ticker.slice(dotIdx + 1).toUpperCase();
+  return BENCHMARK_BY_SUFFIX[suffix] ?? SP500_BMK;
+}
 
 // Whether to show each MA for a given range
 const SHOW_MA50:  Record<PriceRange, boolean> = { "1D": false, "5D": false, "1M": false, "6M": true,  "YTD": true, "1Y": true, "5Y": true, "10Y": true };
@@ -59,9 +91,10 @@ function fmtVol(v: number | null): string {
 }
 
 // ── Custom Tooltip ─────────────────────────────────────────────────────────────
-function ChartTooltip({ active, payload, benchmarkOn }: {
+function ChartTooltip({ active, payload, benchmarkOn, benchmarkLabel }: {
   active?: boolean;
   benchmarkOn?: boolean;
+  benchmarkLabel?: string;
   payload?: { name: string; value: number | null; color?: string; payload: { date: string; price: number; volume: number | null; priceNorm?: number; spyNorm?: number } }[];
 }) {
   if (!active || !payload?.length) return null;
@@ -94,8 +127,8 @@ function ChartTooltip({ active, payload, benchmarkOn }: {
         </div>
       )}
       {benchmarkOn && spyRow?.value != null && (
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 16, color: SPY_CLR, marginTop: 3 }}>
-          <span>S&amp;P 500</span><span>{spyRow.value.toFixed(1)}</span>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 16, color: BMK_CLR, marginTop: 3 }}>
+          <span>{benchmarkLabel ?? "Benchmark"}</span><span>{spyRow.value.toFixed(1)}</span>
         </div>
       )}
       {ma50Row?.value != null && (
@@ -151,6 +184,12 @@ export default function StockPriceChart({ ticker }: Props) {
   const [showBenchmark, setShowBenchmark] = useState(false);
   const [spyPoints, setSpyPoints]   = useState<PricePoint[]>([]);
 
+  // Derive benchmark ticker + label from the stock ticker's exchange suffix
+  const benchmark = getBenchmarkForTicker(ticker);
+
+  // Reset benchmark visibility when ticker changes (different exchange = different benchmark)
+  useEffect(() => { setShowBenchmark(false); }, [ticker]);
+
   useEffect(() => {
     if (!ticker) return;
     setLoading(true);
@@ -164,16 +203,16 @@ export default function StockPriceChart({ ticker }: Props) {
       .finally(() => setLoading(false));
   }, [ticker, range]);
 
-  // Fetch SPY whenever benchmark is toggled on or range changes
+  // Fetch benchmark ETF whenever benchmark is toggled on, ticker or range changes
   useEffect(() => {
     if (!showBenchmark) { setSpyPoints([]); return; }
     const ctrl = new AbortController();
-    fetch(`/api/price-history/SPY?range=${range}`, { signal: ctrl.signal })
+    fetch(`/api/price-history/${encodeURIComponent(benchmark.ticker)}?range=${range}`, { signal: ctrl.signal })
       .then(r => r.json())
       .then((d: PriceHistoryData) => setSpyPoints(d.points ?? []))
       .catch(() => setSpyPoints([]));
     return () => ctrl.abort();
-  }, [showBenchmark, range]);
+  }, [showBenchmark, benchmark.ticker, range]);
 
   const points = data?.points ?? [];
   const showMA50  = SHOW_MA50[range];
@@ -249,7 +288,7 @@ export default function StockPriceChart({ ticker }: Props) {
             {r}
           </button>
         ))}
-        {/* S&P 500 benchmark toggle */}
+        {/* Smart benchmark toggle — label derived from ticker exchange */}
         <button
           onClick={() => setShowBenchmark(b => !b)}
           style={{
@@ -258,14 +297,14 @@ export default function StockPriceChart({ ticker }: Props) {
             fontSize: "0.75em",
             fontWeight: showBenchmark ? 700 : 500,
             borderRadius: 6,
-            border: `1px solid ${showBenchmark ? SPY_CLR : "#d1d5db"}`,
-            background: showBenchmark ? SPY_CLR : "#fff",
+            border: `1px solid ${showBenchmark ? BMK_CLR : "#d1d5db"}`,
+            background: showBenchmark ? BMK_CLR : "#fff",
             color: showBenchmark ? "#fff" : "var(--gv-text-muted)",
             cursor: "pointer",
             transition: "all 0.15s",
           }}
         >
-          vs S&amp;P 500
+          vs {benchmark.label}
         </button>
       </div>
 
@@ -286,8 +325,8 @@ export default function StockPriceChart({ ticker }: Props) {
           )}
           {showBenchmark && (
             <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-              <svg width="22" height="8"><line x1="0" y1="4" x2="22" y2="4" stroke={SPY_CLR} strokeWidth="2" /></svg>
-              <span style={{ color: SPY_CLR, fontWeight: 600 }}>S&amp;P 500 (indexed)</span>
+              <svg width="22" height="8"><line x1="0" y1="4" x2="22" y2="4" stroke={BMK_CLR} strokeWidth="2" /></svg>
+              <span style={{ color: BMK_CLR, fontWeight: 600 }}>{benchmark.label} (indexed)</span>
             </div>
           )}
         </div>
@@ -347,7 +386,7 @@ export default function StockPriceChart({ ticker }: Props) {
               width={42}
             />
 
-            <Tooltip content={<ChartTooltip benchmarkOn={showBenchmark} />} />
+            <Tooltip content={<ChartTooltip benchmarkOn={showBenchmark} benchmarkLabel={benchmark.label} />} />
 
             {/* Volume bars — hidden in benchmark mode */}
             {!showBenchmark && (
@@ -379,10 +418,10 @@ export default function StockPriceChart({ ticker }: Props) {
                 yAxisId="price"
                 type="monotone"
                 dataKey="spyNorm"
-                stroke={SPY_CLR}
+                stroke={BMK_CLR}
                 strokeWidth={2}
                 dot={false}
-                activeDot={{ r: 3, fill: SPY_CLR }}
+                activeDot={{ r: 3, fill: BMK_CLR }}
                 connectNulls
               />
             )}

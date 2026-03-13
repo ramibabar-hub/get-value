@@ -3,3 +3,184 @@
 
 /* Class-based dark mode: apply dark: styles when .dark is on any ancestor */
 @variant dark (&:where(.dark, .dark *));
+
+/* ── Global base ─────────────────────────────────────────────────────────── */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  font-family: var(--gv-font);
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--gv-text);
+  background: var(--gv-bg);
+  transition:
+    background-color 0.2s ease,
+    color 0.2s ease;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+/* ── Typography refinements ──────────────────────────────────────────────── */
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--gv-font);
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+/* ── Scrollbar — refined, minimal ────────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--gv-border-dark);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--gv-text-muted);
+}
+
+/* ── Focus ring — accessible, on-brand ───────────────────────────────────── */
+:focus-visible {
+  outline: 2px solid var(--gv-blue);
+  outline-offset: 2px;
+  border-radius: var(--gv-radius-sm);
+}
+
+/* ── Selection ───────────────────────────────────────────────────────────── */
+::selection {
+  background: color-mix(in srgb, var(--gv-blue) 20%, transparent);
+  color: var(--gv-text);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   DARK MODE OVERRIDES
+   These override hardcoded inline-style colors that can't use CSS vars.
+   Strategy:
+   · Table th/td backgrounds use !important to beat inline styles
+   · div[style*="var(--gv-navy)"] catches NAVY background sections
+   · nth-child handles alternating table row colors
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Table structure ─────────────────────────────────────────────────────── */
+[data-theme="dark"] table th {
+  background: #1a2640 !important;
+  color: #e8edf4 !important;
+  border-color: #253352 !important;
+}
+
+/* Alternating table body rows */
+[data-theme="dark"] table tbody tr:nth-child(odd) td {
+  background: var(--gv-surface) !important;
+  border-color: var(--gv-border) !important;
+}
+[data-theme="dark"] table tbody tr:nth-child(even) td {
+  background: var(--gv-surface-alt) !important;
+  border-color: var(--gv-border) !important;
+}
+
+/* Data/formula/editable cells */
+[data-theme="dark"] table tbody tr td[style*="background: var(--gv-green-bg)"],
+[data-theme="dark"] table tbody tr td[style*="background: var(--gv-red-bg)"],
+[data-theme="dark"] table tbody tr td[style*="background: var(--gv-yellow-bg)"],
+[data-theme="dark"] table tbody tr td[style*="background: var(--gv-data-bg)"] {
+  /* These use CSS vars so they adapt automatically */
+}
+
+/* ── Section header bars (divs with background: NAVY / var(--gv-navy)) ───── */
+[data-theme="dark"] div[style*="background: var(--gv-navy)"] {
+  background: #1a2640 !important;
+  color: #e8edf4 !important;
+}
+
+/* ── Inline yellow slider panels ────────────────────────────────────────── */
+[data-theme="dark"] div[style*="background: #fffbeb"],
+[data-theme="dark"] div[style*="background: rgb(255, 251, 235)"] {
+  background: var(--gv-yellow-bg) !important;
+  border-color: color-mix(in srgb, var(--gv-yellow-fg) 30%, transparent) !important;
+}
+
+/* ── CAGR / stat pill boxes ──────────────────────────────────────────────── */
+[data-theme="dark"] div[style*="background: var(--gv-data-bg)"] {
+  /* Automatically adapts via CSS var */
+}
+
+/* ── Inline white surfaces (search bar, popovers, cards) ─────────────────── */
+[data-theme="dark"] .gv-white-surface {
+  background: var(--gv-surface) !important;
+  border-color: var(--gv-border) !important;
+}
+
+/* ── Company logo placeholder background ──────────────────────────────────── */
+[data-theme="dark"] div[style*="background: #eef1f6"] {
+  background: var(--gv-surface-alt) !important;
+}
+
+/* ── Input elements ──────────────────────────────────────────────────────── */
+[data-theme="dark"] input:not([type="range"]):not([type="checkbox"]):not([type="radio"]) {
+  background: var(--gv-surface) !important;
+  color: var(--gv-text) !important;
+  border-color: var(--gv-border) !important;
+}
+
+/* ── Description skeleton shimmer ────────────────────────────────────────── */
+[data-theme="dark"] .ds {
+  background: linear-gradient(
+    90deg,
+    var(--gv-surface) 25%,
+    var(--gv-surface-alt) 50%,
+    var(--gv-surface) 75%
+  ) !important;
+  background-size: 200% 100% !important;
+}
+
+/* ── Global text color for elements not using CSS vars ────────────────────── */
+[data-theme="dark"] div[style*="color: #0d1b2a"],
+[data-theme="dark"] div[style*="color: #111827"],
+[data-theme="dark"] span[style*="color: #0d1b2a"] {
+  color: var(--gv-text) !important;
+}
+
+/* ── Chart wrappers ──────────────────────────────────────────────────────── */
+[data-theme="dark"] div[style*="background: #f8fafc"] {
+  background: var(--gv-surface) !important;
+}
+[data-theme="dark"] div[style*="background: #f0f2f5"] {
+  background: var(--gv-surface-alt) !important;
+}
+
+/* ── Link colors in dark mode ────────────────────────────────────────────── */
+[data-theme="dark"] a {
+  color: var(--gv-blue);
+}
+
+/* ── Dropdown / search result kbd chips ─────────────────────────────────── */
+[data-theme="dark"] kbd {
+  background: var(--gv-surface-alt) !important;
+  border-color: var(--gv-border) !important;
+  color: var(--gv-text-muted) !important;
+}
+
+/* ── Smooth theme transitions ─────────────────────────────────────────────── */
+[data-theme="dark"] * {
+  transition:
+    background-color 0.2s ease,
+    border-color 0.2s ease,
+    color 0.2s ease,
+    box-shadow 0.2s ease;
+}

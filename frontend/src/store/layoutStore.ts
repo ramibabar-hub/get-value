@@ -35,6 +35,15 @@ interface LayoutState {
   toggleFinancialsSection:  (id: string)    => void;
   toggleInsightGroup:       (title: string) => void;
   resetCustomization:       ()              => void;
+
+  // Per-table row visibility — key = table title, value = hidden row labels
+  // undefined key  → never customized (defaults will be seeded by table component)
+  // empty array [] → user explicitly chose "Show all"
+  hiddenTableRows:  Record<string, string[]>;
+  toggleTableRow:   (tableId: string, rowLabel: string) => void;
+  resetTableRows:   (tableId?: string)                  => void;
+  // Seeds default-hidden rows for a table on first visit (no-op if already set)
+  initTableRows:    (tableId: string, defaultHidden: string[]) => void;
 }
 
 export const useLayoutStore = create<LayoutState>()(
@@ -74,10 +83,37 @@ export const useLayoutStore = create<LayoutState>()(
         })),
 
       resetCustomization: () =>
-        set({ hiddenFinancialsSections: [], hiddenInsightGroups: [] }),
+        set({ hiddenFinancialsSections: [], hiddenInsightGroups: [], hiddenTableRows: {} }),
+
+      // Per-table row visibility
+      hiddenTableRows: {},
+
+      toggleTableRow: (tableId, rowLabel) =>
+        set((state) => {
+          const current = state.hiddenTableRows[tableId] ?? [];
+          const updated  = current.includes(rowLabel)
+            ? current.filter(r => r !== rowLabel)
+            : [...current, rowLabel];
+          return { hiddenTableRows: { ...state.hiddenTableRows, [tableId]: updated } };
+        }),
+
+      resetTableRows: (tableId?) =>
+        set((state) => {
+          if (!tableId) return { hiddenTableRows: {} };
+          // Set to [] (not delete) so initTableRows won't re-seed after a manual "Show all"
+          return { hiddenTableRows: { ...state.hiddenTableRows, [tableId]: [] } };
+        }),
+
+      initTableRows: (tableId, defaultHidden) =>
+        set((state) => {
+          // Only seed if the table has never been customized (key is absent)
+          if (state.hiddenTableRows[tableId] !== undefined) return state;
+          if (defaultHidden.length === 0) return state;
+          return { hiddenTableRows: { ...state.hiddenTableRows, [tableId]: defaultHidden } };
+        }),
     }),
     {
-      name: "gv_layout_v3",
+      name: "gv_layout_v4",
     }
   )
 );

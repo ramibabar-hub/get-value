@@ -511,6 +511,7 @@ def overview(ticker: str):
         "country":          ov.get("country", ""),
         "flag":             agent.get_flag(),
         "description":      ov.get("description", ""),
+        "website":          ov.get("website", ""),
         "price":            price,
         "price_change_pct": chg,
         "data_source":      ov.get("_source", "unknown"),
@@ -1076,12 +1077,16 @@ class _CfIrrPdfBody(BaseModel):
     # Computed results (from React's live FinalOutput derivation)
     price_now:    float | None
     avg_target:   float | None
+    ebitda_price: float | None = None
+    fcf_price:    float | None = None
     fair_value:   float | None
     buy_price:    float | None
     on_sale:      bool | None
     irr:          float | None
     # Checklist items as {label, threshold, display, passed, value}
     checklist:    list[dict[str, Any]]
+    # IRR sensitivity matrix (frontend-computed)
+    irr_sensitivity: dict[str, Any] = {}
 
 
 @app.post("/api/cf-irr/{ticker}/pdf", summary="Download CF+IRR One-Pager PDF", tags=["Valuation"])
@@ -1148,6 +1153,31 @@ def cf_irr_pdf(ticker: str, body: _CfIrrPdfBody):
         ("Upside (vs Buy Price)",  _fmt_delta(body.buy_price,  body.price_now), None),
     ]
 
+    # Build IRR Cash Flow Schedule rows from the (frontend-adjusted) fcf_forecast
+    irr_schedule_rows = []
+    fcf_fc = body.fcf_forecast or []
+    last_idx = len(fcf_fc) - 1
+    for i, row in enumerate(fcf_fc):
+        is_first = (i == 0)
+        is_last  = (i == last_idx)
+        fcfs = row.get("Est. Adj. FCF/s") or 0
+        price_col = (
+            f"({body.price_now:,.2f})" if is_first and body.price_now is not None else
+            f"{body.avg_target:,.2f}"  if is_last  and body.avg_target is not None else
+            ""
+        )
+        total_cf = (
+            fcfs - body.price_now if is_first and body.price_now is not None else
+            fcfs + body.avg_target if is_last  and body.avg_target is not None else
+            fcfs
+        )
+        irr_schedule_rows.append([
+            row.get("Year", ""),
+            price_col,
+            f"{fcfs:,.2f}",
+            f"{total_cf:,.2f}",
+        ])
+
     try:
         pdf_bytes = generate_cfirr_pdf(
             ticker            = ticker,
@@ -1170,10 +1200,14 @@ def cf_irr_pdf(ticker: str, body: _CfIrrPdfBody):
             final_rows        = final_rows,
             price_now         = body.price_now,
             avg_target_ss     = body.avg_target,
+            ebitda_price      = body.ebitda_price,
+            fcf_price         = body.fcf_price,
             irr_val           = body.irr,
             fair_value_now    = body.fair_value,
             buy_price_now     = body.buy_price,
             on_sale_now       = body.on_sale,
+            irr_schedule_rows = irr_schedule_rows,
+            irr_sensitivity   = body.irr_sensitivity,
         )
         return Response(
             content=pdf_bytes,      # already bytes from pdf_service

@@ -1,44 +1,118 @@
-/* getValue Design Tokens — single source of truth for all colours/spacing */
-:root {
-  /* Brand */
-  --gv-navy:        #1c2b46;
-  --gv-blue:        #007bff;
+/* getValue Design Tokens — single source of truth for all colours/spacing
+ *
+ * Aesthetic: Refined Private Terminal — warm precision, quiet luxury.
+ * Font: Plus Jakarta Sans (loaded via index.html)
+ * Dark mode: attribute selector [data-theme="dark"] on <html>
+ */
 
-  /* Surfaces */
-  --gv-bg:          #f8f9fa;
+/* ── Light mode (default) ─────────────────────────────────────────────────── */
+:root {
+  color-scheme: light;
+
+  /* Brand */
+  --gv-navy:        #0f1e35;
+  --gv-blue:        #0057cc;
+  --gv-accent:      #b8975a;   /* warm gold — used sparingly for premium cues */
+
+  /* Surfaces — warm parchment hierarchy */
+  --gv-bg:          #f4f3ef;   /* warm ivory page background */
   --gv-surface:     #ffffff;
+  --gv-surface-alt: #faf9f6;   /* slight cream for alternating rows */
+  --gv-surface-raised: #ffffff;
 
   /* Text */
-  --gv-text:        #111827;
-  --gv-text-muted:  #6b7280;
-  --gv-text-dim:    #4d6b88;
+  --gv-text:        #0f1e35;
+  --gv-text-secondary: #2d3f55;
+  --gv-text-muted:  #7b8899;
+  --gv-text-dim:    #b0bfce;
 
-  /* Borders */
-  --gv-border:      #e5e7eb;
-  --gv-border-dark: #d0d8e8;
+  /* Borders — warm, subtle */
+  --gv-border:      #e6e2d9;
+  --gv-border-dark: #cdc9c0;
 
   /* Semantic: positive */
-  --gv-green:       #065f46;
-  --gv-green-bg:    #d1fae5;
-  --gv-green-mid:   #86efac;
+  --gv-green:       #166534;
+  --gv-green-bg:    #e7f6ed;
+  --gv-green-mid:   #86c9a4;
 
   /* Semantic: negative */
-  --gv-red:         #991b1b;
-  --gv-red-bg:      #fee2e2;
-  --gv-red-mid:     #fca5a5;
+  --gv-red:         #b91c1c;
+  --gv-red-bg:      #fdf0f0;
+  --gv-red-mid:     #f0a090;
 
   /* Semantic: warning */
-  --gv-yellow-bg:   #fef9c3;
-  --gv-yellow-fg:   #78350f;
+  --gv-yellow-bg:   #fffaeb;
+  --gv-yellow-fg:   #92400e;
 
   /* Data cell types */
-  --gv-data-bg:     #f3f4f6;
+  --gv-data-bg:     #f0efeb;
   --gv-data-fg:     #374151;
 
   /* Spacing & shape */
-  --gv-radius:      8px;
-  --gv-radius-sm:   4px;
+  --gv-radius:      6px;
+  --gv-radius-sm:   3px;
+  --gv-radius-lg:   10px;
 
   /* Typography */
+  --gv-font:        "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
   --gv-font-mono:   "JetBrains Mono", "Fira Mono", monospace;
+
+  /* Elevation */
+  --gv-shadow-sm:   0 1px 3px rgba(15, 30, 53, 0.05), 0 1px 2px rgba(15, 30, 53, 0.04);
+  --gv-shadow:      0 2px 8px rgba(15, 30, 53, 0.08), 0 1px 4px rgba(15, 30, 53, 0.05);
+  --gv-shadow-lg:   0 8px 32px rgba(15, 30, 53, 0.12);
+  --gv-shadow-nav:  0 1px 6px rgba(15, 30, 53, 0.07);
+
+  /* Transitions */
+  --gv-transition:  0.15s ease;
+}
+
+/* ── Dark mode ────────────────────────────────────────────────────────────── */
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  /* Brand — navy becomes a pale blue-gray for readability on dark bg */
+  --gv-navy:        #c8d8ec;
+  --gv-blue:        #4d94e8;
+  --gv-accent:      #c9a86c;
+
+  /* Surfaces */
+  --gv-bg:          #0d1117;
+  --gv-surface:     #161b22;
+  --gv-surface-alt: #1c2330;
+  --gv-surface-raised: #1f2937;
+
+  /* Text */
+  --gv-text:        #dde4ef;
+  --gv-text-secondary: #a8b8cc;
+  --gv-text-muted:  #6e7d8f;
+  --gv-text-dim:    #3f4f62;
+
+  /* Borders */
+  --gv-border:      #21262d;
+  --gv-border-dark: #30363d;
+
+  /* Semantic: positive */
+  --gv-green:       #3fb56a;
+  --gv-green-bg:    #0f2618;
+  --gv-green-mid:   #235c35;
+
+  /* Semantic: negative */
+  --gv-red:         #e36054;
+  --gv-red-bg:      #2b1618;
+  --gv-red-mid:     #7a2828;
+
+  /* Semantic: warning */
+  --gv-yellow-bg:   #25200f;
+  --gv-yellow-fg:   #d4a843;
+
+  /* Data cell types */
+  --gv-data-bg:     #1c2330;
+  --gv-data-fg:     #a8b8cc;
+
+  /* Elevation */
+  --gv-shadow-sm:   0 1px 3px rgba(0, 0, 0, 0.3);
+  --gv-shadow:      0 2px 8px rgba(0, 0, 0, 0.4);
+  --gv-shadow-lg:   0 8px 32px rgba(0, 0, 0, 0.55);
+  --gv-shadow-nav:  0 1px 6px rgba(0, 0, 0, 0.4);
 }

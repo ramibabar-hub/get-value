@@ -9,7 +9,7 @@
  * Period column headers show a hover ExternalLink icon when a filing URL
  * is available in the `filingLinks` prop.
  */
-import { memo, useState, useMemo, Fragment } from "react";
+import { memo, useState, useMemo, Fragment, useEffect } from "react";
 import { ExternalLink } from "lucide-react";
 import type {
   FinancialsData, FinancialRow, FinancialsExtendedData, ExtRow, FmtType, Scale, Period,
@@ -18,11 +18,15 @@ import { IndustryComparisonCell } from "./IndustryComparisonCell";
 import { lookupBenchmark } from "../utils/industryBenchmarks";
 import { TableToolbar, ExpandOverlay } from "./TableToolbar";
 import MetricsCatalogModal from "./MetricsCatalogModal";
+import TableRowCustomizer from "./TableRowCustomizer";
 import { useLayoutStore } from "../store/layoutStore";
+import { getDefaultHiddenRows } from "../constants/financialsRegistry";
 
 const NAVY    = "var(--gv-navy)";
 const PERIODS: Period[] = ["annual", "quarterly"];
 const SCALES:  Scale[]  = ["K", "MM", "B"];
+const DECIMALS_OPTIONS = ["0", "1", "2"] as const;
+type DecimalsOpt = typeof DECIMALS_OPTIONS[number];
 const EPS_LABELS = new Set(["eps", "epsdiluted", "noi/sh", "ffo/sh"]);
 
 // ── Formatters ────────────────────────────────────────────────────────────────
@@ -35,17 +39,18 @@ function fCell(
   v: number | string | null | undefined,
   label: string,
   scale: Scale,
+  decimals = 1,
 ): { text: string; negative: boolean } {
   if (v == null || v === "") return { text: "—", negative: false };
   if (typeof v === "string")  return { text: v,  negative: false };
   if (!isFinite(v))           return { text: "—", negative: false };
   const neg = v < 0;
   if (isEps(label)) {
-    return { text: `$${Math.abs(v).toFixed(2)}`, negative: neg };
+    return { text: `$${Math.abs(v).toFixed(Math.max(decimals, 2))}`, negative: neg };
   }
   const div = scale === "K" ? 1e3 : scale === "MM" ? 1e6 : 1e9;
   const abs  = Math.abs(v) / div;
-  const text = abs.toLocaleString("en-US", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+  const text = abs.toLocaleString("en-US", { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
   return { text: neg ? `(${text})` : text, negative: neg };
 }
 
@@ -53,6 +58,7 @@ function fExtCell(
   v: number | string | null | undefined,
   fmt: FmtType,
   scale: Scale,
+  decimals = 1,
 ): { text: string; negative: boolean } {
   if (v == null || v === "") return { text: "—", negative: false };
   if (typeof v === "string") return { text: v,   negative: false };
@@ -64,30 +70,30 @@ function fExtCell(
     case "money": {
       const div = scale === "K" ? 1e3 : scale === "MM" ? 1e6 : 1e9;
       const scaled = abs / div;
-      text = scaled.toLocaleString("en-US", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+      text = scaled.toLocaleString("en-US", { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
       text = neg ? `(${text})` : text;
       break;
     }
     case "pct":
-      text = `${(v * 100).toFixed(1)}%`;
+      text = `${(v * 100).toFixed(decimals)}%`;
       break;
     case "days":
-      text = abs.toFixed(1);
+      text = abs.toFixed(decimals);
       if (neg) text = `(${text})`;
       break;
     case "int":
       text = Math.round(v).toString();
       break;
     default: // ratio
-      text = abs.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      text = abs.toLocaleString("en-US", { minimumFractionDigits: Math.max(decimals, 2), maximumFractionDigits: Math.max(decimals, 2) });
       if (neg) text = `(${text})`;
   }
   return { text, negative: neg };
 }
 
 // ── Formats an ExtRow value for use as label inside IndustryComparisonCell ────
-function fExtLabel(v: number, fmt: FmtType, scale: Scale): string {
-  return fExtCell(v, fmt, scale).text;
+function fExtLabel(v: number, fmt: FmtType, scale: Scale, decimals = 1): string {
+  return fExtCell(v, fmt, scale, decimals).text;
 }
 
 // ── Chart helpers ─────────────────────────────────────────────────────────────
@@ -297,30 +303,55 @@ function generateSECLink(ticker: string, col: string): string | null {
 // ── Core financial table (IS/BS/CF/Debt) ──────────────────────────────────────
 
 const FinTable = memo(function FinTable({
-  title, columns, rows, scale, ticker, filingLinks,
+  title, columns, allColumns, rows, scale, ticker, filingLinks, decimals, showChangePct,
 }: {
-  title:         string;
-  columns:       string[];
-  rows:          FinancialRow[];
-  scale:         Scale;
-  ticker:        string;
-  filingLinks?:  Record<string, string>;
+  title:          string;
+  columns:        string[];   // display order (may be reversed)
+  allColumns:     string[];   // original order — used for Δ% prev-period lookup
+  rows:           FinancialRow[];
+  scale:          Scale;
+  ticker:         string;
+  filingLinks?:   Record<string, string>;
+  decimals:       number;
+  showChangePct:  boolean;
 }) {
   const [openRow,      setOpenRow]      = useState<string | null>(null);
   const [search,       setSearch]       = useState("");
   const [searchActive, setSearchActive] = useState(false);
   const [expanded,     setExpanded]     = useState(false);
 
+  const { hiddenTableRows, initTableRows } = useLayoutStore();
+
+  // Seed default-hidden rows on first visit (no-op if already customized)
+  useEffect(() => {
+    const defaults = getDefaultHiddenRows(title, rows.map(r => r.label));
+    initTableRows(title, defaults);
+  }, [title]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const hidden = hiddenTableRows[title] ?? [];
+  const visibleRows = rows.filter(r => !hidden.includes(r.label));
+
   const filteredRows = search
-    ? rows.filter(r => r.label.toLowerCase().includes(search.toLowerCase()))
-    : rows;
+    ? visibleRows.filter(r => r.label.toLowerCase().includes(search.toLowerCase()))
+    : visibleRows;
+
+  // Δ% helper: change of `col` vs previous period in original column order
+  function getChangePct(row: FinancialRow, col: string): number | null {
+    const idx = allColumns.indexOf(col);
+    if (idx <= 0) return null;
+    const prevCol = allColumns[idx - 1];
+    const curr = row[col]    as number | null;
+    const prev = row[prevCol] as number | null;
+    if (curr == null || prev == null || prev === 0 || !isFinite(curr) || !isFinite(prev)) return null;
+    return (curr - prev) / Math.abs(prev) * 100;
+  }
 
   function getExportData() {
     return {
       headers: ["Item", ...columns],
       rows:    filteredRows.map(row => [
         row.label,
-        ...columns.map(col => fCell(row[col] as number | null, row.label, scale).text),
+        ...columns.map(col => fCell(row[col] as number | null, row.label, scale, decimals).text),
       ]),
     };
   }
@@ -400,17 +431,23 @@ const FinTable = memo(function FinTable({
                     </div>
                   </td>
                   {columns.map((col) => {
-                    const { text, negative } = fCell(row[col] as number | null, row.label, scale);
+                    const { text, negative } = fCell(row[col] as number | null, row.label, scale, decimals);
+                    const chg = showChangePct ? getChangePct(row, col) : null;
                     return (
                       <td key={col} style={{
-                        padding: "7px 12px", border: "1px solid #e5e7eb",
+                        padding: "5px 12px", border: "1px solid #e5e7eb",
                         textAlign: "right", fontVariantNumeric: "tabular-nums",
                         fontFamily: "'Courier New', monospace",
                         color: negative ? "#dc2626" : NAVY,
                         fontWeight: col === "TTM" ? 700 : 400,
                         background: col === "TTM" ? "#eff6ff" : undefined,
                       }}>
-                        {text}
+                        <div>{text}</div>
+                        {chg != null && (
+                          <div style={{ fontSize: "0.72em", color: chg >= 0 ? "#10b981" : "#ef4444", fontWeight: 500 }}>
+                            {chg >= 0 ? "+" : ""}{chg.toFixed(1)}%
+                          </div>
+                        )}
                       </td>
                     );
                   })}
@@ -441,8 +478,9 @@ const FinTable = memo(function FinTable({
 
   return (
     <div style={{ marginBottom: 28 }}>
-      <div style={{ fontSize: "1.05em", fontWeight: "bold", color: "#fff", background: NAVY, padding: "6px 15px", borderRadius: 4, marginBottom: 6 }}>
-        {title}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: NAVY, padding: "6px 15px", borderRadius: 4, marginBottom: 6 }}>
+        <span style={{ fontSize: "1.05em", fontWeight: "bold", color: "#fff" }}>{title}</span>
+        <TableRowCustomizer tableId={title} allRows={rows.map(r => r.label)} />
       </div>
       {toolbar}
       {tableEl}
@@ -453,23 +491,37 @@ const FinTable = memo(function FinTable({
 // ── Extended metric table (Market & Val, Cap Structure, etc.) ─────────────────
 
 const ExtTable = memo(function ExtTable({
-  title, columns, rows, scale, ticker, filingLinks,
+  title, columns, allColumns, rows, scale, ticker, filingLinks, decimals, showChangePct,
 }: {
-  title:        string;
-  columns:      string[];
-  rows:         ExtRow[];
-  scale:        Scale;
-  ticker:       string;
-  filingLinks?: Record<string, string>;
+  title:         string;
+  columns:       string[];
+  allColumns:    string[];
+  rows:          ExtRow[];
+  scale:         Scale;
+  ticker:        string;
+  filingLinks?:  Record<string, string>;
+  decimals:      number;
+  showChangePct: boolean;
 }) {
   const [openRow,      setOpenRow]      = useState<number | null>(null);
   const [search,       setSearch]       = useState("");
   const [searchActive, setSearchActive] = useState(false);
   const [expanded,     setExpanded]     = useState(false);
 
+  const { hiddenTableRows, initTableRows } = useLayoutStore();
+
+  // Seed default-hidden rows on first visit (no-op if already customized)
+  useEffect(() => {
+    const defaults = getDefaultHiddenRows(title, rows.map(r => r.label));
+    initTableRows(title, defaults);
+  }, [title]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const hidden = hiddenTableRows[title] ?? [];
+  const visibleRows = rows.filter(r => !hidden.includes(r.label));
+
   const filteredRows = search
-    ? rows.filter(r => r.label.toLowerCase().includes(search.toLowerCase()))
-    : rows;
+    ? visibleRows.filter(r => r.label.toLowerCase().includes(search.toLowerCase()))
+    : visibleRows;
 
   // Only show Vs. Industry column when the table has at least one comparable row
   const hasBenchmark = useMemo(() => rows.some(row => {
@@ -481,12 +533,22 @@ const ExtTable = memo(function ExtTable({
   // Total columns for chart colSpan: label + data cols + (optional benchmark col)
   const totalSpan = columns.length + 1 + (hasBenchmark ? 1 : 0);
 
+  function getChangePct(row: ExtRow, col: string): number | null {
+    const idx = allColumns.indexOf(col);
+    if (idx <= 0) return null;
+    const prevCol = allColumns[idx - 1];
+    const curr = row[col]     as number | null;
+    const prev = row[prevCol]  as number | null;
+    if (curr == null || prev == null || prev === 0 || !isFinite(curr) || !isFinite(prev)) return null;
+    return (curr - prev) / Math.abs(prev) * 100;
+  }
+
   function getExportData() {
     return {
       headers: ["Metric", ...columns],
       rows:    filteredRows.map(row => [
         row.label,
-        ...columns.map(col => fExtCell(row[col] as number | string | null, row.fmt as FmtType, scale).text),
+        ...columns.map(col => fExtCell(row[col] as number | string | null, row.fmt as FmtType, scale, decimals).text),
       ]),
     };
   }
@@ -586,17 +648,24 @@ const ExtTable = memo(function ExtTable({
                       row[col] as number | string | null,
                       fmt,
                       scale,
+                      decimals,
                     );
+                    const chg = showChangePct && fmt !== "pct" ? getChangePct(row, col) : null;
                     return (
                       <td key={col} style={{
-                        padding: "7px 12px", border: "1px solid #e5e7eb",
+                        padding: "5px 12px", border: "1px solid #e5e7eb",
                         textAlign: "right", fontVariantNumeric: "tabular-nums",
                         fontFamily: "'Courier New', monospace",
                         color: negative ? "#dc2626" : NAVY,
                         fontWeight: col === "TTM" ? 700 : 400,
                         background: col === "TTM" ? "#eff6ff" : undefined,
                       }}>
-                        {text}
+                        <div>{text}</div>
+                        {chg != null && (
+                          <div style={{ fontSize: "0.72em", color: chg >= 0 ? "#10b981" : "#ef4444", fontWeight: 500 }}>
+                            {chg >= 0 ? "+" : ""}{chg.toFixed(1)}%
+                          </div>
+                        )}
                       </td>
                     );
                   })}
@@ -613,7 +682,7 @@ const ExtTable = memo(function ExtTable({
                           industryAvg={benchmark!.avg}
                           metricName={row.label}
                           higherIsBetter={benchmark!.higherIsBetter}
-                          formatValue={(v) => fExtLabel(v, fmt, scale)}
+                          formatValue={(v) => fExtLabel(v, fmt, scale, decimals)}
                         />
                       ) : (
                         <span style={{ color: "#d1d5db", fontSize: "0.75em", paddingLeft: 4 }}>—</span>
@@ -647,8 +716,9 @@ const ExtTable = memo(function ExtTable({
 
   return (
     <div style={{ marginBottom: 28 }}>
-      <div style={{ fontSize: "1.05em", fontWeight: "bold", color: "#fff", background: NAVY, padding: "6px 15px", borderRadius: 4, marginBottom: 6 }}>
-        {title}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: NAVY, padding: "6px 15px", borderRadius: 4, marginBottom: 6 }}>
+        <span style={{ fontSize: "1.05em", fontWeight: "bold", color: "#fff" }}>{title}</span>
+        <TableRowCustomizer tableId={title} allRows={rows.map(r => r.label)} />
       </div>
       {toolbar}
       {tableEl}
@@ -692,8 +762,16 @@ export default function FinancialsTab({
   ticker, data, loading, extData, extLoading, period, scale, onPeriodChange, onScaleChange,
   filingLinks,
 }: FinancialsTabProps) {
-  const [showCatalog, setShowCatalog] = useState(false);
+  const [showCatalog,    setShowCatalog]    = useState(false);
+  const [decimals,       setDecimals]       = useState<DecimalsOpt>("0");
+  const [showChangePct,  setShowChangePct]  = useState(false);
+  const [reverseCols,    setReverseCols]    = useState(false);
   const { hiddenFinancialsSections } = useLayoutStore();
+
+  // Derive display column order — optionally reversed
+  const finColumns    = data     ? (reverseCols ? [...data.columns].reverse()    : data.columns)    : [];
+  const extColumns    = extData  ? (reverseCols ? [...extData.columns].reverse() : extData.columns) : [];
+  const decNum        = Number(decimals);
 
   return (
     <div>
@@ -722,6 +800,48 @@ export default function FinancialsTab({
           value={scale}
           onChange={onScaleChange}
         />
+        <RadioGroup<DecimalsOpt>
+          label="Decimals"
+          options={DECIMALS_OPTIONS}
+          value={decimals}
+          onChange={setDecimals}
+        />
+        {/* Change% toggle */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ fontSize: "0.78em", fontWeight: 700, color: "var(--gv-text-muted)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+            Δ%
+          </span>
+          <button
+            onClick={() => setShowChangePct(v => !v)}
+            style={{
+              padding: "4px 12px", border: `1px solid ${showChangePct ? NAVY : "#d1d5db"}`,
+              borderRadius: 4, background: showChangePct ? NAVY : "#fff",
+              color: showChangePct ? "#fff" : "var(--gv-data-fg)",
+              fontWeight: showChangePct ? 700 : 500, fontSize: "0.82em",
+              cursor: "pointer", fontFamily: "inherit", transition: "all 0.12s",
+            }}
+          >
+            {showChangePct ? "On" : "Off"}
+          </button>
+        </div>
+        {/* Reverse dates toggle */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ fontSize: "0.78em", fontWeight: 700, color: "var(--gv-text-muted)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+            Dates
+          </span>
+          <button
+            onClick={() => setReverseCols(v => !v)}
+            style={{
+              padding: "4px 12px", border: `1px solid ${reverseCols ? NAVY : "#d1d5db"}`,
+              borderRadius: 4, background: reverseCols ? NAVY : "#fff",
+              color: reverseCols ? "#fff" : "var(--gv-data-fg)",
+              fontWeight: reverseCols ? 700 : 500, fontSize: "0.82em",
+              cursor: "pointer", fontFamily: "inherit", transition: "all 0.12s",
+            }}
+          >
+            {reverseCols ? "Newest →" : "Oldest →"}
+          </button>
+        </div>
         {data ? (
           <span style={{ fontSize: "0.78em", color: "var(--gv-text-muted)", marginLeft: "auto" }}>
             Currency: <strong>{data.currency}</strong>
@@ -734,11 +854,11 @@ export default function FinancialsTab({
 
       {data && !loading ? (
         <>
-          <FinTable title="Income Statement" columns={data.columns} rows={data.income_statement} scale={scale} ticker={ticker} filingLinks={filingLinks} />
-          <FinTable title="Balance Sheet"    columns={data.columns} rows={data.balance_sheet}    scale={scale} ticker={ticker} filingLinks={filingLinks} />
-          <FinTable title="Cash Flow"        columns={data.columns} rows={data.cash_flow}        scale={scale} ticker={ticker} filingLinks={filingLinks} />
+          <FinTable title="Income Statement" columns={finColumns} allColumns={data.columns} rows={data.income_statement} scale={scale} ticker={ticker} filingLinks={filingLinks} decimals={decNum} showChangePct={showChangePct} />
+          <FinTable title="Balance Sheet"    columns={finColumns} allColumns={data.columns} rows={data.balance_sheet}    scale={scale} ticker={ticker} filingLinks={filingLinks} decimals={decNum} showChangePct={showChangePct} />
+          <FinTable title="Cash Flow"        columns={finColumns} allColumns={data.columns} rows={data.cash_flow}        scale={scale} ticker={ticker} filingLinks={filingLinks} decimals={decNum} showChangePct={showChangePct} />
           {data.debt && data.debt.length > 0 ? (
-            <FinTable title="Debt Schedule"  columns={data.columns} rows={data.debt}             scale={scale} ticker={ticker} filingLinks={filingLinks} />
+            <FinTable title="Debt Schedule"  columns={finColumns} allColumns={data.columns} rows={data.debt}             scale={scale} ticker={ticker} filingLinks={filingLinks} decimals={decNum} showChangePct={showChangePct} />
           ) : null}
         </>
       ) : null}
@@ -760,13 +880,13 @@ export default function FinancialsTab({
             </button>
           </div>
 
-          {!hiddenFinancialsSections.includes("market_valuation")  ? <ExtTable title="Market & Valuation"  columns={extData.columns} rows={extData.market_valuation}  scale={scale} ticker={ticker} filingLinks={filingLinks} /> : null}
-          {!hiddenFinancialsSections.includes("capital_structure") ? <ExtTable title="Capital Structure"   columns={extData.columns} rows={extData.capital_structure} scale={scale} ticker={ticker} filingLinks={filingLinks} /> : null}
-          {!hiddenFinancialsSections.includes("profitability")     ? <ExtTable title="Profitability"       columns={extData.columns} rows={extData.profitability}     scale={scale} ticker={ticker} filingLinks={filingLinks} /> : null}
-          {!hiddenFinancialsSections.includes("returns")           ? <ExtTable title="Returns"             columns={extData.columns} rows={extData.returns}           scale={scale} ticker={ticker} filingLinks={filingLinks} /> : null}
-          {!hiddenFinancialsSections.includes("liquidity")         ? <ExtTable title="Liquidity"           columns={extData.columns} rows={extData.liquidity}         scale={scale} ticker={ticker} filingLinks={filingLinks} /> : null}
-          {!hiddenFinancialsSections.includes("dividends")         ? <ExtTable title="Dividends"           columns={extData.columns} rows={extData.dividends}         scale={scale} ticker={ticker} filingLinks={filingLinks} /> : null}
-          {!hiddenFinancialsSections.includes("efficiency")        ? <ExtTable title="Efficiency"          columns={extData.columns} rows={extData.efficiency}        scale={scale} ticker={ticker} filingLinks={filingLinks} /> : null}
+          {!hiddenFinancialsSections.includes("market_valuation")  ? <ExtTable title="Market & Valuation"  columns={extColumns} allColumns={extData.columns} rows={extData.market_valuation}  scale={scale} ticker={ticker} filingLinks={filingLinks} decimals={decNum} showChangePct={showChangePct} /> : null}
+          {!hiddenFinancialsSections.includes("capital_structure") ? <ExtTable title="Capital Structure"   columns={extColumns} allColumns={extData.columns} rows={extData.capital_structure} scale={scale} ticker={ticker} filingLinks={filingLinks} decimals={decNum} showChangePct={showChangePct} /> : null}
+          {!hiddenFinancialsSections.includes("profitability")     ? <ExtTable title="Profitability"       columns={extColumns} allColumns={extData.columns} rows={extData.profitability}     scale={scale} ticker={ticker} filingLinks={filingLinks} decimals={decNum} showChangePct={showChangePct} /> : null}
+          {!hiddenFinancialsSections.includes("returns")           ? <ExtTable title="Returns"             columns={extColumns} allColumns={extData.columns} rows={extData.returns}           scale={scale} ticker={ticker} filingLinks={filingLinks} decimals={decNum} showChangePct={showChangePct} /> : null}
+          {!hiddenFinancialsSections.includes("liquidity")         ? <ExtTable title="Liquidity"           columns={extColumns} allColumns={extData.columns} rows={extData.liquidity}         scale={scale} ticker={ticker} filingLinks={filingLinks} decimals={decNum} showChangePct={showChangePct} /> : null}
+          {!hiddenFinancialsSections.includes("dividends")         ? <ExtTable title="Dividends"           columns={extColumns} allColumns={extData.columns} rows={extData.dividends}         scale={scale} ticker={ticker} filingLinks={filingLinks} decimals={decNum} showChangePct={showChangePct} /> : null}
+          {!hiddenFinancialsSections.includes("efficiency")        ? <ExtTable title="Efficiency"          columns={extColumns} allColumns={extData.columns} rows={extData.efficiency}        scale={scale} ticker={ticker} filingLinks={filingLinks} decimals={decNum} showChangePct={showChangePct} /> : null}
         </>
       ) : null}
 

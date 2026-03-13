@@ -14,6 +14,7 @@ import type { InsightsData, InsightsGroup, InsightsRow, WaccData } from "../type
 import { IndustryComparisonCell } from "./IndustryComparisonCell";
 import { lookupBenchmark } from "../utils/industryBenchmarks";
 import MetricsCatalogModal from "./MetricsCatalogModal";
+import TableRowCustomizer from "./TableRowCustomizer";
 import { useLayoutStore } from "../store/layoutStore";
 
 // ── Lazy chart import ─────────────────────────────────────────────────────────
@@ -250,11 +251,15 @@ const MetricRow = memo(function MetricRow({
 const GroupTable = memo(function GroupTable({ group }: { group: InsightsGroup }) {
   const isBar = isBarGroup(group);
 
+  const { hiddenTableRows } = useLayoutStore();
+  const hiddenRows  = hiddenTableRows[group.title] ?? [];
+  const visibleRows = group.rows.filter(r => !hiddenRows.includes(r.label));
+
   // Show the Vs. Industry column only for non-CAGR groups that have a TTM column
   // and at least one row with a known benchmark.
   const showBenchmarkCol = !isBar
     && group.cols.includes("TTM")
-    && group.rows.some(row => lookupBenchmark(row.label) !== null);
+    && visibleRows.some(row => lookupBenchmark(row.label) !== null);
 
   const totalCols = group.cols.length + 1 + (showBenchmarkCol ? 1 : 0);
 
@@ -272,10 +277,11 @@ const GroupTable = memo(function GroupTable({ group }: { group: InsightsGroup })
 
       {/* Section header */}
       <div style={{
-        fontSize: "1.05em", fontWeight: "bold", color: "#fff",
+        display: "flex", alignItems: "center", justifyContent: "space-between",
         background: NAVY, padding: "6px 15px", borderRadius: 4, marginBottom: 6,
       }}>
-        {group.title}
+        <span style={{ fontSize: "1.05em", fontWeight: "bold", color: "#fff" }}>{group.title}</span>
+        <TableRowCustomizer tableId={group.title} allRows={group.rows.map(r => r.label)} />
       </div>
 
       <div style={{ overflowX: "auto" }}>
@@ -294,7 +300,7 @@ const GroupTable = memo(function GroupTable({ group }: { group: InsightsGroup })
             </tr>
           </thead>
           <tbody>
-            {group.rows.map((row: InsightsRow, ri: number) => (
+            {visibleRows.map((row: InsightsRow, ri: number) => (
               <MetricRow
                 key={`${row.label}-${ri}`}
                 row={row}

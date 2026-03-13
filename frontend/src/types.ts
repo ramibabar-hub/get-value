@@ -113,6 +113,7 @@ export interface OverviewData {
   country: string;
   flag: string;           // emoji e.g. "🇺🇸"
   description: string;
+  website: string;
   price: number;
   price_change_pct: number;
   data_source: string;

@@ -28,6 +28,7 @@ import CompanyOwnershipChart    from "./CompanyOwnershipChart";
 import GrokSentimentBadge from "./GrokSentimentBadge";
 import AnalystConsensusBar from "./AnalystConsensusBar";
 import Valueground from "./Valueground";
+import DarkModeToggle from "./DarkModeToggle";
 
 // ── Palette ───────────────────────────────────────────────────────────────────
 const NAVY    = "var(--gv-navy)";
@@ -484,7 +485,7 @@ export default function StockDashboard({ ticker, onSearch }: StockDashboardProps
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div style={{ minHeight: "100vh", background: "var(--gv-surface)", fontFamily: "'Segoe UI', system-ui, -apple-system, sans-serif", color: NAVY }}>
+    <div style={{ minHeight: "100vh", background: "var(--gv-bg)", fontFamily: "var(--gv-font)", color: "var(--gv-text)" }}>
 
       {/* ════ TOP BAR ════════════════════════════════════════════════════════ */}
       <div style={{
@@ -517,6 +518,7 @@ export default function StockDashboard({ ticker, onSearch }: StockDashboardProps
             ✨ {insightsEnabled ? "Insights ON" : "Insights OFF"}
           </button>
           <LanguageSelector />
+          <DarkModeToggle />
         </div>
       </div>
 
@@ -559,6 +561,26 @@ export default function StockDashboard({ ticker, onSearch }: StockDashboardProps
                 {" "}
                 <span style={{ fontSize: "0.90em", fontWeight: 700, color: chgColor }}>{chgFmt}</span>
               </div>
+              {ov.website && (
+                <a
+                  href={ov.website}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    display: "inline-flex", alignItems: "center", gap: 4,
+                    marginTop: 5, fontSize: "0.75em", color: "#007bff",
+                    textDecoration: "none", fontWeight: 500,
+                  }}
+                  onMouseEnter={e => (e.currentTarget.style.textDecoration = "underline")}
+                  onMouseLeave={e => (e.currentTarget.style.textDecoration = "none")}
+                >
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/>
+                    <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+                  </svg>
+                  {ov.website.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "")}
+                </a>
+              )}
             </div>
 
             {/* 15-cell metric grid (5 cols × 3 rows) */}
