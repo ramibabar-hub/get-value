@@ -13,7 +13,7 @@ export default defineConfig({
     proxy: {
       // Proxy /api/* → FastAPI backend so the browser never hits CORS issues
       '/api': {
-        target: 'http://localhost:8000',
+        target: 'http://localhost:8080',
         changeOrigin: true,
       },
     },
