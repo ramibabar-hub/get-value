@@ -1,0 +1,44 @@
+/* getValue Design Tokens — single source of truth for all colours/spacing */
+:root {
+  /* Brand */
+  --gv-navy:        #1c2b46;
+  --gv-blue:        #007bff;
+
+  /* Surfaces */
+  --gv-bg:          #f8f9fa;
+  --gv-surface:     #ffffff;
+
+  /* Text */
+  --gv-text:        #111827;
+  --gv-text-muted:  #6b7280;
+  --gv-text-dim:    #4d6b88;
+
+  /* Borders */
+  --gv-border:      #e5e7eb;
+  --gv-border-dark: #d0d8e8;
+
+  /* Semantic: positive */
+  --gv-green:       #065f46;
+  --gv-green-bg:    #d1fae5;
+  --gv-green-mid:   #86efac;
+
+  /* Semantic: negative */
+  --gv-red:         #991b1b;
+  --gv-red-bg:      #fee2e2;
+  --gv-red-mid:     #fca5a5;
+
+  /* Semantic: warning */
+  --gv-yellow-bg:   #fef9c3;
+  --gv-yellow-fg:   #78350f;
+
+  /* Data cell types */
+  --gv-data-bg:     #f3f4f6;
+  --gv-data-fg:     #374151;
+
+  /* Spacing & shape */
+  --gv-radius:      8px;
+  --gv-radius-sm:   4px;
+
+  /* Typography */
+  --gv-font-mono:   "JetBrains Mono", "Fira Mono", monospace;
+}
