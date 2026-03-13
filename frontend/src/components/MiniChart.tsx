@@ -8,7 +8,7 @@
  * Loaded via React.lazy() — only bundled when a row is first expanded.
  */
 
-const CHART_NAVY = "#1c2b46";
+const CHART_NAVY = "var(--gv-navy)";
 
 // ── Median helper ─────────────────────────────────────────────────────────────
 
@@ -38,7 +38,7 @@ export default function MiniChart({ cols, vals, isBar }: MiniChartProps) {
 
   if (nonNull.length === 0) {
     return (
-      <div style={{ padding: "12px 16px", color: "#9ca3af", fontSize: "0.8em" }}>
+      <div style={{ padding: "12px 16px", color: "var(--gv-text-muted)", fontSize: "0.8em" }}>
         No chart data
       </div>
     );
@@ -70,7 +70,7 @@ export default function MiniChart({ cols, vals, isBar }: MiniChartProps) {
     return (
       <svg viewBox={`0 0 ${VW} ${VH}`} width="100%" style={{ display: "block" }}>
         {/* baseline */}
-        <line x1={PL} y1={zeroY} x2={VW - PR} y2={zeroY} stroke="#e5e7eb" strokeWidth="1" />
+        <line x1={PL} y1={zeroY} x2={VW - PR} y2={zeroY} stroke="var(--gv-border)" strokeWidth="1" />
 
         {nums.map((v, i) => {
           if (v === null) return null;
@@ -83,7 +83,7 @@ export default function MiniChart({ cols, vals, isBar }: MiniChartProps) {
           return (
             <g key={i}>
               <rect x={x} y={top} width={w} height={h} fill={fill} opacity={isTtm ? 1 : 0.72} rx="1" />
-              <text x={x + w / 2} y={VH - 4} textAnchor="middle" fontSize="8" fill="#9ca3af">
+              <text x={x + w / 2} y={VH - 4} textAnchor="middle" fontSize="8" fill="var(--gv-text-muted)">
                 {shortLbl(cols[i])}
               </text>
             </g>
@@ -108,7 +108,7 @@ export default function MiniChart({ cols, vals, isBar }: MiniChartProps) {
   return (
     <svg viewBox={`0 0 ${VW} ${VH}`} width="100%" style={{ display: "block" }}>
       {/* baseline */}
-      <line x1={PL} y1={zeroY} x2={VW - PR} y2={zeroY} stroke="#e5e7eb" strokeWidth="1" />
+      <line x1={PL} y1={zeroY} x2={VW - PR} y2={zeroY} stroke="var(--gv-border)" strokeWidth="1" />
 
       {/* median reference line (only when ≥ 3 data points) */}
       {nonNull.length >= 3 && (
@@ -141,7 +141,7 @@ export default function MiniChart({ cols, vals, isBar }: MiniChartProps) {
               fill={isTtm ? "#3b82f6" : CHART_NAVY}
               opacity={isTtm ? 1 : 0.8}
             />
-            <text x={p.x} y={VH - 4} textAnchor="middle" fontSize="8" fill="#9ca3af">
+            <text x={p.x} y={VH - 4} textAnchor="middle" fontSize="8" fill="var(--gv-text-muted)">
               {shortLbl(p.col)}
             </text>
           </g>

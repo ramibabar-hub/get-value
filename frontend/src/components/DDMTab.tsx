@@ -17,7 +17,7 @@ import { useState, useEffect, useRef, memo } from "react";
 import type { DdmData, DdmHistRow } from "../types";
 
 // ── Palette (matches rest of app) ─────────────────────────────────────────────
-const NAVY    = "#1c2b46";
+const NAVY    = "var(--gv-navy)";
 const BLUE    = "#1d4ed8";
 const GREEN   = "#16a34a";
 const RED     = "#dc2626";
@@ -66,7 +66,7 @@ function fPrice(v: number | null): string {
 
 function Spinner() {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "40px 0", color: "#6b7280" }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "40px 0", color: "var(--gv-text-muted)" }}>
       <div style={{
         width: 28, height: 28, borderRadius: "50%",
         border: "3px solid #e5e7eb", borderTop: `3px solid ${NAVY}`,
@@ -113,14 +113,14 @@ function SliderRow({ label, value, min, max, step, unit = "%", onChange, note }:
         <span style={{ color: AMBER, fontWeight: 800 }}>
           {value.toFixed(step < 1 ? 1 : 0)}{unit}
         </span>
-        {note && <span style={{ color: "#9ca3af", fontWeight: 400, marginLeft: 6 }}>{note}</span>}
+        {note && <span style={{ color: "var(--gv-text-muted)", fontWeight: 400, marginLeft: 6 }}>{note}</span>}
       </div>
       <input
         type="range" min={min} max={max} step={step} value={value}
         onChange={(e) => onChange(Number(e.target.value))}
         style={{ accentColor: NAVY, width: "100%", cursor: "pointer" }}
       />
-      <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.68em", color: "#9ca3af" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.68em", color: "var(--gv-text-muted)" }}>
         <span>{min}{unit}</span><span>{max}{unit}</span>
       </div>
     </div>
@@ -170,7 +170,7 @@ const HistTable = memo(function HistTable({
   const cagrPayout    = oldest ? cagrOf(oldest.payout_pct, ttm.payout_pct, false) : null;
 
   function CagrTd({ v }: { v: number | null }) {
-    if (v == null) return <td style={{ ...tdS(true), color: "#9ca3af" }}>N/A</td>;
+    if (v == null) return <td style={{ ...tdS(true), color: "var(--gv-text-muted)" }}>N/A</td>;
     return (
       <td style={{ ...tdS(true, true, v >= 0 ? GREEN : RED) }}>
         {fPct(v)}
@@ -213,7 +213,7 @@ const HistTable = memo(function HistTable({
             </td>
             <CagrTd v={cagrDivsPaid} />
             <CagrTd v={cagrShares} />
-            <td style={{ ...tdS(true, true, dps_cagr == null ? "#9ca3af" : dps_cagr >= 0 ? GREEN : RED) }}>
+            <td style={{ ...tdS(true, true, dps_cagr == null ? "var(--gv-text-muted)" : dps_cagr >= 0 ? GREEN : RED) }}>
               {dps_cagr != null ? fPct(dps_cagr) : "N/A"}
             </td>
             <CagrTd v={cagrNetIncome} />
@@ -253,7 +253,7 @@ function CalcDisplay({
     padding: "6px 0", borderBottom: "1px solid #f0f3f7",
     fontSize: "0.87em",
   };
-  const LABEL: React.CSSProperties = { color: "#4d6b88", fontWeight: 500 };
+  const LABEL: React.CSSProperties = { color: "var(--gv-text-dim)", fontWeight: 500 };
   const VAL:   React.CSSProperties = { fontWeight: 700, color: NAVY, ...MONO };
 
   if (!modelValid || fairValue == null) {
@@ -280,7 +280,7 @@ function CalcDisplay({
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
       {/* Step-by-step derivation */}
       <div style={{ background: "#f8fafc", borderRadius: 8, padding: "16px 20px", border: "1px solid #e5e7eb" }}>
-        <div style={{ fontSize: "0.80em", fontWeight: 700, color: "#6b7280", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 10 }}>
+        <div style={{ fontSize: "0.80em", fontWeight: 700, color: "var(--gv-text-muted)", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 10 }}>
           Gordon Growth Derivation
         </div>
         <div style={ROW}>
@@ -289,7 +289,7 @@ function CalcDisplay({
         </div>
         <div style={ROW}>
           <span style={LABEL}>× (1 + g<sub>forecast</sub>)</span>
-          <span style={{ ...VAL, color: "#4d6b88" }}>× {(1 + gForecast).toFixed(3)}</span>
+          <span style={{ ...VAL, color: "var(--gv-text-dim)" }}>× {(1 + gForecast).toFixed(3)}</span>
         </div>
         <div style={{ ...ROW, borderTop: "1.5px solid #dbeafe", marginTop: 2, paddingTop: 8 }}>
           <span style={{ ...LABEL, fontWeight: 700 }}>= DPS Next Year</span>
@@ -297,7 +297,7 @@ function CalcDisplay({
         </div>
         <div style={{ ...ROW, marginTop: 8 }}>
           <span style={LABEL}>÷ (r − g<sub>terminal</sub>)</span>
-          <span style={{ ...VAL, color: "#4d6b88" }}>÷ {(denominator * 100).toFixed(2)}%</span>
+          <span style={{ ...VAL, color: "var(--gv-text-dim)" }}>÷ {(denominator * 100).toFixed(2)}%</span>
         </div>
         <div style={{ ...ROW, borderTop: "1.5px solid #bbf7d0", marginTop: 2, paddingTop: 8 }}>
           <span style={{ ...LABEL, fontWeight: 700 }}>= Intrinsic Fair Value</span>
@@ -319,15 +319,15 @@ function CalcDisplay({
         <div style={{
           borderRadius: 8, padding: "16px 20px",
           background: onSale === true ? "#f0fdf4" : onSale === false ? "#fef2f2" : "#f9fafb",
-          border: `1.5px solid ${onSale === true ? "#86efac" : onSale === false ? "#fca5a5" : "#e5e7eb"}`,
+          border: `1.5px solid ${onSale === true ? "var(--gv-green-mid)" : onSale === false ? "var(--gv-red-mid)" : "var(--gv-border)"}`,
         }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-            <span style={{ fontSize: "0.80em", fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+            <span style={{ fontSize: "0.80em", fontWeight: 700, color: "var(--gv-text-muted)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
               Price vs Fair Value
             </span>
             <span style={{
               fontSize: "0.78em", fontWeight: 700, padding: "3px 10px", borderRadius: 20,
-              background: onSale === true ? GREEN : onSale === false ? RED : "#6b7280",
+              background: onSale === true ? GREEN : onSale === false ? RED : "var(--gv-text-muted)",
               color: "#fff",
             }}>
               {onSale === true ? "✓ On Sale" : onSale === false ? "✗ Overpriced" : "—"}
@@ -339,13 +339,13 @@ function CalcDisplay({
             ["Buy Price",      fPrice(buyPrice),   AMBER],
           ].map(([lbl, val, clr]) => (
             <div key={lbl as string} style={{ display: "flex", justifyContent: "space-between", marginBottom: 5, fontSize: "0.87em" }}>
-              <span style={{ color: "#4d6b88" }}>{lbl}</span>
+              <span style={{ color: "var(--gv-text-dim)" }}>{lbl}</span>
               <span style={{ fontWeight: 700, color: clr as string, ...MONO }}>{val}</span>
             </div>
           ))}
           {upsideToFv != null && (
             <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid #e5e7eb", display: "flex", justifyContent: "space-between", fontSize: "0.87em" }}>
-              <span style={{ color: "#4d6b88" }}>Upside to Fair Value</span>
+              <span style={{ color: "var(--gv-text-dim)" }}>Upside to Fair Value</span>
               <span style={{ fontWeight: 700, color: upsideToFv >= 0 ? GREEN : RED, ...MONO }}>
                 {upsideToFv >= 0 ? "+" : ""}{upsideToFv.toFixed(1)}%
               </span>
@@ -355,7 +355,7 @@ function CalcDisplay({
 
         {/* Yield on fair value */}
         <div style={{ background: "#f8fafc", borderRadius: 8, padding: "14px 18px", border: "1px solid #e5e7eb", fontSize: "0.85em" }}>
-          <div style={{ color: "#6b7280", fontWeight: 600, marginBottom: 6, textTransform: "uppercase", fontSize: "0.75em", letterSpacing: "0.06em" }}>
+          <div style={{ color: "var(--gv-text-muted)", fontWeight: 600, marginBottom: 6, textTransform: "uppercase", fontSize: "0.75em", letterSpacing: "0.06em" }}>
             Implied Yield at Fair Value
           </div>
           <span style={{ fontWeight: 800, color: NAVY, fontSize: "1.2em", ...MONO }}>
@@ -408,7 +408,7 @@ function Checklist({
 
   const PASS_BG  = "#f0fdf4"; const PASS_FG  = GREEN;
   const FAIL_BG  = "#fef2f2"; const FAIL_FG  = RED;
-  const NA_BG    = "#f9fafb"; const NA_FG    = "#6b7280";
+  const NA_BG    = "#f9fafb"; const NA_FG    = "var(--gv-text-muted)";
 
   const thS: React.CSSProperties = {
     background: NAVY, color: "#fff", padding: "7px 12px",
@@ -434,7 +434,7 @@ function Checklist({
             return (
               <tr key={item.label} style={{ background: bg }}>
                 <td style={{ padding: "7px 12px", border: "1px solid #e5e7eb", fontWeight: 600, color: fg }}>{item.label}</td>
-                <td style={{ padding: "7px 12px", border: "1px solid #e5e7eb", textAlign: "center", color: "#4d6b88" }}>{item.threshold}</td>
+                <td style={{ padding: "7px 12px", border: "1px solid #e5e7eb", textAlign: "center", color: "var(--gv-text-dim)" }}>{item.threshold}</td>
                 <td style={{ padding: "7px 12px", border: "1px solid #e5e7eb", textAlign: "center", fontWeight: 700, color: fg, ...MONO }}>{item.display}</td>
                 <td style={{ padding: "7px 12px", border: "1px solid #e5e7eb", textAlign: "center", fontSize: "1.1em" }}>{icon}</td>
               </tr>
@@ -521,8 +521,8 @@ export default function DDMTab({ ticker, externalWacc, onFairValueChange }: Prop
   if (error) {
     return (
       <div style={{
-        background: "#fee2e2", border: "1px solid #fca5a5",
-        borderRadius: 8, padding: "12px 16px", color: "#991b1b",
+        background: "var(--gv-red-bg)", border: "1px solid #fca5a5",
+        borderRadius: 8, padding: "12px 16px", color: "var(--gv-red)",
       }}>
         <strong>Error loading DDM data:</strong> {error}
       </div>
@@ -550,7 +550,7 @@ export default function DDMTab({ ticker, externalWacc, onFairValueChange }: Prop
       <SecHeader title="About the Model" />
       <div style={{
         background: "#f8fafc", borderRadius: 8, padding: "14px 18px",
-        border: "1px solid #e5e7eb", fontSize: "0.83em", color: "#4d6b88",
+        border: "1px solid #e5e7eb", fontSize: "0.83em", color: "var(--gv-text-dim)",
         lineHeight: 1.75,
       }}>
         <strong style={{ color: NAVY }}>Gordon Growth Model (Dividend Discount Model)</strong>

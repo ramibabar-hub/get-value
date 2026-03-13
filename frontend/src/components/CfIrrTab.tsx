@@ -11,11 +11,11 @@
 import { useState, useEffect, useRef, memo, useCallback } from "react";
 import type { CfIrrData, OverviewData } from "../types";
 
-const NAVY = "#1c2b46";
-const CLR_PASS = "#d1fae5"; const CLR_PASS_FG = "#065f46";
-const CLR_FAIL = "#fee2e2"; const CLR_FAIL_FG = "#991b1b";
-const CLR_WARN = "#fef9c3"; const CLR_WARN_FG = "#92400e";
-const CLR_NA   = "#f3f4f6"; const CLR_NA_FG   = "#6b7280";
+const NAVY = "var(--gv-navy)";
+const CLR_PASS = "var(--gv-green-bg)"; const CLR_PASS_FG = "var(--gv-green)";
+const CLR_FAIL = "var(--gv-red-bg)"; const CLR_FAIL_FG = "var(--gv-red)";
+const CLR_WARN = "var(--gv-yellow-bg)"; const CLR_WARN_FG = "#92400e";
+const CLR_NA   = "var(--gv-data-bg)"; const CLR_NA_FG   = "var(--gv-text-muted)";
 
 // ── Formatters ─────────────────────────────────────────────────────────────────
 
@@ -58,7 +58,7 @@ function SubHeader({ title }: { title: string }) {
 
 function Spinner() {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "40px 0", color: "#6b7280" }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "40px 0", color: "var(--gv-text-muted)" }}>
       <div style={{ width: 28, height: 28, borderRadius: "50%", border: "3px solid #e5e7eb", borderTop: `3px solid ${NAVY}`, animation: "cfSpin 0.75s linear infinite", flexShrink: 0 }} />
       <span style={{ fontSize: "0.88em" }}>Computing CF + IRR model…</span>
       <style>{`@keyframes cfSpin { to { transform: rotate(360deg); } }`}</style>
@@ -145,7 +145,7 @@ const Checklist = memo(function Checklist({ items }: { items: CfIrrData["checkli
             return (
               <tr key={i} style={{ background: bg }}>
                 <td style={{ padding: "7px 12px", fontWeight: 600, color: fg, border: "1px solid #e5e7eb" }}>{item.label}</td>
-                <td style={{ padding: "7px 12px", textAlign: "center", color: "#4d6b88", border: "1px solid #e5e7eb" }}>{item.threshold}</td>
+                <td style={{ padding: "7px 12px", textAlign: "center", color: "var(--gv-text-dim)", border: "1px solid #e5e7eb" }}>{item.threshold}</td>
                 <td style={{ padding: "7px 12px", textAlign: "center", fontWeight: 700, color: fg, border: "1px solid #e5e7eb", ...MONO }}>{item.display}</td>
                 <td style={{ padding: "7px 12px", textAlign: "center", fontSize: "1.1em", border: "1px solid #e5e7eb" }}>{icon}</td>
               </tr>
@@ -230,7 +230,7 @@ function ForecastTable({
           onChange={(e) => onGlobalChange(Number(e.target.value))}
           style={{ width: 80, padding: "3px 8px", border: "1px solid #d1d5db", borderRadius: 4, fontSize: "0.83em", fontFamily: "inherit", textAlign: "right" }}
         />
-        <span style={{ fontSize: "0.78em", color: "#6b7280" }}>%</span>
+        <span style={{ fontSize: "0.78em", color: "var(--gv-text-muted)" }}>%</span>
       </div>
       <div style={{ overflowX: "auto" }}>
         <table style={{ borderCollapse: "collapse", fontSize: "0.81em", minWidth: 500 }}>
@@ -491,7 +491,7 @@ export default function CfIrrTab({ ticker, externalWacc, ov }: Props) {
   const handleMosPct    = (val: number) => { setMosPct(val);    refetch({ ebt: ebtGrowth, fcf: fcfGrowth, mult: exitMult, yld: exitYield, mos: val }); };
 
   if (loading) return <Spinner />;
-  if (error)   return <div style={{ background: "#fee2e2", border: "1px solid #fca5a5", borderRadius: 8, padding: "12px 16px", color: "#991b1b" }}><strong>Error:</strong> {error}</div>;
+  if (error)   return <div style={{ background: "var(--gv-red-bg)", border: "1px solid #fca5a5", borderRadius: 8, padding: "12px 16px", color: "var(--gv-red)" }}><strong>Error:</strong> {error}</div>;
   if (!data)   return null;
 
   const ebtHistCols = data.ebt_hist.length ? Object.keys(data.ebt_hist[0]) : [];
@@ -547,7 +547,7 @@ export default function CfIrrTab({ ticker, externalWacc, ov }: Props) {
           <div style={{ display: "flex", gap: 10, marginTop: 12, flexWrap: "wrap" }}>
             <div style={{ flex: 1, minWidth: 120 }}>
               <div style={{ fontSize: "0.76em", fontWeight: 600, color: NAVY, marginBottom: 3 }}>WACC: <span style={{ color: "#b45309" }}>{waccPct.toFixed(2)}%</span></div>
-              <div style={{ fontSize: "0.72em", color: "#6b7280" }}>Set in Insights → WACC slider</div>
+              <div style={{ fontSize: "0.72em", color: "var(--gv-text-muted)" }}>Set in Insights → WACC slider</div>
             </div>
             <div style={{ flex: 1, minWidth: 100 }}>
               <div style={{ fontSize: "0.76em", fontWeight: 600, color: NAVY, marginBottom: 3 }}>MoS %</div>
@@ -634,7 +634,7 @@ export default function CfIrrTab({ ticker, externalWacc, ov }: Props) {
               onChange={(e) => handleExitYield(Number(e.target.value))}
               style={{ width: 70, padding: "3px 8px", border: "1px solid #d1d5db", borderRadius: 4, fontSize: "0.9em", fontFamily: "inherit", textAlign: "right" }}
             />
-            <span style={{ fontSize: "0.8em", color: "#6b7280" }}>%</span>
+            <span style={{ fontSize: "0.8em", color: "var(--gv-text-muted)" }}>%</span>
           </div>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.81em" }}>
             <tbody>

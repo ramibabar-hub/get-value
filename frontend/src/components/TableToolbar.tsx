@@ -14,7 +14,7 @@ import {
   Maximize2, Minimize2, X,
 } from "lucide-react";
 
-const NAVY = "#1c2b46";
+const NAVY = "var(--gv-navy)";
 
 // ── Tool button ───────────────────────────────────────────────────────────────
 
@@ -31,10 +31,10 @@ function ToolBtn({ title, active = false, onClick, children }: ToolBtnProps) {
       title={title}
       onClick={onClick}
       style={{
-        border:         `1px solid ${active ? NAVY : "#e5e7eb"}`,
+        border:         `1px solid ${active ? NAVY : "var(--gv-border)"}`,
         borderRadius:   6,
         background:     active ? NAVY : "#fafafa",
-        color:          active ? "#fff" : "#6b7280",
+        color:          active ? "#fff" : "var(--gv-text-muted)",
         width:          28,
         height:         28,
         display:        "inline-flex",
@@ -110,7 +110,7 @@ export function ExpandOverlay({ title, onClose, children }: ExpandOverlayProps) 
               border:       "1px solid #e5e7eb",
               borderRadius: 6,
               background:   "#fff",
-              color:        "#6b7280",
+              color:        "var(--gv-text-muted)",
               padding:      "4px 12px",
               cursor:       "pointer",
               fontWeight:   600,

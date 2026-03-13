@@ -3,8 +3,8 @@ import InsightCard, { InsightCardSkeleton } from "./InsightCard";
 import type { NewsInsightsData, OverviewData } from "../types";
 
 // ── Palette ────────────────────────────────────────────────────────────────────
-const NAVY = "#1c2b46";
-const BLUE = "#007bff";
+const NAVY = "var(--gv-navy)";
+const BLUE = "var(--gv-blue)";
 
 interface Props {
   ticker: string;
@@ -102,8 +102,8 @@ function SectionHeader() {
       <h3 style={{ margin: 0, fontSize: "0.95em", fontWeight: 700, color: NAVY, letterSpacing: "0.02em", textTransform: "uppercase" }}>
         News &amp; Insights
       </h3>
-      <div style={{ flex: 1, height: 1, background: "#e5e7eb" }} />
-      <span style={{ fontSize: "0.7em", color: "#9ca3af" }}>Powered by Claude Haiku</span>
+      <div style={{ flex: 1, height: 1, background: "var(--gv-border)" }} />
+      <span style={{ fontSize: "0.7em", color: "var(--gv-text-muted)" }}>Powered by Claude Haiku</span>
     </div>
   );
 }

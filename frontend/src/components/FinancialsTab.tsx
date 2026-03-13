@@ -18,7 +18,7 @@ import { IndustryComparisonCell } from "./IndustryComparisonCell";
 import { lookupBenchmark } from "../utils/industryBenchmarks";
 import { TableToolbar, ExpandOverlay } from "./TableToolbar";
 
-const NAVY    = "#1c2b46";
+const NAVY    = "var(--gv-navy)";
 const PERIODS: Period[] = ["annual", "quarterly"];
 const SCALES:  Scale[]  = ["K", "MM", "B"];
 const EPS_LABELS = new Set(["eps", "epsdiluted", "noi/sh", "ffo/sh"]);
@@ -110,7 +110,7 @@ function MiniChart({
   const nums = vals.map(v => (typeof v === "number" && isFinite(v)) ? v : null);
   const nonNull = nums.filter((v): v is number => v !== null);
   if (nonNull.length === 0) {
-    return <div style={{ padding: "12px 16px", color: "#9ca3af", fontSize: "0.8em" }}>No chart data</div>;
+    return <div style={{ padding: "12px 16px", color: "var(--gv-text-muted)", fontSize: "0.8em" }}>No chart data</div>;
   }
 
   const N   = cols.length;
@@ -136,7 +136,7 @@ function MiniChart({
   if (isBar) {
     return (
       <svg viewBox={`0 0 ${VW} ${VH}`} width="100%" style={{ display: "block" }}>
-        <line x1={PL} y1={zeroY} x2={VW - PR} y2={zeroY} stroke="#e5e7eb" strokeWidth="1"/>
+        <line x1={PL} y1={zeroY} x2={VW - PR} y2={zeroY} stroke="var(--gv-border)" strokeWidth="1"/>
         {nums.map((v, i) => {
           if (v === null) return null;
           const isTtm = cols[i] === "TTM";
@@ -148,7 +148,7 @@ function MiniChart({
           return (
             <g key={i}>
               <rect x={x} y={top} width={w} height={h} fill={fill} opacity={isTtm ? 1 : 0.72}/>
-              <text x={x + w / 2} y={VH - 4} textAnchor="middle" fontSize="8" fill="#9ca3af">{shortLbl(cols[i])}</text>
+              <text x={x + w / 2} y={VH - 4} textAnchor="middle" fontSize="8" fill="var(--gv-text-muted)">{shortLbl(cols[i])}</text>
             </g>
           );
         })}
@@ -164,14 +164,14 @@ function MiniChart({
 
   return (
     <svg viewBox={`0 0 ${VW} ${VH}`} width="100%" style={{ display: "block" }}>
-      <line x1={PL} y1={zeroY} x2={VW - PR} y2={zeroY} stroke="#e5e7eb" strokeWidth="1"/>
+      <line x1={PL} y1={zeroY} x2={VW - PR} y2={zeroY} stroke="var(--gv-border)" strokeWidth="1"/>
       {d && <path d={d} fill="none" stroke={NAVY} strokeWidth="1.5" opacity="0.7"/>}
       {pts.map((p, i) => {
         const isTtm = p.col === "TTM";
         return (
           <g key={i}>
             <circle cx={p.x} cy={p.y} r={isTtm ? 4 : 2.5} fill={isTtm ? "#3b82f6" : NAVY}/>
-            <text x={p.x} y={VH - 4} textAnchor="middle" fontSize="8" fill="#9ca3af">{shortLbl(p.col)}</text>
+            <text x={p.x} y={VH - 4} textAnchor="middle" fontSize="8" fill="var(--gv-text-muted)">{shortLbl(p.col)}</text>
           </g>
         );
       })}
@@ -192,7 +192,7 @@ function RadioGroup<T extends string>({
 }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-      <span style={{ fontSize: "0.78em", fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+      <span style={{ fontSize: "0.78em", fontWeight: 700, color: "var(--gv-text-muted)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
         {label}
       </span>
       <div style={{ display: "flex", gap: 4 }}>
@@ -207,7 +207,7 @@ function RadioGroup<T extends string>({
                 border: `1px solid ${active ? NAVY : "#d1d5db"}`,
                 borderRadius: 4,
                 background: active ? NAVY : "#fff",
-                color: active ? "#fff" : "#374151",
+                color: active ? "#fff" : "var(--gv-data-fg)",
                 fontWeight: active ? 700 : 500,
                 fontSize: "0.82em",
                 cursor: "pointer",
@@ -388,7 +388,7 @@ const FinTable = memo(function FinTable({
                         title="Toggle chart"
                         style={{
                           background: "none", border: "none", padding: 2, cursor: "pointer",
-                          color: isOpen ? "#3b82f6" : "#9ca3af", lineHeight: 0,
+                          color: isOpen ? "#3b82f6" : "var(--gv-text-muted)", lineHeight: 0,
                           borderRadius: 3, flexShrink: 0,
                         }}
                       >
@@ -570,7 +570,7 @@ const ExtTable = memo(function ExtTable({
                         title="Toggle chart"
                         style={{
                           background: "none", border: "none", padding: 2, cursor: "pointer",
-                          color: isOpen ? "#3b82f6" : "#9ca3af", lineHeight: 0,
+                          color: isOpen ? "#3b82f6" : "var(--gv-text-muted)", lineHeight: 0,
                           borderRadius: 3, flexShrink: 0,
                         }}
                       >
@@ -658,7 +658,7 @@ const ExtTable = memo(function ExtTable({
 
 function Spinner({ label }: { label: string }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "40px 0", color: "#6b7280" }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "40px 0", color: "var(--gv-text-muted)" }}>
       <div style={{
         width: 28, height: 28, borderRadius: "50%",
         border: "3px solid #e5e7eb", borderTop: `3px solid ${NAVY}`,
@@ -718,7 +718,7 @@ export default function FinancialsTab({
           onChange={onScaleChange}
         />
         {data && (
-          <span style={{ fontSize: "0.78em", color: "#6b7280", marginLeft: "auto" }}>
+          <span style={{ fontSize: "0.78em", color: "var(--gv-text-muted)", marginLeft: "auto" }}>
             Currency: <strong>{data.currency}</strong>
             &nbsp;·&nbsp;values in <strong>{scale}</strong>
           </span>

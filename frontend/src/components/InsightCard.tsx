@@ -3,8 +3,8 @@ import { Zap, BookOpen, ChevronDown, ChevronUp } from "lucide-react";
 import type { NewsInsight } from "../types";
 
 // ── Palette ────────────────────────────────────────────────────────────────────
-const NAVY = "#1c2b46";
-const BLUE = "#007bff";
+const NAVY = "var(--gv-navy)";
+const BLUE = "var(--gv-blue)";
 
 interface Props {
   item: NewsInsight;
@@ -32,7 +32,7 @@ export default function InsightCard({ item }: Props) {
         {/* Blue dot + date */}
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6, paddingTop: 3, flexShrink: 0 }}>
           <div style={{ width: 8, height: 8, borderRadius: "50%", background: BLUE }} />
-          <span style={{ fontSize: "0.65em", color: "#9ca3af", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
+          <span style={{ fontSize: "0.65em", color: "var(--gv-text-muted)", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
             {item.date}
           </span>
         </div>
@@ -53,7 +53,7 @@ export default function InsightCard({ item }: Props) {
               {item.headline}
             </div>
           )}
-          <div style={{ color: "#6b7280", fontSize: "0.82em", lineHeight: 1.5 }}>
+          <div style={{ color: "var(--gv-text-muted)", fontSize: "0.82em", lineHeight: 1.5 }}>
             {item.summary}
           </div>
         </div>

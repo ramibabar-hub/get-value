@@ -29,7 +29,7 @@ import {
 import type { IMultipleData, IMultipleHistRow } from "../types";
 
 // ── Palette ────────────────────────────────────────────────────────────────────
-const NAVY     = "#1c2b46";
+const NAVY     = "var(--gv-navy)";
 const BLUE     = "#1d4ed8";
 const GREEN    = "#16a34a";
 const RED      = "#dc2626";
@@ -59,7 +59,7 @@ const fUpside = (fv: number | null, price: number | null): string => {
 
 function Spinner() {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "40px 0", color: "#6b7280" }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "40px 0", color: "var(--gv-text-muted)" }}>
       <div style={{ width: 28, height: 28, borderRadius: "50%", border: "3px solid #e5e7eb", borderTop: `3px solid ${NAVY}`, animation: "imSpin 0.75s linear infinite", flexShrink: 0 }} />
       <span style={{ fontSize: "0.88em" }}>Loading Industry Multiple data…</span>
       <style>{`@keyframes imSpin { to { transform: rotate(360deg); } }`}</style>
@@ -83,9 +83,9 @@ function InputRow({ label, value, onChange, prefix = "", step = 0.01, min = 0, n
 }) {
   return (
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "7px 0", borderBottom: "1px solid #f0f3f7", fontSize: "0.87em" }}>
-      <span style={{ color: "#4d6b88", fontWeight: 500 }}>
+      <span style={{ color: "var(--gv-text-dim)", fontWeight: 500 }}>
         {label}
-        {note && <span style={{ marginLeft: 6, color: "#9ca3af", fontWeight: 400, fontSize: "0.88em" }}>{note}</span>}
+        {note && <span style={{ marginLeft: 6, color: "var(--gv-text-muted)", fontWeight: 400, fontSize: "0.88em" }}>{note}</span>}
       </span>
       <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
         {prefix && <span style={{ color: NAVY, fontWeight: 600, ...MONO }}>{prefix}</span>}
@@ -104,7 +104,7 @@ function InputRow({ label, value, onChange, prefix = "", step = 0.01, min = 0, n
 function DataRow({ label, value, color, bold }: { label: string; value: string; color?: string; bold?: boolean }) {
   return (
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "7px 0", borderBottom: "1px solid #f0f3f7", fontSize: "0.87em" }}>
-      <span style={{ color: "#4d6b88", fontWeight: 500 }}>{label}</span>
+      <span style={{ color: "var(--gv-text-dim)", fontWeight: 500 }}>{label}</span>
       <span style={{ fontWeight: bold ? 700 : 600, color: color ?? NAVY, ...MONO }}>{value}</span>
     </div>
   );
@@ -113,7 +113,7 @@ function DataRow({ label, value, color, bold }: { label: string; value: string; 
 // ── On-Sale badge ─────────────────────────────────────────────────────────────
 
 function OnSaleBadge({ onSale }: { onSale: boolean | null }) {
-  if (onSale === null) return <span style={{ color: "#9ca3af", fontWeight: 600, fontSize: "0.87em" }}>—</span>;
+  if (onSale === null) return <span style={{ color: "var(--gv-text-muted)", fontWeight: 600, fontSize: "0.87em" }}>—</span>;
   return (
     <span style={{
       display: "inline-block", padding: "3px 12px", borderRadius: 20, fontWeight: 700, fontSize: "0.82em",
@@ -279,7 +279,7 @@ function MultiplesChart({ hist, ttm }: { hist: IMultipleHistRow[]; ttm: IMultipl
   const pillStyle = (active: boolean, activeColor: string): React.CSSProperties => ({
     padding: "3px 10px", fontSize: "0.73em", fontWeight: active ? 700 : 500,
     borderRadius: 6, border: `1px solid ${active ? activeColor : "#d1d5db"}`,
-    background: active ? activeColor : "#fff", color: active ? "#fff" : "#6b7280",
+    background: active ? activeColor : "#fff", color: active ? "#fff" : "var(--gv-text-muted)",
     cursor: "pointer", transition: "all 0.12s",
   });
 
@@ -293,7 +293,7 @@ function MultiplesChart({ hist, ttm }: { hist: IMultipleHistRow[]; ttm: IMultipl
             <button key={v} onClick={() => setView(v)} style={pillStyle(v === view, NAVY)}>{v}</button>
           ))}
         </div>
-        <div style={{ width: 1, height: 20, background: "#e5e7eb", flexShrink: 0 }} />
+        <div style={{ width: 1, height: 20, background: "var(--gv-border)", flexShrink: 0 }} />
         {/* Range selector */}
         <div style={{ display: "flex", gap: 3 }}>
           {(["3Y", "5Y", "10Y", "MAX"] as ChartRange[]).map(r => (
@@ -321,16 +321,16 @@ function MultiplesChart({ hist, ttm }: { hist: IMultipleHistRow[]; ttm: IMultipl
       {/* Recharts */}
       <ResponsiveContainer width="100%" height={268}>
         <ComposedChart data={chartData} margin={{ top: 6, right: 10, left: 0, bottom: 0 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false} />
+          <CartesianGrid strokeDasharray="3 3" stroke="var(--gv-border)" vertical={false} />
           <XAxis
             dataKey="year"
-            tick={{ fontSize: 10, fill: "#9ca3af" }}
+            tick={{ fontSize: 10, fill: "var(--gv-text-muted)" }}
             axisLine={false}
             tickLine={false}
           />
           <YAxis
             tickFormatter={v => `${(v as number).toFixed(0)}x`}
-            tick={{ fontSize: 10, fill: "#9ca3af" }}
+            tick={{ fontSize: 10, fill: "var(--gv-text-muted)" }}
             axisLine={false}
             tickLine={false}
             width={38}
@@ -384,7 +384,7 @@ function MultiplesChart({ hist, ttm }: { hist: IMultipleHistRow[]; ttm: IMultipl
 function ValCard({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div style={{ background: "#f8fafc", border: "1px solid #e5e7eb", borderRadius: 8, padding: "18px 20px", flex: 1, minWidth: 280 }}>
-      <div style={{ fontSize: "0.78em", fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 12 }}>
+      <div style={{ fontSize: "0.78em", fontWeight: 700, color: "var(--gv-text-muted)", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 12 }}>
         {title}
       </div>
       {children}
@@ -468,7 +468,7 @@ export default function IndustryMultipleTab({ ticker, onFairValueChange }: Props
   // ── Render ─────────────────────────────────────────────────────────────────
   if (loading) return <Spinner />;
   if (error)   return (
-    <div style={{ background: "#fee2e2", border: "1px solid #fca5a5", borderRadius: 8, padding: "12px 16px", color: "#991b1b" }}>
+    <div style={{ background: "var(--gv-red-bg)", border: "1px solid #fca5a5", borderRadius: 8, padding: "12px 16px", color: "var(--gv-red)" }}>
       <strong>Error loading Industry Multiple data:</strong> {error}
     </div>
   );
@@ -486,7 +486,7 @@ export default function IndustryMultipleTab({ ticker, onFairValueChange }: Props
 
       {/* ══ Section 1 — Historical Table + Interactive Chart ═════════════════ */}
       <SecHeader title="1 · Historical Multiples" />
-      <div style={{ fontSize: "0.78em", color: "#6b7280", marginBottom: 10 }}>
+      <div style={{ fontSize: "0.78em", color: "var(--gv-text-muted)", marginBottom: 10 }}>
         Sector: <strong style={{ color: NAVY }}>{data.sector}</strong>
         &nbsp;·&nbsp;Industry: <strong style={{ color: NAVY }}>{data.industry}</strong>
         &nbsp;·&nbsp;Columns ordered most-recent → oldest (left to right)
@@ -501,7 +501,7 @@ export default function IndustryMultipleTab({ ticker, onFairValueChange }: Props
 
         {/* Right: Multiples Chart */}
         <div style={{ flex: "1.3 1 320px", minWidth: 280, background: "#f8fafc", border: "1px solid #e5e7eb", borderRadius: 10, padding: "16px 18px" }}>
-          <div style={{ fontSize: "0.78em", fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 12 }}>
+          <div style={{ fontSize: "0.78em", fontWeight: 700, color: "var(--gv-text-muted)", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 12 }}>
             P/E &amp; EV/EBITDA — Historical Trend
           </div>
           <MultiplesChart hist={data.hist} ttm={data.ttm} />
@@ -552,11 +552,11 @@ export default function IndustryMultipleTab({ ticker, onFairValueChange }: Props
           <DataRow label="Buy Price" value={fPrice(buyPricePe)} color={AMBER} bold />
           <DataRow label="Current Price" value={fPrice(priceNow)} />
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0 4px" }}>
-            <span style={{ color: "#4d6b88", fontWeight: 500, fontSize: "0.87em" }}>Company on sale?</span>
+            <span style={{ color: "var(--gv-text-dim)", fontWeight: 500, fontSize: "0.87em" }}>Company on sale?</span>
             <OnSaleBadge onSale={onSalePe} />
           </div>
           {fvPe != null && priceNow != null && (
-            <div style={{ display: "flex", gap: 20, fontSize: "0.80em", color: "#6b7280", paddingTop: 6, borderTop: "1px solid #f0f3f7" }}>
+            <div style={{ display: "flex", gap: 20, fontSize: "0.80em", color: "var(--gv-text-muted)", paddingTop: 6, borderTop: "1px solid #f0f3f7" }}>
               <span>Upside to FV: <strong style={{ color: (fvPe > priceNow ? GREEN : RED) }}>{fUpside(fvPe, priceNow)}</strong></span>
               <span>Upside to Buy: <strong style={{ color: (buyPricePe != null && buyPricePe > priceNow ? GREEN : RED) }}>{fUpside(buyPricePe, priceNow)}</strong></span>
             </div>
@@ -609,11 +609,11 @@ export default function IndustryMultipleTab({ ticker, onFairValueChange }: Props
           <DataRow label="Buy Price" value={fPrice(buyPriceEb)} color={AMBER} bold />
           <DataRow label="Current Price" value={fPrice(priceNow)} />
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0 4px" }}>
-            <span style={{ color: "#4d6b88", fontWeight: 500, fontSize: "0.87em" }}>Company on sale?</span>
+            <span style={{ color: "var(--gv-text-dim)", fontWeight: 500, fontSize: "0.87em" }}>Company on sale?</span>
             <OnSaleBadge onSale={onSaleEb} />
           </div>
           {fvEbitdaPs != null && priceNow != null && (
-            <div style={{ display: "flex", gap: 20, fontSize: "0.80em", color: "#6b7280", paddingTop: 6, borderTop: "1px solid #f0f3f7" }}>
+            <div style={{ display: "flex", gap: 20, fontSize: "0.80em", color: "var(--gv-text-muted)", paddingTop: 6, borderTop: "1px solid #f0f3f7" }}>
               <span>Upside to FV: <strong style={{ color: (fvEbitdaPs > priceNow ? GREEN : RED) }}>{fUpside(fvEbitdaPs, priceNow)}</strong></span>
               <span>Upside to Buy: <strong style={{ color: (buyPriceEb != null && buyPriceEb > priceNow ? GREEN : RED) }}>{fUpside(buyPriceEb, priceNow)}</strong></span>
             </div>
@@ -626,14 +626,14 @@ export default function IndustryMultipleTab({ ticker, onFairValueChange }: Props
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, maxWidth: 720 }}>
         {/* Step-by-step derivation */}
         <div style={{ background: "#f8fafc", border: "1px solid #e5e7eb", borderRadius: 8, padding: "18px 20px" }}>
-          <div style={{ fontSize: "0.78em", fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 12 }}>
+          <div style={{ fontSize: "0.78em", fontWeight: 700, color: "var(--gv-text-muted)", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 12 }}>
             Derivation
           </div>
           <DataRow label="FV by P/E"         value={fPrice(fvPe)} />
           <DataRow label="FV by EV/EBITDA"   value={fPrice(fvEbitdaPs)} />
           <DataRow label="Weight each (50%)"  value="× 0.50 + × 0.50" />
           <DataRow label="Combined Fair Value" value={fPrice(fvCombined)} color={GREEN} bold />
-          <div style={{ padding: "10px 0 0", fontSize: "0.80em", color: "#9ca3af", borderTop: "1px dashed #e5e7eb", marginTop: 8 }}>
+          <div style={{ padding: "10px 0 0", fontSize: "0.80em", color: "var(--gv-text-muted)", borderTop: "1px dashed #e5e7eb", marginTop: 8 }}>
             {fvPe == null && "P/E fair value unavailable (no EPS data)"}
             {fvEbitdaPs == null && "EV/EBITDA fair value unavailable (no EBITDA or shares data)"}
             {fvPe != null && fvEbitdaPs == null && "Using P/E only (no EBITDA data)"}
@@ -645,10 +645,10 @@ export default function IndustryMultipleTab({ ticker, onFairValueChange }: Props
         <div style={{
           borderRadius: 8, padding: "18px 20px",
           background: onSaleComb === true ? "#f0fdf4" : onSaleComb === false ? "#fef2f2" : "#f9fafb",
-          border: `1.5px solid ${onSaleComb === true ? "#86efac" : onSaleComb === false ? "#fca5a5" : "#e5e7eb"}`,
+          border: `1.5px solid ${onSaleComb === true ? "var(--gv-green-mid)" : onSaleComb === false ? "var(--gv-red-mid)" : "var(--gv-border)"}`,
         }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-            <span style={{ fontSize: "0.78em", fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.06em" }}>Final Verdict</span>
+            <span style={{ fontSize: "0.78em", fontWeight: 700, color: "var(--gv-text-muted)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Final Verdict</span>
             <OnSaleBadge onSale={onSaleComb} />
           </div>
 
@@ -656,14 +656,14 @@ export default function IndustryMultipleTab({ ticker, onFairValueChange }: Props
 
           {/* Combined MoS input inline */}
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "7px 0", borderBottom: "1px solid #f0f3f7", fontSize: "0.87em" }}>
-            <span style={{ color: "#4d6b88", fontWeight: 500 }}>Margin of Safety</span>
+            <span style={{ color: "var(--gv-text-dim)", fontWeight: 500 }}>Margin of Safety</span>
             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
               <input
                 type="number" value={mosCombined} step={1} min={0} max={80}
                 onChange={(e) => setMosCombined(Number(e.target.value))}
                 style={{ width: 64, padding: "2px 6px", border: "1px solid #d1d5db", borderRadius: 4, fontSize: "0.88em", ...MONO, textAlign: "right" }}
               />
-              <span style={{ color: "#9ca3af", fontSize: "0.85em" }}>%</span>
+              <span style={{ color: "var(--gv-text-muted)", fontSize: "0.85em" }}>%</span>
             </div>
           </div>
 
@@ -673,13 +673,13 @@ export default function IndustryMultipleTab({ ticker, onFairValueChange }: Props
           {fvCombined != null && priceNow != null && (
             <>
               <div style={{ marginTop: 10, paddingTop: 8, borderTop: "1px solid #e5e7eb", display: "flex", justifyContent: "space-between", fontSize: "0.85em" }}>
-                <span style={{ color: "#4d6b88" }}>Upside to Fair Value</span>
+                <span style={{ color: "var(--gv-text-dim)" }}>Upside to Fair Value</span>
                 <span style={{ fontWeight: 700, color: fvCombined > priceNow ? GREEN : RED, ...MONO }}>
                   {fUpside(fvCombined, priceNow)}
                 </span>
               </div>
               <div style={{ paddingTop: 4, display: "flex", justifyContent: "space-between", fontSize: "0.85em" }}>
-                <span style={{ color: "#4d6b88" }}>Upside to Buy Price</span>
+                <span style={{ color: "var(--gv-text-dim)" }}>Upside to Buy Price</span>
                 <span style={{ fontWeight: 700, color: buyPriceComb != null && buyPriceComb > priceNow ? GREEN : RED, ...MONO }}>
                   {fUpside(buyPriceComb, priceNow)}
                 </span>

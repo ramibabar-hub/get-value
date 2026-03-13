@@ -14,13 +14,13 @@ import { useState, useCallback, useEffect, useRef, memo } from "react";
 import type { CfIrrSpecialData, CfIrrCheckItem, OverviewData } from "../types";
 
 // ── Palette ───────────────────────────────────────────────────────────────────
-const NAVY        = "#1c2b46";
+const NAVY        = "var(--gv-navy)";
 const CLR_API_BG  = "#dbeafe"; const CLR_API_FG  = "#1e40af";  // blue  – fetched
-const CLR_CALC_BG = "#d1fae5"; const CLR_CALC_FG = "#065f46";  // green – calculated
-const CLR_USER_BG = "#fef9c3"; const CLR_USER_FG = "#78350f";  // yellow – user input
-const CLR_PASS    = "#d1fae5"; const CLR_PASS_FG = "#065f46";
-const CLR_FAIL    = "#fee2e2"; const CLR_FAIL_FG = "#991b1b";
-const CLR_NA      = "#f3f4f6"; const CLR_NA_FG   = "#6b7280";
+const CLR_CALC_BG = "var(--gv-green-bg)"; const CLR_CALC_FG = "var(--gv-green)";  // green – calculated
+const CLR_USER_BG = "var(--gv-yellow-bg)"; const CLR_USER_FG = "var(--gv-yellow-fg)";  // yellow – user input
+const CLR_PASS    = "var(--gv-green-bg)"; const CLR_PASS_FG = "var(--gv-green)";
+const CLR_FAIL    = "var(--gv-red-bg)"; const CLR_FAIL_FG = "var(--gv-red)";
+const CLR_NA      = "var(--gv-data-bg)"; const CLR_NA_FG   = "var(--gv-text-muted)";
 
 const MONO: React.CSSProperties = {
   fontFamily: "'Courier New', monospace",
@@ -40,7 +40,7 @@ const fPct = (v: number | null | undefined, decimals = 1) =>
 
 function Spinner() {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "40px 0", color: "#6b7280" }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "40px 0", color: "var(--gv-text-muted)" }}>
       <div style={{ width: 28, height: 28, borderRadius: "50%", border: "3px solid #e5e7eb", borderTop: `3px solid ${NAVY}`, animation: "spSpin 0.75s linear infinite", flexShrink: 0 }} />
       <span style={{ fontSize: "0.88em" }}>Computing Special Model…</span>
       <style>{`@keyframes spSpin { to { transform: rotate(360deg); } }`}</style>
@@ -141,7 +141,7 @@ function ForecastTable({
         <input type="number" value={globalRate} min={-50} max={200} step={0.5}
           onChange={(e) => onGlobalChange(Number(e.target.value))}
           style={{ width: 80, padding: "3px 8px", border: "1px solid #d1d5db", borderRadius: 4, fontSize: "0.83em", fontFamily: "inherit", textAlign: "right", background: CLR_USER_BG }} />
-        <span style={{ fontSize: "0.78em", color: "#6b7280" }}>%</span>
+        <span style={{ fontSize: "0.78em", color: "var(--gv-text-muted)" }}>%</span>
       </div>
       <div style={{ overflowX: "auto" }}>
         <table style={{ borderCollapse: "collapse", fontSize: "0.81em", minWidth: 460 }}>
@@ -198,7 +198,7 @@ const Checklist = memo(function Checklist({ items }: { items: CfIrrCheckItem[] }
             return (
               <tr key={i} style={{ background: bg }}>
                 <td style={{ padding: "7px 12px", fontWeight: 600, color: fg, border: "1px solid #e5e7eb" }}>{item.label}</td>
-                <td style={{ padding: "7px 12px", textAlign: "center", color: "#4d6b88", border: "1px solid #e5e7eb" }}>{item.threshold}</td>
+                <td style={{ padding: "7px 12px", textAlign: "center", color: "var(--gv-text-dim)", border: "1px solid #e5e7eb" }}>{item.threshold}</td>
                 <td style={{ padding: "7px 12px", textAlign: "center", fontWeight: 700, color: fg, border: "1px solid #e5e7eb", ...MONO }}>{item.display}</td>
                 <td style={{ padding: "7px 12px", textAlign: "center", fontSize: "1.1em", border: "1px solid #e5e7eb" }}>{icon}</td>
               </tr>
@@ -283,7 +283,7 @@ function SliderRow({ label, value, min, max, step, onChange, suffix = "" }: {
         <input type="number" min={min} max={max} step={step} value={value}
           onChange={(e) => onChange(Number(e.target.value))}
           style={{ width: 68, padding: "3px 6px", border: "1px solid #d1d5db", borderRadius: 4, fontSize: "0.82em", fontFamily: "inherit", textAlign: "right", background: CLR_USER_BG }} />
-        {suffix && <span style={{ fontSize: "0.78em", color: "#6b7280", flexShrink: 0 }}>{suffix}</span>}
+        {suffix && <span style={{ fontSize: "0.78em", color: "var(--gv-text-muted)", flexShrink: 0 }}>{suffix}</span>}
       </div>
     </div>
   );
@@ -453,7 +453,7 @@ export default function CfIrrSpecialTab({ ticker, externalWacc }: Props) {
   const handleMos      = (v: number) => { setMosPct(v);    refetch({ mos: v }); };
 
   if (loading && !data) return <Spinner />;
-  if (error)            return <div style={{ background: "#fee2e2", border: "1px solid #fca5a5", borderRadius: 8, padding: "12px 16px", color: "#991b1b" }}><strong>Error:</strong> {error}</div>;
+  if (error)            return <div style={{ background: "var(--gv-red-bg)", border: "1px solid #fca5a5", borderRadius: 8, padding: "12px 16px", color: "var(--gv-red)" }}><strong>Error:</strong> {error}</div>;
   if (!data)            return null;
 
   const baseYear = data.base_year;
@@ -510,7 +510,7 @@ export default function CfIrrSpecialTab({ ticker, externalWacc }: Props) {
             background: passed === true ? CLR_PASS : passed === false ? CLR_FAIL : CLR_NA,
             borderRadius: 6, padding: "10px 14px", textAlign: "center",
           }}>
-            <div style={{ fontSize: "0.65em", textTransform: "uppercase", letterSpacing: "0.07em", color: "#4d6b88", marginBottom: 4 }}>{label}</div>
+            <div style={{ fontSize: "0.65em", textTransform: "uppercase", letterSpacing: "0.07em", color: "var(--gv-text-dim)", marginBottom: 4 }}>{label}</div>
             <div style={{ fontSize: "1.25em", fontWeight: 800, color: passed === true ? CLR_PASS_FG : passed === false ? CLR_FAIL_FG : NAVY }}>{val}</div>
           </div>
         ))}
@@ -587,7 +587,7 @@ export default function CfIrrSpecialTab({ ticker, externalWacc }: Props) {
             [`Average Target Price`,              f$(data.avg_target),    NAVY,        "#fff"],
           ].map(([label, val, bg, fg]) => (
             <div key={label as string} style={{ background: bg as string, borderRadius: 6, padding: "10px 14px", textAlign: "center" }}>
-              <div style={{ fontSize: "0.68em", color: bg === NAVY ? "#94a3b8" : "#4d6b88", marginBottom: 4 }}>{label}</div>
+              <div style={{ fontSize: "0.68em", color: bg === NAVY ? "#94a3b8" : "var(--gv-text-dim)", marginBottom: 4 }}>{label}</div>
               <div style={{ fontSize: "1.35em", fontWeight: 800, color: fg as string, ...MONO }}>{val}</div>
             </div>
           ))}
@@ -599,7 +599,7 @@ export default function CfIrrSpecialTab({ ticker, externalWacc }: Props) {
       <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 20, alignItems: "start" }}>
         <div>
           <SubHeader title="IRR Cash Flow Table" />
-          <div style={{ fontSize: "0.78em", color: "#4d6b88", marginBottom: 8, lineHeight: 1.5 }}>
+          <div style={{ fontSize: "0.78em", color: "var(--gv-text-dim)", marginBottom: 8, lineHeight: 1.5 }}>
             Entry cost = current stock price. Annual income = projected EPS.
             Year {baseYear + 9}: EPS + Average Target Price (terminal exit value).
           </div>

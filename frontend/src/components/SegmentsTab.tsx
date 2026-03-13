@@ -11,12 +11,12 @@
 import { useState, useEffect, useCallback, memo, Fragment } from "react";
 import type { SegmentsData, Segment } from "../types";
 
-const NAVY = "#1c2b46";
+const NAVY = "var(--gv-navy)";
 
 // ── Color palette ─────────────────────────────────────────────────────────────
 
 const SEG_COLORS = [
-  "#007bff",
+  "var(--gv-blue)",
   "#10b981",
   "#f59e0b",
   "#ef4444",
@@ -25,7 +25,7 @@ const SEG_COLORS = [
   "#ec4899",
   "#84cc16",
   "#f97316",
-  "#1c2b46",
+  "var(--gv-navy)",
 ];
 
 const segColor = (i: number) => SEG_COLORS[i % SEG_COLORS.length];
@@ -153,7 +153,7 @@ const StackedBarChart = memo(function StackedBarChart({
         <line
           key={i}
           x1={PL} x2={VW - PR} y1={y} y2={y}
-          stroke="#e5e7eb"
+          stroke="var(--gv-border)"
           strokeWidth={i === 0 ? 1.5 : 0.7}
           strokeDasharray={i > 0 ? "3 3" : undefined}
         />
@@ -164,7 +164,7 @@ const StackedBarChart = memo(function StackedBarChart({
         <text
           key={i}
           x={PL - 6} y={y + 3.5}
-          textAnchor="end" fontSize={9} fill="#9ca3af"
+          textAnchor="end" fontSize={9} fill="var(--gv-text-muted)"
           fontFamily="system-ui, sans-serif"
         >
           {raw === 0 ? "0" : fRev(raw).replace("$", "")}
@@ -193,7 +193,7 @@ const StackedBarChart = memo(function StackedBarChart({
           key={yr}
           x={PL + xi * slotW + slotW / 2}
           y={VH - PB + 16}
-          textAnchor="middle" fontSize={10} fill="#6b7280"
+          textAnchor="middle" fontSize={10} fill="var(--gv-text-muted)"
           fontFamily="system-ui, sans-serif"
         >
           {yr}
@@ -287,7 +287,7 @@ const DonutChart = memo(function DonutChart({
           <text x={cx} y={cy - 7} textAnchor="middle" fontSize={12} fontWeight={700} fill={NAVY} fontFamily="system-ui, sans-serif">
             {fRev(total)}
           </text>
-          <text x={cx} y={cy + 9} textAnchor="middle" fontSize={8.5} fill="#9ca3af" fontFamily="system-ui, sans-serif">
+          <text x={cx} y={cy + 9} textAnchor="middle" fontSize={8.5} fill="var(--gv-text-muted)" fontFamily="system-ui, sans-serif">
             {latestYear} Total Revenue
           </text>
         </>
@@ -299,7 +299,7 @@ const DonutChart = memo(function DonutChart({
             <text x={cx} y={cy - 8} textAnchor="middle" fontSize={11.5} fontWeight={700} fill={NAVY} fontFamily="system-ui, sans-serif">
               {fRev(sl.value)}
             </text>
-            <text x={cx} y={cy + 7} textAnchor="middle" fontSize={8.5} fill="#9ca3af" fontFamily="system-ui, sans-serif">
+            <text x={cx} y={cy + 7} textAnchor="middle" fontSize={8.5} fill="var(--gv-text-muted)" fontFamily="system-ui, sans-serif">
               {(sl.pct * 100).toFixed(1)}% of total
             </text>
           </>
@@ -415,7 +415,7 @@ function SegmentsTable({
                 <td style={{ ...tdBase, cursor: "pointer" }} onClick={() => toggle(seg.name)}>
                   <span style={{ fontWeight: 600 }}>{seg.name}</span>
                   {share && (
-                    <span style={{ marginLeft: 6, fontSize: "0.80em", color: "#9ca3af" }}>
+                    <span style={{ marginLeft: 6, fontSize: "0.80em", color: "var(--gv-text-muted)" }}>
                       {share}%
                     </span>
                   )}
@@ -436,7 +436,7 @@ function SegmentsTable({
                     textAlign: "right",
                     fontVariantNumeric: "tabular-nums",
                     fontWeight: yoy.pos !== null ? 600 : 400,
-                    color: yoy.pos === true ? "#16a34a" : yoy.pos === false ? "#dc2626" : "#9ca3af",
+                    color: yoy.pos === true ? "#16a34a" : yoy.pos === false ? "#dc2626" : "var(--gv-text-muted)",
                     cursor: "pointer",
                   }}
                   onClick={() => toggle(seg.name)}
@@ -464,7 +464,7 @@ function SegmentsTable({
 
                 {/* Expand chevron */}
                 <td
-                  style={{ ...tdBase, textAlign: "center", color: "#9ca3af", fontSize: "0.70em", cursor: "pointer" }}
+                  style={{ ...tdBase, textAlign: "center", color: "var(--gv-text-muted)", fontSize: "0.70em", cursor: "pointer" }}
                   onClick={() => toggle(seg.name)}
                 >
                   {isOpen ? "▲" : "▼"}
@@ -603,7 +603,7 @@ export default function SegmentsTab({ ticker }: { ticker: string }) {
                 outline: isSelected ? `2px solid ${segColor(i)}` : "none",
                 outlineOffset: 2,
               }} />
-              <span style={{ fontSize: "0.75em", color: "#4d6b88" }}>{s.name}</span>
+              <span style={{ fontSize: "0.75em", color: "var(--gv-text-dim)" }}>{s.name}</span>
             </div>
           );
         })}

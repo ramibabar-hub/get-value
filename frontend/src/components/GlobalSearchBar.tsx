@@ -2,8 +2,8 @@ import { useState, useRef, useEffect } from "react";
 import { Search, X } from "lucide-react";
 
 // ── Color palette ──────────────────────────────────────────────────────────────
-const BLUE = "#007bff";
-const NAVY = "#1c2b46";
+const BLUE = "var(--gv-blue)";
+const NAVY = "var(--gv-navy)";
 
 // ── Unified result shape (matches /api/search response) ───────────────────────
 interface SearchResult {
@@ -154,7 +154,7 @@ export default function GlobalSearchBar({ onSelect }: GlobalSearchBarProps) {
       }}>
         {isLoading
           ? <Spinner />
-          : <Search size={17} color={focused ? BLUE : "#9ca3af"} style={{ flexShrink: 0, transition: "color 0.15s" }} />
+          : <Search size={17} color={focused ? BLUE : "var(--gv-text-muted)"} style={{ flexShrink: 0, transition: "color 0.15s" }} />
         }
         <input
           ref={inputRef}
@@ -173,7 +173,7 @@ export default function GlobalSearchBar({ onSelect }: GlobalSearchBarProps) {
         {query && (
           <button onClick={clearQuery} style={{
             background: "none", border: "none", cursor: "pointer",
-            padding: 2, color: "#9ca3af", display: "flex", alignItems: "center",
+            padding: 2, color: "var(--gv-text-muted)", display: "flex", alignItems: "center",
           }}>
             <X size={14} />
           </button>
@@ -208,7 +208,7 @@ export default function GlobalSearchBar({ onSelect }: GlobalSearchBarProps) {
           {noResults && (
             <div style={{
               padding: "16px 20px", textAlign: "center",
-              color: "#9ca3af", fontSize: "0.85em",
+              color: "var(--gv-text-muted)", fontSize: "0.85em",
             }}>
               No results found for&nbsp;
               <strong style={{ color: NAVY }}>&ldquo;{query.trim()}&rdquo;</strong>

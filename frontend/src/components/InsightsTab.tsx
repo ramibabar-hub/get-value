@@ -19,7 +19,7 @@ import { lookupBenchmark } from "../utils/industryBenchmarks";
 
 const MiniChart = lazy(() => import("./MiniChart"));
 
-const NAVY = "#1c2b46";
+const NAVY = "var(--gv-navy)";
 
 // ── Slide-down keyframes (injected once) ──────────────────────────────────────
 
@@ -133,7 +133,7 @@ const MetricRow = memo(function MetricRow({
                 border:      isExpanded ? "1px solid #bfdbfe" : "none",
                 padding:     2,
                 cursor:      "pointer",
-                color:       isExpanded ? "#3b82f6" : "#9ca3af",
+                color:       isExpanded ? "#3b82f6" : "var(--gv-text-muted)",
                 lineHeight:  0,
                 borderRadius: 3,
                 flexShrink:  0,
@@ -159,7 +159,7 @@ const MetricRow = memo(function MetricRow({
                 textAlign: "right",
                 fontVariantNumeric: "tabular-nums",
                 fontFamily: "'Courier New', monospace",
-                color:     isNM  ? "#9ca3af" : isNeg ? "#dc2626" : NAVY,
+                color:     isNM  ? "var(--gv-text-muted)" : isNeg ? "#dc2626" : NAVY,
                 fontStyle: isNM  ? "italic"  : "normal",
                 fontSize:  isNM  ? "0.92em"  : undefined,
               }}
@@ -217,7 +217,7 @@ const MetricRow = memo(function MetricRow({
               <div style={{
                 fontSize:      "0.70em",
                 fontWeight:    600,
-                color:         "#6b7280",
+                color:         "var(--gv-text-muted)",
                 letterSpacing: "0.05em",
                 textTransform: "uppercase",
                 marginBottom:  4,
@@ -228,7 +228,7 @@ const MetricRow = memo(function MetricRow({
               {/* MiniChart fetched only on first expansion (React.lazy) */}
               <Suspense
                 fallback={
-                  <div style={{ color: "#9ca3af", fontSize: "0.8em", paddingTop: 8 }}>
+                  <div style={{ color: "var(--gv-text-muted)", fontSize: "0.8em", paddingTop: 8 }}>
                     Loading chart…
                   </div>
                 }
@@ -378,7 +378,7 @@ const WaccTable = memo(function WaccTable({ wacc }: { wacc: WaccData }) {
                 </td>
                 <td style={{
                   padding: "6px 12px", border: "1px solid #e5e7eb",
-                  color: "#6b7280", fontStyle: "italic", fontSize: "0.92em",
+                  color: "var(--gv-text-muted)", fontStyle: "italic", fontSize: "0.92em",
                 }}>
                   {r.note}
                 </td>
@@ -407,7 +407,7 @@ function WaccSelector({ computedWacc, manualWacc, onChange }: {
     }}>
       <div style={{ fontSize: "0.97em", fontWeight: 700, color: NAVY, marginBottom: 10 }}>
         Manual WACC Override
-        <span style={{ fontSize: "0.78em", fontWeight: 500, color: "#6b7280", marginLeft: 10 }}>
+        <span style={{ fontSize: "0.78em", fontWeight: 500, color: "var(--gv-text-muted)", marginLeft: 10 }}>
           — applies to Valuations tab when "Use WACC" is checked
         </span>
       </div>
@@ -416,7 +416,7 @@ function WaccSelector({ computedWacc, manualWacc, onChange }: {
           <div style={{ fontSize: "0.78em", fontWeight: 600, color: NAVY }}>
             WACC: <span style={{ color: "#b45309", fontWeight: 700 }}>{manualWacc.toFixed(1)}%</span>
             {computed != null && (
-              <span style={{ color: "#6b7280", fontWeight: 400, marginLeft: 8 }}>
+              <span style={{ color: "var(--gv-text-muted)", fontWeight: 400, marginLeft: 8 }}>
                 (computed: {computed.toFixed(2)}%)
               </span>
             )}
@@ -426,7 +426,7 @@ function WaccSelector({ computedWacc, manualWacc, onChange }: {
             onChange={(e) => onChange(Number(e.target.value))}
             style={{ accentColor: "#f59e0b", width: "100%", cursor: "pointer" }}
           />
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.68em", color: "#9ca3af" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.68em", color: "var(--gv-text-muted)" }}>
             <span>1%</span><span>30%</span>
           </div>
         </div>
@@ -451,7 +451,7 @@ function WaccSelector({ computedWacc, manualWacc, onChange }: {
 
 function Spinner() {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "40px 0", color: "#6b7280" }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "40px 0", color: "var(--gv-text-muted)" }}>
       <div style={{
         width: 28, height: 28, borderRadius: "50%",
         border: "3px solid #e5e7eb", borderTop: `3px solid ${NAVY}`,
@@ -482,8 +482,8 @@ export default function InsightsTab({
   if (error) {
     return (
       <div style={{
-        background: "#fee2e2", border: "1px solid #fca5a5",
-        borderRadius: 8, padding: "12px 16px", color: "#991b1b",
+        background: "var(--gv-red-bg)", border: "1px solid #fca5a5",
+        borderRadius: 8, padding: "12px 16px", color: "var(--gv-red)",
       }}>
         <strong>Error loading insights:</strong> {error}
       </div>

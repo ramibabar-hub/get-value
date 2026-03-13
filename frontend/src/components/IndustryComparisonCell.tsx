@@ -73,7 +73,7 @@ const BulletBar = memo(function BulletBar({ result, animKey }: BulletBarProps) {
         style={{
           position: "absolute", inset: "0 0", margin: "auto",
           height: 5, borderRadius: 9999,
-          background: "#e5e7eb",
+          background: "var(--gv-border)",
           overflow: "visible",
         }}
       >

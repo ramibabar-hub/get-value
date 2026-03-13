@@ -13,8 +13,8 @@ import {
 import type { PriceHistoryData, PriceRange, PricePoint } from "../types";
 
 // ── Palette ────────────────────────────────────────────────────────────────────
-const NAVY  = "#1c2b46";
-const BLUE  = "#007bff";
+const NAVY  = "var(--gv-navy)";
+const BLUE  = "var(--gv-blue)";
 const MA50  = "#f59e0b";   // amber
 const MA200 = "#10b981";   // emerald
 
@@ -95,7 +95,7 @@ function ChartTooltip({ active, payload }: {
         </div>
       )}
       {base.volume != null && (
-        <div style={{ color: "#9ca3af", marginTop: 5, paddingTop: 5, borderTop: "1px solid #f0f2f5" }}>
+        <div style={{ color: "var(--gv-text-muted)", marginTop: 5, paddingTop: 5, borderTop: "1px solid #f0f2f5" }}>
           Vol: {fmtVol(base.volume)}
         </div>
       )}
@@ -195,7 +195,7 @@ export default function StockPriceChart({ ticker }: Props) {
               borderRadius: 6,
               border: `1px solid ${r === range ? BLUE : "#d1d5db"}`,
               background: r === range ? BLUE : "#fff",
-              color: r === range ? "#fff" : "#6b7280",
+              color: r === range ? "#fff" : "var(--gv-text-muted)",
               cursor: "pointer",
               transition: "all 0.15s",
             }}
@@ -225,7 +225,7 @@ export default function StockPriceChart({ ticker }: Props) {
       {loading ? (
         <ChartSkeleton />
       ) : !points.length ? (
-        <div style={{ height: 60, display: "flex", alignItems: "center", justifyContent: "center", color: "#9ca3af", fontSize: "0.8em", border: "1px dashed #e5e7eb", borderRadius: 8 }}>
+        <div style={{ height: 60, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--gv-text-muted)", fontSize: "0.8em", border: "1px dashed #e5e7eb", borderRadius: 8 }}>
           No price data available for {range}
         </div>
       ) : (
@@ -241,13 +241,13 @@ export default function StockPriceChart({ ticker }: Props) {
               </linearGradient>
             </defs>
 
-            <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false} />
+            <CartesianGrid strokeDasharray="3 3" stroke="var(--gv-border)" vertical={false} />
 
             <XAxis
               dataKey="date"
               ticks={xTicks}
               tickFormatter={d => fmtDate(d, range)}
-              tick={{ fontSize: 10, fill: "#9ca3af" }}
+              tick={{ fontSize: 10, fill: "var(--gv-text-muted)" }}
               axisLine={false}
               tickLine={false}
             />
@@ -257,7 +257,7 @@ export default function StockPriceChart({ ticker }: Props) {
               yAxisId="price"
               domain={[minP - pad, maxP + pad]}
               tickFormatter={v => `$${(v as number).toFixed(0)}`}
-              tick={{ fontSize: 10, fill: "#9ca3af" }}
+              tick={{ fontSize: 10, fill: "var(--gv-text-muted)" }}
               axisLine={false}
               tickLine={false}
               width={52}

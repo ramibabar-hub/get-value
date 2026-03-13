@@ -4,8 +4,8 @@ import { Users, ShieldCheck, TrendingUp } from "lucide-react";
 import type { OwnershipData } from "../types";
 
 // ── Palette ────────────────────────────────────────────────────────────────────
-const NAVY   = "#1c2b46";
-const BLUE   = "#007bff";
+const NAVY   = "var(--gv-navy)";
+const BLUE   = "var(--gv-blue)";
 const SLATE  = "#64748b";
 
 const SEGMENTS = [
@@ -174,7 +174,7 @@ export default function CompanyOwnershipChart({ ticker }: Props) {
           </div>
 
           {/* Insider label note */}
-          <div style={{ fontSize: "0.68em", color: "#9ca3af", marginBottom: 12, fontStyle: "italic" }}>
+          <div style={{ fontSize: "0.68em", color: "var(--gv-text-muted)", marginBottom: 12, fontStyle: "italic" }}>
             Insider % sourced from SEC filings · Institutional/Retail are AI estimates
           </div>
 
@@ -208,7 +208,7 @@ function SectionHeader() {
       <h3 style={{ margin: 0, fontSize: "0.95em", fontWeight: 700, color: NAVY, letterSpacing: "0.02em", textTransform: "uppercase" }}>
         Ownership Structure
       </h3>
-      <div style={{ flex: 1, height: 1, background: "#e5e7eb" }} />
+      <div style={{ flex: 1, height: 1, background: "var(--gv-border)" }} />
     </div>
   );
 }

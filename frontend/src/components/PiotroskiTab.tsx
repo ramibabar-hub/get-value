@@ -9,10 +9,10 @@ import { useState, useEffect, memo } from "react";
 import type { PiotroskiData } from "../types";
 
 // ── Palette (matches CfIrrTab / project-wide palette) ─────────────────────────
-const NAVY      = "#1c2b46";
-const CLR_PASS  = "#d1fae5"; const CLR_PASS_FG = "#065f46";
-const CLR_FAIL  = "#fee2e2"; const CLR_FAIL_FG = "#991b1b";
-const CLR_NA    = "#f3f4f6"; const CLR_NA_FG   = "#6b7280";
+const NAVY      = "var(--gv-navy)";
+const CLR_PASS  = "var(--gv-green-bg)"; const CLR_PASS_FG = "var(--gv-green)";
+const CLR_FAIL  = "var(--gv-red-bg)"; const CLR_FAIL_FG = "var(--gv-red)";
+const CLR_NA    = "var(--gv-data-bg)"; const CLR_NA_FG   = "var(--gv-text-muted)";
 
 const MONO: React.CSSProperties = {
   fontFamily: "'Courier New', monospace",
@@ -70,8 +70,8 @@ function ScoreCard({ score }: { score: number }) {
   const high = score >= 7;
   const mid  = score >= 4 && score < 7;
 
-  const bg    = high ? "#d1fae5" : mid ? "#fef9c3" : "#fee2e2";
-  const fg    = high ? "#065f46" : mid ? "#92400e" : "#991b1b";
+  const bg    = high ? "var(--gv-green-bg)" : mid ? "var(--gv-yellow-bg)" : "var(--gv-red-bg)";
+  const fg    = high ? "var(--gv-green)" : mid ? "#92400e" : "var(--gv-red)";
   const bar   = high ? "#10b981" : mid ? "#f59e0b" : "#ef4444";
   const label = high ? "Strong financial health" : mid ? "Moderate financial health" : "Weak financial health";
 
@@ -150,10 +150,10 @@ const CriterionRow = memo(function CriterionRow({
         <span title={tooltip} style={{ cursor: "help", borderBottom: "1px dotted #9ca3af" }}>
           {label}
         </span>
-        <span style={{ fontSize: "0.75em", color: "#9ca3af", marginLeft: 4 }}>ⓘ</span>
+        <span style={{ fontSize: "0.75em", color: "var(--gv-text-muted)", marginLeft: 4 }}>ⓘ</span>
       </td>
       {/* Condition logic */}
-      <td style={{ padding: "9px 14px", fontSize: "0.78em", color: "#6b7280", ...MONO, whiteSpace: "nowrap" }}>
+      <td style={{ padding: "9px 14px", fontSize: "0.78em", color: "var(--gv-text-muted)", ...MONO, whiteSpace: "nowrap" }}>
         {condition}
       </td>
       {/* TTM value */}
@@ -161,7 +161,7 @@ const CriterionRow = memo(function CriterionRow({
         {ttmVal}
       </td>
       {/* PREV TTM value */}
-      <td style={{ padding: "9px 14px", fontSize: "0.88em", textAlign: "right", ...MONO, color: "#6b7280" }}>
+      <td style={{ padding: "9px 14px", fontSize: "0.88em", textAlign: "right", ...MONO, color: "var(--gv-text-muted)" }}>
         {prevVal}
       </td>
       {/* Pass/Fail badge */}
@@ -189,11 +189,11 @@ const CriteriaTable = memo(function CriteriaTable({ rows }: CriteriaTableProps) 
     <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.9em" }}>
       <thead>
         <tr style={{ background: "#f8f9fb", borderBottom: "2px solid #e5e7eb" }}>
-          <th style={{ padding: "7px 14px", textAlign: "left",   fontSize: "0.78em", fontWeight: 700, color: "#6b7280", letterSpacing: "0.06em", textTransform: "uppercase" }}>Criterion</th>
-          <th style={{ padding: "7px 14px", textAlign: "left",   fontSize: "0.78em", fontWeight: 700, color: "#6b7280", letterSpacing: "0.06em", textTransform: "uppercase" }}>Test Logic</th>
-          <th style={{ padding: "7px 14px", textAlign: "right",  fontSize: "0.78em", fontWeight: 700, color: "#6b7280", letterSpacing: "0.06em", textTransform: "uppercase" }}>TTM</th>
-          <th style={{ padding: "7px 14px", textAlign: "right",  fontSize: "0.78em", fontWeight: 700, color: "#6b7280", letterSpacing: "0.06em", textTransform: "uppercase" }}>Prev TTM</th>
-          <th style={{ padding: "7px 14px", textAlign: "center", fontSize: "0.78em", fontWeight: 700, color: "#6b7280", letterSpacing: "0.06em", textTransform: "uppercase" }}>Score</th>
+          <th style={{ padding: "7px 14px", textAlign: "left",   fontSize: "0.78em", fontWeight: 700, color: "var(--gv-text-muted)", letterSpacing: "0.06em", textTransform: "uppercase" }}>Criterion</th>
+          <th style={{ padding: "7px 14px", textAlign: "left",   fontSize: "0.78em", fontWeight: 700, color: "var(--gv-text-muted)", letterSpacing: "0.06em", textTransform: "uppercase" }}>Test Logic</th>
+          <th style={{ padding: "7px 14px", textAlign: "right",  fontSize: "0.78em", fontWeight: 700, color: "var(--gv-text-muted)", letterSpacing: "0.06em", textTransform: "uppercase" }}>TTM</th>
+          <th style={{ padding: "7px 14px", textAlign: "right",  fontSize: "0.78em", fontWeight: 700, color: "var(--gv-text-muted)", letterSpacing: "0.06em", textTransform: "uppercase" }}>Prev TTM</th>
+          <th style={{ padding: "7px 14px", textAlign: "center", fontSize: "0.78em", fontWeight: 700, color: "var(--gv-text-muted)", letterSpacing: "0.06em", textTransform: "uppercase" }}>Score</th>
         </tr>
       </thead>
       <tbody>
@@ -346,7 +346,7 @@ export default function PiotroskiTab({ ticker }: PiotroskiTabProps) {
       {/* ── Legend ── */}
       <div style={{
         marginTop: 20, padding: "10px 16px",
-        background: "#f8f9fb", borderRadius: 8, fontSize: "0.76em", color: "#6b7280",
+        background: "#f8f9fb", borderRadius: 8, fontSize: "0.76em", color: "var(--gv-text-muted)",
         display: "flex", flexWrap: "wrap", gap: "6px 20px",
       }}>
         <span><strong style={{ color: NAVY }}>TTM</strong> = trailing twelve months (sum of last 4 quarters)</span>
