@@ -2424,6 +2424,78 @@ def gemini_audit(ticker: str, body: dict = None):
         }
 
 
+@app.get("/api/analyst/{ticker}", tags=["Profile"])
+def get_analyst_consensus(ticker: str):
+    """
+    Fetch analyst Buy/Hold/Sell consensus and price targets from FMP.
+    Endpoint: /stable/analyst-estimates/{ticker}
+    Returns aggregated consensus based on the most recent period.
+    """
+    from backend.services.fmp_service import FMPService
+    svc = FMPService()
+    try:
+        data = svc._get(
+            f"{svc._STABLE}/analyst-estimates/{ticker.upper()}",
+            params={"limit": 4},
+        )
+        if not data or not isinstance(data, list):
+            return {"ticker": ticker, "num_analysts": 0, "buy": 0, "hold": 0, "sell": 0,
+                    "consensus": "N/A", "price_target_avg": None, "price_target_high": None,
+                    "price_target_low": None, "error": "No data"}
+
+        # Use the most recent entry
+        latest = data[0]
+
+        num_buy  = int(latest.get("numAnalystEstimateBuy",  0) or 0)
+        num_hold = int(latest.get("numAnalystEstimateHold", 0) or 0)
+        num_sell = int(latest.get("numAnalystEstimateSell", 0) or 0)
+        total    = num_buy + num_hold + num_sell
+
+        pt_avg  = 0.0
+        # Try price target fields — FMP uses different field names across versions
+        for pt_field in ["priceTarget", "estimatedPriceAvg", "targetConsensus"]:
+            if latest.get(pt_field):
+                pt_avg = float(latest[pt_field])
+                break
+
+        pt_high = None
+        pt_low  = None
+        for hi_field in ["priceTargetHigh", "estimatedPriceHigh"]:
+            if latest.get(hi_field):
+                pt_high = float(latest[hi_field])
+                break
+        for lo_field in ["priceTargetLow", "estimatedPriceLow"]:
+            if latest.get(lo_field):
+                pt_low = float(latest[lo_field])
+                break
+
+        # Determine consensus
+        if total == 0:
+            consensus = "N/A"
+        elif num_buy > num_hold and num_buy > num_sell:
+            consensus = "Buy"
+        elif num_sell > num_buy and num_sell > num_hold:
+            consensus = "Sell"
+        else:
+            consensus = "Hold"
+
+        return {
+            "ticker":            ticker,
+            "num_analysts":      total,
+            "buy":               num_buy,
+            "hold":              num_hold,
+            "sell":              num_sell,
+            "consensus":         consensus,
+            "price_target_avg":  pt_avg if pt_avg else None,
+            "price_target_high": pt_high,
+            "price_target_low":  pt_low,
+        }
+    except Exception as e:
+        return {"ticker": ticker, "num_analysts": 0, "buy": 0, "hold": 0, "sell": 0,
+                "consensus": "N/A", "price_target_avg": None, "price_target_high": None,
+                "price_target_low": None, "error": str(e)}
+
+
 @app.get("/health", include_in_schema=False)
 def health():
     return {"status": "ok", "version": app.version}

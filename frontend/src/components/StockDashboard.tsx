@@ -26,6 +26,7 @@ import StockPriceChart          from "./StockPriceChart";
 import CompanyInsightsFeed      from "./CompanyInsightsFeed";
 import CompanyOwnershipChart    from "./CompanyOwnershipChart";
 import GrokSentimentBadge from "./GrokSentimentBadge";
+import AnalystConsensusBar from "./AnalystConsensusBar";
 import Valueground from "./Valueground";
 import FilingAuditPanel from "./FilingAuditPanel";
 
@@ -601,12 +602,15 @@ export default function StockDashboard({ ticker, onSearch }: StockDashboardProps
               ov
                 ? <div style={{ maxWidth: 960, marginTop: 8 }}>
 
-                    {/* Grok sentiment badge */}
-                    <div style={{ marginTop: 10, marginBottom: 8, display: "flex", alignItems: "center", gap: 10 }}>
-                      <span style={{ fontSize: "0.72em", color: "var(--gv-text-dim)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.07em" }}>
-                        Sentiment
-                      </span>
-                      <GrokSentimentBadge ticker={ticker} />
+                    {/* Grok sentiment badge + Analyst consensus */}
+                    <div style={{ marginTop: 10, marginBottom: 8, display: "flex", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <span style={{ fontSize: "0.72em", color: "var(--gv-text-dim)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.07em" }}>
+                          Sentiment
+                        </span>
+                        <GrokSentimentBadge ticker={ticker} />
+                      </div>
+                      <AnalystConsensusBar ticker={ticker} />
                     </div>
 
                     {/* Row 1: AI Description (left) + Price Chart (right) */}

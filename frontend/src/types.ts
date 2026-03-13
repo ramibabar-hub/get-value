@@ -487,3 +487,17 @@ export interface FilingAudit {
   model:        string;
   error:        string | null;
 }
+
+// ── Analyst Consensus (FMP) ───────────────────────────────────────────────────
+export interface AnalystConsensus {
+  ticker:            string;
+  num_analysts:      number;
+  buy:               number;
+  hold:              number;
+  sell:              number;
+  consensus:         "Buy" | "Hold" | "Sell" | "N/A";
+  price_target_avg:  number | null;
+  price_target_high: number | null;
+  price_target_low:  number | null;
+  error?:            string;
+}
