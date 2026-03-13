@@ -3,8 +3,8 @@ import StockDashboard from "./components/StockDashboard";
 import GlobalSearchBar from "./components/GlobalSearchBar";
 
 // ── Color palette ─────────────────────────────────────────────────────────────
-const NAVY  = "#1c2b46";
-const BG    = "#f0f2f5";
+const NAVY  = "var(--gv-navy)";
+const BG    = "var(--gv-bg)";
 
 // ── Session-storage keys (persist view across browser refresh) ─────────────────
 const SK_TICKER  = "gv_ticker";   // e.g. "AAPL"
@@ -81,7 +81,7 @@ export default function App() {
       </div>
 
       {/* Hint */}
-      <p style={{ marginTop: 14, fontSize: "0.78em", color: "#9ca3af" }}>
+      <p style={{ marginTop: 14, fontSize: "0.78em", color: "var(--gv-text-muted)" }}>
         US stocks · International: NICE.TA · BMW.DE · VOD.L
       </p>
 
