@@ -18,6 +18,7 @@ import { IndustryComparisonCell } from "./IndustryComparisonCell";
 import { lookupBenchmark } from "../utils/industryBenchmarks";
 import { TableToolbar, ExpandOverlay } from "./TableToolbar";
 import MetricsCatalogModal from "./MetricsCatalogModal";
+import FinancialsGraphsView from "./FinancialsGraphsView";
 import TableRowCustomizer from "./TableRowCustomizer";
 import { useLayoutStore } from "../store/layoutStore";
 import { getDefaultHiddenRows } from "../constants/financialsRegistry";
@@ -653,6 +654,7 @@ export default function FinancialsTab({
   const [decimals,       setDecimals]       = useState<DecimalsOpt>("0");
   const [showChangePct,  setShowChangePct]  = useState(false);
   const [reverseCols,    setReverseCols]    = useState(false);
+  const [graphView,      setGraphView]      = useState(false);
   const { hiddenFinancialsSections } = useLayoutStore();
 
   // Derive display column order — optionally reversed
@@ -674,6 +676,32 @@ export default function FinancialsTab({
         display: "flex", alignItems: "center", gap: 20, flexWrap: "wrap",
         marginBottom: 16, paddingBottom: 12, borderBottom: "1px solid #e5e7eb",
       }}>
+        {/* View toggle */}
+        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+          {(["By Tables", "By Graphs"] as const).map(v => {
+            const active = (v === "By Graphs") === graphView;
+            return (
+              <button
+                key={v}
+                onClick={() => setGraphView(v === "By Graphs")}
+                style={{
+                  padding: "4px 12px",
+                  border: `1px solid ${active ? NAVY : "#d1d5db"}`,
+                  borderRadius: 4,
+                  background: active ? NAVY : "#fff",
+                  color: active ? "#fff" : "var(--gv-data-fg)",
+                  fontWeight: active ? 700 : 500,
+                  fontSize: "0.82em",
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                  transition: "all 0.12s",
+                }}
+              >
+                {v}
+              </button>
+            );
+          })}
+        </div>
         <RadioGroup<Period>
           label="Period"
           options={PERIODS}
@@ -737,47 +765,67 @@ export default function FinancialsTab({
         ) : null}
       </div>
 
-      {loading ? <Spinner label="Loading financials…" /> : null}
-
-      {data && !loading ? (
+      {/* ── Tables View ── */}
+      {!graphView && (
         <>
-          <FinTable title="Income Statement" columns={finColumns} allColumns={data.columns} rows={data.income_statement} scale={scale} ticker={ticker} filingLinks={filingLinks} decimals={decNum} showChangePct={showChangePct} />
-          <FinTable title="Balance Sheet"    columns={finColumns} allColumns={data.columns} rows={data.balance_sheet}    scale={scale} ticker={ticker} filingLinks={filingLinks} decimals={decNum} showChangePct={showChangePct} />
-          <FinTable title="Cash Flow"        columns={finColumns} allColumns={data.columns} rows={data.cash_flow}        scale={scale} ticker={ticker} filingLinks={filingLinks} decimals={decNum} showChangePct={showChangePct} />
-          {data.debt && data.debt.length > 0 ? (
-            <FinTable title="Debt Schedule"  columns={finColumns} allColumns={data.columns} rows={data.debt}             scale={scale} ticker={ticker} filingLinks={filingLinks} decimals={decNum} showChangePct={showChangePct} />
+          {loading ? <Spinner label="Loading financials…" /> : null}
+
+          {data && !loading ? (
+            <>
+              <FinTable title="Income Statement" columns={finColumns} allColumns={data.columns} rows={data.income_statement} scale={scale} ticker={ticker} filingLinks={filingLinks} decimals={decNum} showChangePct={showChangePct} />
+              <FinTable title="Balance Sheet"    columns={finColumns} allColumns={data.columns} rows={data.balance_sheet}    scale={scale} ticker={ticker} filingLinks={filingLinks} decimals={decNum} showChangePct={showChangePct} />
+              <FinTable title="Cash Flow"        columns={finColumns} allColumns={data.columns} rows={data.cash_flow}        scale={scale} ticker={ticker} filingLinks={filingLinks} decimals={decNum} showChangePct={showChangePct} />
+              {data.debt && data.debt.length > 0 ? (
+                <FinTable title="Debt Schedule"  columns={finColumns} allColumns={data.columns} rows={data.debt}             scale={scale} ticker={ticker} filingLinks={filingLinks} decimals={decNum} showChangePct={showChangePct} />
+              ) : null}
+            </>
           ) : null}
+
+          {extLoading && !loading ? <Spinner label="Loading metric tables…" /> : null}
+
+          {extData && !extLoading ? (
+            <>
+              {/* Extended metrics header + customize button */}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 28, marginBottom: 8 }}>
+                <div style={{ fontSize: "0.88em", fontWeight: 700, color: NAVY, borderLeft: "3px solid var(--gv-navy)", paddingLeft: 8 }}>
+                  Extended Metrics
+                </div>
+                <button
+                  onClick={() => setShowCatalog(true)}
+                  style={{ fontFamily: "var(--gv-font-mono)", fontSize: "0.75em", color: "var(--gv-text-muted)", background: "none", border: "1px solid var(--gv-border)", borderRadius: 4, padding: "4px 10px", cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}
+                >
+                  ⚙ Customize
+                </button>
+              </div>
+
+              {!hiddenFinancialsSections.includes("market_valuation")  ? <ExtTable title="Market & Valuation"  columns={extColumns} allColumns={extData.columns} rows={extData.market_valuation}  scale={scale} ticker={ticker} filingLinks={filingLinks} decimals={decNum} showChangePct={showChangePct} /> : null}
+              {!hiddenFinancialsSections.includes("capital_structure") ? <ExtTable title="Capital Structure"   columns={extColumns} allColumns={extData.columns} rows={extData.capital_structure} scale={scale} ticker={ticker} filingLinks={filingLinks} decimals={decNum} showChangePct={showChangePct} /> : null}
+              {!hiddenFinancialsSections.includes("profitability")     ? <ExtTable title="Profitability"       columns={extColumns} allColumns={extData.columns} rows={extData.profitability}     scale={scale} ticker={ticker} filingLinks={filingLinks} decimals={decNum} showChangePct={showChangePct} /> : null}
+              {!hiddenFinancialsSections.includes("returns")           ? <ExtTable title="Returns"             columns={extColumns} allColumns={extData.columns} rows={extData.returns}           scale={scale} ticker={ticker} filingLinks={filingLinks} decimals={decNum} showChangePct={showChangePct} /> : null}
+              {!hiddenFinancialsSections.includes("liquidity")         ? <ExtTable title="Liquidity"           columns={extColumns} allColumns={extData.columns} rows={extData.liquidity}         scale={scale} ticker={ticker} filingLinks={filingLinks} decimals={decNum} showChangePct={showChangePct} /> : null}
+              {!hiddenFinancialsSections.includes("dividends")         ? <ExtTable title="Dividends"           columns={extColumns} allColumns={extData.columns} rows={extData.dividends}         scale={scale} ticker={ticker} filingLinks={filingLinks} decimals={decNum} showChangePct={showChangePct} /> : null}
+              {!hiddenFinancialsSections.includes("efficiency")        ? <ExtTable title="Efficiency"          columns={extColumns} allColumns={extData.columns} rows={extData.efficiency}        scale={scale} ticker={ticker} filingLinks={filingLinks} decimals={decNum} showChangePct={showChangePct} /> : null}
+            </>
+          ) : null}
+
+          {showCatalog ? <MetricsCatalogModal tab="financials" onClose={() => setShowCatalog(false)} /> : null}
         </>
-      ) : null}
+      )}
 
-      {extLoading && !loading ? <Spinner label="Loading metric tables…" /> : null}
-
-      {extData && !extLoading ? (
-        <>
-          {/* Extended metrics header + customize button */}
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 28, marginBottom: 8 }}>
-            <div style={{ fontSize: "0.88em", fontWeight: 700, color: NAVY, borderLeft: "3px solid var(--gv-navy)", paddingLeft: 8 }}>
-              Extended Metrics
-            </div>
-            <button
-              onClick={() => setShowCatalog(true)}
-              style={{ fontFamily: "var(--gv-font-mono)", fontSize: "0.75em", color: "var(--gv-text-muted)", background: "none", border: "1px solid var(--gv-border)", borderRadius: 4, padding: "4px 10px", cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}
-            >
-              ⚙ Customize
-            </button>
-          </div>
-
-          {!hiddenFinancialsSections.includes("market_valuation")  ? <ExtTable title="Market & Valuation"  columns={extColumns} allColumns={extData.columns} rows={extData.market_valuation}  scale={scale} ticker={ticker} filingLinks={filingLinks} decimals={decNum} showChangePct={showChangePct} /> : null}
-          {!hiddenFinancialsSections.includes("capital_structure") ? <ExtTable title="Capital Structure"   columns={extColumns} allColumns={extData.columns} rows={extData.capital_structure} scale={scale} ticker={ticker} filingLinks={filingLinks} decimals={decNum} showChangePct={showChangePct} /> : null}
-          {!hiddenFinancialsSections.includes("profitability")     ? <ExtTable title="Profitability"       columns={extColumns} allColumns={extData.columns} rows={extData.profitability}     scale={scale} ticker={ticker} filingLinks={filingLinks} decimals={decNum} showChangePct={showChangePct} /> : null}
-          {!hiddenFinancialsSections.includes("returns")           ? <ExtTable title="Returns"             columns={extColumns} allColumns={extData.columns} rows={extData.returns}           scale={scale} ticker={ticker} filingLinks={filingLinks} decimals={decNum} showChangePct={showChangePct} /> : null}
-          {!hiddenFinancialsSections.includes("liquidity")         ? <ExtTable title="Liquidity"           columns={extColumns} allColumns={extData.columns} rows={extData.liquidity}         scale={scale} ticker={ticker} filingLinks={filingLinks} decimals={decNum} showChangePct={showChangePct} /> : null}
-          {!hiddenFinancialsSections.includes("dividends")         ? <ExtTable title="Dividends"           columns={extColumns} allColumns={extData.columns} rows={extData.dividends}         scale={scale} ticker={ticker} filingLinks={filingLinks} decimals={decNum} showChangePct={showChangePct} /> : null}
-          {!hiddenFinancialsSections.includes("efficiency")        ? <ExtTable title="Efficiency"          columns={extColumns} allColumns={extData.columns} rows={extData.efficiency}        scale={scale} ticker={ticker} filingLinks={filingLinks} decimals={decNum} showChangePct={showChangePct} /> : null}
-        </>
-      ) : null}
-
-      {showCatalog ? <MetricsCatalogModal tab="financials" onClose={() => setShowCatalog(false)} /> : null}
+      {/* ── Graphs View ── */}
+      {graphView && (data || extData) && (
+        <FinancialsGraphsView
+          data={data}
+          extData={extData}
+          scale={scale}
+          ticker={ticker}
+        />
+      )}
+      {graphView && !data && !loading && (
+        <div style={{ padding: "40px 0", textAlign: "center", color: "var(--gv-text-muted)", fontSize: "0.88em" }}>
+          Search for a ticker to view charts.
+        </div>
+      )}
     </div>
   );
 }
