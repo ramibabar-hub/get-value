@@ -58,19 +58,37 @@ export default function FinancialsGraphsView({ data, extData, scale }: Props) {
   const isData      = buildChartData(cols, data.income_statement, IS_SERIES, div);
 
   // 0-B Cash Flow Bridge
-  const CF_SERIES   = ["Operating Cash Flow", "Free Cash Flow", "Adj. FCF"];
+  const CF_SERIES   = ["Cash flow from operations", "Free Cash flow", "Adj. FCF"];
+  const CF_LABELS   = ["Operating Cash Flow", "Free Cash Flow", "Adj. FCF"];
   const CF_COLORS   = [BLUE, GREEN, AMBER];
-  const cfData      = buildChartData(cols, data.cash_flow, CF_SERIES, div);
+  const cfRaw       = buildChartData(cols, data.cash_flow, CF_SERIES, div);
+  const cfData      = cfRaw.map(d => {
+    const out: Record<string, string | number | null> = { col: d.col };
+    CF_SERIES.forEach((s, i) => { out[CF_LABELS[i]] = d[s]; });
+    return out;
+  });
 
   // 0-C Balance Sheet Snapshot
-  const BS_SERIES   = ["Total assets", "Total liabilities", "Total Equity"];
+  const BS_SERIES   = ["Total Assets", "Total Current Liabilities", "Equity value"];
+  const BS_LABELS   = ["Total Assets", "Total Liabilities", "Equity"];
   const BS_COLORS   = [BLUE, RED, GREEN];
-  const bsData      = buildChartData(cols, data.balance_sheet, BS_SERIES, div);
+  const bsRaw       = buildChartData(cols, data.balance_sheet, BS_SERIES, div);
+  const bsData      = bsRaw.map(d => {
+    const out: Record<string, string | number | null> = { col: d.col };
+    BS_SERIES.forEach((s, i) => { out[BS_LABELS[i]] = d[s]; });
+    return out;
+  });
 
   // 0-D Debt vs Cash
-  const DC_SERIES   = ["Total Debt", "Cash & Short-Term Investments"];
+  const DC_SERIES   = ["Debt", "Cash and Cash Equivalents"];
+  const DC_LABELS   = ["Total Debt", "Cash & Equivalents"];
   const DC_COLORS   = [RED, GREEN];
-  const dcData      = buildChartData(cols, data.balance_sheet, DC_SERIES, div);
+  const dcRaw       = buildChartData(cols, data.balance_sheet, DC_SERIES, div);
+  const dcData      = dcRaw.map(d => {
+    const out: Record<string, string | number | null> = { col: d.col };
+    DC_SERIES.forEach((s, i) => { out[DC_LABELS[i]] = d[s]; });
+    return out;
+  });
 
   // ── Row 1: Valuation & Returns ────────────────────────────────────────────
 
@@ -82,14 +100,20 @@ export default function FinancialsGraphsView({ data, extData, scale }: Props) {
   const vmData    = extData ? buildChartData(vmCols, extData.market_valuation, VM_SERIES) : [];
 
   // 1-B: Debt Coverage
+  const DC2_API    = ["Net Debt / EBITDA", "Interest Coverage (EBIT/Interest)"];
   const DC2_SERIES = ["Net Debt / EBITDA", "Interest Coverage"];
   const DC2_COLORS = [RED, GREEN];
-  const dc2Data    = extData ? buildChartData(vmCols, extData.capital_structure, DC2_SERIES) : [];
+  const dc2Raw     = extData ? buildChartData(vmCols, extData.capital_structure, DC2_API) : [];
+  const dc2Data    = dc2Raw.map(d => ({
+    col: d.col,
+    [DC2_SERIES[0]]: d[DC2_API[0]],
+    [DC2_SERIES[1]]: d[DC2_API[1]],
+  }));
 
-  // 1-C: Profitability Margins
-  const MARGIN_SERIES = ["Gross Margin", "EBITDA Margin", "Operating Margin", "Net Margin"];
+  // 1-C: Profitability (absolute values — API has no margin % rows)
+  const MARGIN_SERIES = ["Gross Profit", "EBITDA", "Net Income", "Adj. FCF"];
   const MARGIN_COLORS = [BLUE, GREEN, AMBER, PURPLE];
-  const marginData    = extData ? buildPctChartData(vmCols, extData.profitability, MARGIN_SERIES) : [];
+  const marginData    = extData ? buildChartData(vmCols, extData.profitability, MARGIN_SERIES, div) : [];
 
   // 1-D: Returns on Capital
   const RET_SERIES = ["ROIC", "ROE", "ROA"];
@@ -99,13 +123,13 @@ export default function FinancialsGraphsView({ data, extData, scale }: Props) {
   // ── Row 2: Capital Structure & Efficiency ────────────────────────────────
 
   // 2-A: Capital Structure ratios
-  const CAP_SERIES = ["Debt/Equity", "Net Debt / EBITDA", "Debt / Adj. FCF"];
+  const CAP_SERIES = ["Debt / Equity", "Net Debt / EBITDA", "Debt / Adj. FCF"];
   const CAP_COLORS = [RED, AMBER, PINK];
   const capData    = extData ? buildChartData(vmCols, extData.capital_structure, CAP_SERIES) : [];
 
   // 2-B: Liquidity ratios
-  const LIQ_SERIES = ["Current Ratio", "Quick Ratio", "Cash Ratio"];
-  const LIQ_COLORS = [BLUE, GREEN, AMBER];
+  const LIQ_SERIES = ["Current Ratio", "Cash to Debt"];
+  const LIQ_COLORS = [BLUE, GREEN];
   const liqData    = extData ? buildChartData(vmCols, extData.liquidity, LIQ_SERIES) : [];
 
   // 2-C: Operating Cycle (days) — rename long labels
@@ -148,7 +172,7 @@ export default function FinancialsGraphsView({ data, extData, scale }: Props) {
         </ChartCard>
 
         {/* 0-B: Cash Flow Bridge */}
-        <ChartCard chartId="fin-cashflow-bridge" title={`Cash Flow Bridge ${scaleLabel}`} series={CF_SERIES} colors={CF_COLORS}>
+        <ChartCard chartId="fin-cashflow-bridge" title={`Cash Flow Bridge ${scaleLabel}`} series={CF_LABELS} colors={CF_COLORS}>
           {(hidden) => (
             <ComposedChart data={cfData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
@@ -156,15 +180,15 @@ export default function FinancialsGraphsView({ data, extData, scale }: Props) {
               <YAxis tickFormatter={fmtTick} tick={{ fontSize: 10, fill: "#6b7280" }} width={48} />
               <Tooltip contentStyle={TT_STYLE} formatter={(v) => [fmtTick(v as number), ""]} />
               <Legend wrapperStyle={{ fontSize: "0.72em" }} />
-              {!hidden.has("Operating Cash Flow") && <Bar dataKey="Operating Cash Flow" fill={BLUE} opacity={0.7} radius={[2,2,0,0]} />}
-              {!hidden.has("Free Cash Flow")       && <Line dataKey="Free Cash Flow" stroke={GREEN} strokeWidth={2} dot={{ r: 2 }} />}
-              {!hidden.has("Adj. FCF")             && <Line dataKey="Adj. FCF" stroke={AMBER} strokeWidth={2} strokeDasharray="5 5" dot={{ r: 2 }} />}
+              {!hidden.has("Operating Cash Flow") && <Bar  dataKey="Operating Cash Flow" fill={BLUE}  opacity={0.7} radius={[2,2,0,0]} />}
+              {!hidden.has("Free Cash Flow")       && <Line dataKey="Free Cash Flow"      stroke={GREEN} strokeWidth={2} dot={{ r: 2 }} />}
+              {!hidden.has("Adj. FCF")             && <Line dataKey="Adj. FCF"            stroke={AMBER} strokeWidth={2} strokeDasharray="5 5" dot={{ r: 2 }} />}
             </ComposedChart>
           )}
         </ChartCard>
 
         {/* 0-C: Balance Sheet Snapshot */}
-        <ChartCard chartId="fin-balance-sheet" title={`Balance Sheet ${scaleLabel}`} series={BS_SERIES} colors={BS_COLORS}>
+        <ChartCard chartId="fin-balance-sheet" title={`Balance Sheet ${scaleLabel}`} series={BS_LABELS} colors={BS_COLORS}>
           {(hidden) => (
             <AreaChart data={bsData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
@@ -172,15 +196,15 @@ export default function FinancialsGraphsView({ data, extData, scale }: Props) {
               <YAxis tickFormatter={fmtTick} tick={{ fontSize: 10, fill: "#6b7280" }} width={48} />
               <Tooltip contentStyle={TT_STYLE} formatter={(v) => [fmtTick(v as number), ""]} />
               <Legend wrapperStyle={{ fontSize: "0.72em" }} />
-              {!hidden.has("Total assets")      && <Area dataKey="Total assets"      stroke={BLUE}  fill={BLUE}  fillOpacity={0.15} strokeWidth={2} />}
-              {!hidden.has("Total liabilities") && <Area dataKey="Total liabilities" stroke={RED}   fill={RED}   fillOpacity={0.15} strokeWidth={2} />}
-              {!hidden.has("Total Equity")      && <Area dataKey="Total Equity"      stroke={GREEN} fill={GREEN} fillOpacity={0.1}  strokeWidth={2} strokeDasharray="4 4" />}
+              {!hidden.has("Total Assets")      && <Area dataKey="Total Assets"      stroke={BLUE}  fill={BLUE}  fillOpacity={0.15} strokeWidth={2} />}
+              {!hidden.has("Total Liabilities") && <Area dataKey="Total Liabilities" stroke={RED}   fill={RED}   fillOpacity={0.15} strokeWidth={2} />}
+              {!hidden.has("Equity")            && <Area dataKey="Equity"            stroke={GREEN} fill={GREEN} fillOpacity={0.1}  strokeWidth={2} strokeDasharray="4 4" />}
             </AreaChart>
           )}
         </ChartCard>
 
         {/* 0-D: Debt vs Cash */}
-        <ChartCard chartId="fin-debt-cash" title={`Debt vs. Cash ${scaleLabel}`} series={DC_SERIES} colors={DC_COLORS}>
+        <ChartCard chartId="fin-debt-cash" title={`Debt vs. Cash ${scaleLabel}`} series={DC_LABELS} colors={DC_COLORS}>
           {(hidden) => (
             <BarChart data={dcData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
@@ -188,8 +212,8 @@ export default function FinancialsGraphsView({ data, extData, scale }: Props) {
               <YAxis tickFormatter={fmtTick} tick={{ fontSize: 10, fill: "#6b7280" }} width={48} />
               <Tooltip contentStyle={TT_STYLE} formatter={(v) => [fmtTick(v as number), ""]} />
               <Legend wrapperStyle={{ fontSize: "0.72em" }} />
-              {!hidden.has("Total Debt")                    && <Bar dataKey="Total Debt"                    fill={RED}   radius={[2,2,0,0]} />}
-              {!hidden.has("Cash & Short-Term Investments") && <Bar dataKey="Cash & Short-Term Investments" fill={GREEN} radius={[2,2,0,0]} />}
+              {!hidden.has("Total Debt")       && <Bar dataKey="Total Debt"       fill={RED}   radius={[2,2,0,0]} />}
+              {!hidden.has("Cash & Equivalents") && <Bar dataKey="Cash & Equivalents" fill={GREEN} radius={[2,2,0,0]} />}
             </BarChart>
           )}
         </ChartCard>
@@ -233,14 +257,14 @@ export default function FinancialsGraphsView({ data, extData, scale }: Props) {
               )}
             </ChartCard>
 
-            {/* 1-C: Profitability Margins */}
-            <ChartCard chartId="fin-margins" title="Profitability Margins (%)" series={MARGIN_SERIES} colors={MARGIN_COLORS}>
+            {/* 1-C: Profitability */}
+            <ChartCard chartId="fin-margins" title={`Profitability ${scaleLabel}`} series={MARGIN_SERIES} colors={MARGIN_COLORS}>
               {(hidden) => (
                 <LineChart data={marginData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                   <XAxis dataKey="col" tick={{ fontSize: 10, fill: "#6b7280" }} />
-                  <YAxis tickFormatter={fmtPctTick} tick={{ fontSize: 10, fill: "#6b7280" }} width={44} />
-                  <Tooltip contentStyle={TT_STYLE} formatter={(v) => [(v as number)?.toFixed(1) + "%", ""]} />
+                  <YAxis tickFormatter={fmtTick} tick={{ fontSize: 10, fill: "#6b7280" }} width={48} />
+                  <Tooltip contentStyle={TT_STYLE} formatter={(v) => [fmtTick(v as number), ""]} />
                   <Legend wrapperStyle={{ fontSize: "0.72em" }} />
                   {MARGIN_SERIES.map((s, i) => hidden.has(s) ? null : (
                     <Line key={s} dataKey={s} stroke={MARGIN_COLORS[i]} strokeWidth={2} dot={{ r: 2 }} />
