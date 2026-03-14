@@ -71,7 +71,7 @@ function InsightsGroupChart({ group, chartId }: { group: InsightsGroup; chartId:
   const colors = labels.map((_, i) => CHART_COLORS[i % CHART_COLORS.length]);
   const fmt    = group.is_pct ? fmtPctTick : fmtRatioTick;
   const suffix = group.is_pct ? "%" : "×";
-  const ttFmt  = (v: number) => [v != null ? v.toFixed(2) + suffix : "—", ""] as [string, string];
+  const ttFmt  = (v: unknown) => [(v != null ? (v as number).toFixed(2) + suffix : "—"), ""] as [string, string];
 
   const isCAGR = group.title.toLowerCase().includes("cagr") || group.title.toLowerCase().includes("growth");
 

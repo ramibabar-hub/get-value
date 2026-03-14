@@ -14,6 +14,7 @@ import type { InsightsData, InsightsGroup, InsightsRow, WaccData } from "../type
 import { IndustryComparisonCell } from "./IndustryComparisonCell";
 import { lookupBenchmark } from "../utils/industryBenchmarks";
 import MetricsCatalogModal from "./MetricsCatalogModal";
+import InsightsGraphsView from "./InsightsGraphsView";
 import TableRowCustomizer from "./TableRowCustomizer";
 import { useLayoutStore } from "../store/layoutStore";
 
@@ -354,6 +355,7 @@ export default function InsightsTab({
   data, loading, error, waccData, manualWacc, onWaccChange,
 }: Props) {
   const [showCatalog, setShowCatalog] = useState(false);
+  const [graphView,   setGraphView]   = useState(false);
   const { hiddenInsightGroups } = useLayoutStore();
 
   if (loading) return <Spinner />;
@@ -381,19 +383,58 @@ export default function InsightsTab({
 
   return (
     <div>
-      {/* Customize button */}
-      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
-        <button
-          onClick={() => setShowCatalog(true)}
-          style={{ fontFamily: "var(--gv-font-mono)", fontSize: "0.75em", color: "var(--gv-text-muted)", background: "none", border: "1px solid var(--gv-border)", borderRadius: 4, padding: "4px 10px", cursor: "pointer" }}
-        >
-          ⚙ Customize
-        </button>
+      {/* Controls bar: view toggle + customize */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
+        {/* View toggle */}
+        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+          {(["By Tables", "By Graphs"] as const).map(v => {
+            const active = (v === "By Graphs") === graphView;
+            return (
+              <button
+                key={v}
+                onClick={() => setGraphView(v === "By Graphs")}
+                style={{
+                  padding: "4px 12px",
+                  border: `1px solid ${active ? "var(--gv-navy)" : "#d1d5db"}`,
+                  borderRadius: 4,
+                  background: active ? "var(--gv-navy)" : "#fff",
+                  color: active ? "#fff" : "var(--gv-data-fg)",
+                  fontWeight: active ? 700 : 500,
+                  fontSize: "0.82em",
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                  transition: "all 0.12s",
+                }}
+              >
+                {v}
+              </button>
+            );
+          })}
+        </div>
+        {!graphView && (
+          <button
+            onClick={() => setShowCatalog(true)}
+            style={{ fontFamily: "var(--gv-font-mono)", fontSize: "0.75em", color: "var(--gv-text-muted)", background: "none", border: "1px solid var(--gv-border)", borderRadius: 4, padding: "4px 10px", cursor: "pointer" }}
+          >
+            ⚙ Customize
+          </button>
+        )}
       </div>
 
-      {visibleGroups.map((group) => (
-        <GroupTable key={group.title} group={group} />
-      ))}
+      {/* ── Tables View ── */}
+      {!graphView && (
+        <>
+          {visibleGroups.map((group) => (
+            <GroupTable key={group.title} group={group} />
+          ))}
+          {showCatalog ? <MetricsCatalogModal tab="value_drivers" onClose={() => setShowCatalog(false)} /> : null}
+        </>
+      )}
+
+      {/* ── Graphs View ── */}
+      {graphView && <InsightsGraphsView data={data} />}
+
+      {/* WACC — always visible in both views */}
       {waccData ? (
         <>
           <WaccTable wacc={waccData} />
@@ -404,8 +445,6 @@ export default function InsightsTab({
           />
         </>
       ) : null}
-
-      {showCatalog ? <MetricsCatalogModal tab="value_drivers" onClose={() => setShowCatalog(false)} /> : null}
     </div>
   );
 }

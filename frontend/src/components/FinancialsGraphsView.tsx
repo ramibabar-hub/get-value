@@ -138,7 +138,7 @@ export default function FinancialsGraphsView({ data, extData, scale }: Props) {
               <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
               <XAxis dataKey="col" tick={{ fontSize: 10, fill: "#6b7280" }} />
               <YAxis tickFormatter={fmtTick} tick={{ fontSize: 10, fill: "#6b7280" }} width={48} />
-              <Tooltip contentStyle={TT_STYLE} formatter={(v: number) => [fmtTick(v), ""]} />
+              <Tooltip contentStyle={TT_STYLE} formatter={(v) => [fmtTick(v as number), ""]} />
               <Legend wrapperStyle={{ fontSize: "0.72em" }} />
               {IS_SERIES.map((s, i) => hidden.has(s) ? null : (
                 <Bar key={s} dataKey={s} fill={IS_COLORS[i]} opacity={i === 0 ? 0.45 : 0.85} radius={[2,2,0,0]} />
@@ -154,7 +154,7 @@ export default function FinancialsGraphsView({ data, extData, scale }: Props) {
               <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
               <XAxis dataKey="col" tick={{ fontSize: 10, fill: "#6b7280" }} />
               <YAxis tickFormatter={fmtTick} tick={{ fontSize: 10, fill: "#6b7280" }} width={48} />
-              <Tooltip contentStyle={TT_STYLE} formatter={(v: number) => [fmtTick(v), ""]} />
+              <Tooltip contentStyle={TT_STYLE} formatter={(v) => [fmtTick(v as number), ""]} />
               <Legend wrapperStyle={{ fontSize: "0.72em" }} />
               {!hidden.has("Operating Cash Flow") && <Bar dataKey="Operating Cash Flow" fill={BLUE} opacity={0.7} radius={[2,2,0,0]} />}
               {!hidden.has("Free Cash Flow")       && <Line dataKey="Free Cash Flow" stroke={GREEN} strokeWidth={2} dot={{ r: 2 }} />}
@@ -170,7 +170,7 @@ export default function FinancialsGraphsView({ data, extData, scale }: Props) {
               <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
               <XAxis dataKey="col" tick={{ fontSize: 10, fill: "#6b7280" }} />
               <YAxis tickFormatter={fmtTick} tick={{ fontSize: 10, fill: "#6b7280" }} width={48} />
-              <Tooltip contentStyle={TT_STYLE} formatter={(v: number) => [fmtTick(v), ""]} />
+              <Tooltip contentStyle={TT_STYLE} formatter={(v) => [fmtTick(v as number), ""]} />
               <Legend wrapperStyle={{ fontSize: "0.72em" }} />
               {!hidden.has("Total assets")      && <Area dataKey="Total assets"      stroke={BLUE}  fill={BLUE}  fillOpacity={0.15} strokeWidth={2} />}
               {!hidden.has("Total liabilities") && <Area dataKey="Total liabilities" stroke={RED}   fill={RED}   fillOpacity={0.15} strokeWidth={2} />}
@@ -186,7 +186,7 @@ export default function FinancialsGraphsView({ data, extData, scale }: Props) {
               <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
               <XAxis dataKey="col" tick={{ fontSize: 10, fill: "#6b7280" }} />
               <YAxis tickFormatter={fmtTick} tick={{ fontSize: 10, fill: "#6b7280" }} width={48} />
-              <Tooltip contentStyle={TT_STYLE} formatter={(v: number) => [fmtTick(v), ""]} />
+              <Tooltip contentStyle={TT_STYLE} formatter={(v) => [fmtTick(v as number), ""]} />
               <Legend wrapperStyle={{ fontSize: "0.72em" }} />
               {!hidden.has("Total Debt")                    && <Bar dataKey="Total Debt"                    fill={RED}   radius={[2,2,0,0]} />}
               {!hidden.has("Cash & Short-Term Investments") && <Bar dataKey="Cash & Short-Term Investments" fill={GREEN} radius={[2,2,0,0]} />}
@@ -209,7 +209,7 @@ export default function FinancialsGraphsView({ data, extData, scale }: Props) {
                   <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                   <XAxis dataKey="col" tick={{ fontSize: 10, fill: "#6b7280" }} />
                   <YAxis tickFormatter={fmtRatioTick} tick={{ fontSize: 10, fill: "#6b7280" }} width={40} />
-                  <Tooltip contentStyle={TT_STYLE} formatter={(v: number) => [v?.toFixed(1) + "×", ""]} />
+                  <Tooltip contentStyle={TT_STYLE} formatter={(v) => [(v as number)?.toFixed(1) + "×", ""]} />
                   <Legend wrapperStyle={{ fontSize: "0.72em" }} />
                   {VM_SERIES.map((s, i) => hidden.has(s) ? null : (
                     <Bar key={s} dataKey={s} fill={VM_COLORS[i]} radius={[2,2,0,0]} />
@@ -225,7 +225,7 @@ export default function FinancialsGraphsView({ data, extData, scale }: Props) {
                   <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                   <XAxis dataKey="col" tick={{ fontSize: 10, fill: "#6b7280" }} />
                   <YAxis tickFormatter={fmtRatioTick} tick={{ fontSize: 10, fill: "#6b7280" }} width={40} />
-                  <Tooltip contentStyle={TT_STYLE} formatter={(v: number) => [v?.toFixed(2) + "×", ""]} />
+                  <Tooltip contentStyle={TT_STYLE} formatter={(v) => [(v as number)?.toFixed(2) + "×", ""]} />
                   <Legend wrapperStyle={{ fontSize: "0.72em" }} />
                   {!hidden.has("Net Debt / EBITDA") && <Bar  dataKey="Net Debt / EBITDA" fill={RED}   radius={[2,2,0,0]} />}
                   {!hidden.has("Interest Coverage") && <Line dataKey="Interest Coverage" stroke={GREEN} strokeWidth={2} dot={{ r: 2 }} />}
@@ -240,7 +240,7 @@ export default function FinancialsGraphsView({ data, extData, scale }: Props) {
                   <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                   <XAxis dataKey="col" tick={{ fontSize: 10, fill: "#6b7280" }} />
                   <YAxis tickFormatter={fmtPctTick} tick={{ fontSize: 10, fill: "#6b7280" }} width={44} />
-                  <Tooltip contentStyle={TT_STYLE} formatter={(v: number) => [v?.toFixed(1) + "%", ""]} />
+                  <Tooltip contentStyle={TT_STYLE} formatter={(v) => [(v as number)?.toFixed(1) + "%", ""]} />
                   <Legend wrapperStyle={{ fontSize: "0.72em" }} />
                   {MARGIN_SERIES.map((s, i) => hidden.has(s) ? null : (
                     <Line key={s} dataKey={s} stroke={MARGIN_COLORS[i]} strokeWidth={2} dot={{ r: 2 }} />
@@ -256,7 +256,7 @@ export default function FinancialsGraphsView({ data, extData, scale }: Props) {
                   <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                   <XAxis dataKey="col" tick={{ fontSize: 10, fill: "#6b7280" }} />
                   <YAxis tickFormatter={fmtPctTick} tick={{ fontSize: 10, fill: "#6b7280" }} width={44} />
-                  <Tooltip contentStyle={TT_STYLE} formatter={(v: number) => [v?.toFixed(1) + "%", ""]} />
+                  <Tooltip contentStyle={TT_STYLE} formatter={(v) => [(v as number)?.toFixed(1) + "%", ""]} />
                   <Legend wrapperStyle={{ fontSize: "0.72em" }} />
                   {RET_SERIES.map((s, i) => hidden.has(s) ? null : (
                     <Line key={s} dataKey={s} stroke={RET_COLORS[i]} strokeWidth={2} dot={{ r: 2 }} />
@@ -278,7 +278,7 @@ export default function FinancialsGraphsView({ data, extData, scale }: Props) {
                   <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                   <XAxis dataKey="col" tick={{ fontSize: 10, fill: "#6b7280" }} />
                   <YAxis tickFormatter={fmtRatioTick} tick={{ fontSize: 10, fill: "#6b7280" }} width={40} />
-                  <Tooltip contentStyle={TT_STYLE} formatter={(v: number) => [v?.toFixed(2) + "×", ""]} />
+                  <Tooltip contentStyle={TT_STYLE} formatter={(v) => [(v as number)?.toFixed(2) + "×", ""]} />
                   <Legend wrapperStyle={{ fontSize: "0.72em" }} />
                   {CAP_SERIES.map((s, i) => hidden.has(s) ? null : (
                     <Line key={s} dataKey={s} stroke={CAP_COLORS[i]} strokeWidth={2} dot={{ r: 2 }} />
@@ -294,7 +294,7 @@ export default function FinancialsGraphsView({ data, extData, scale }: Props) {
                   <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                   <XAxis dataKey="col" tick={{ fontSize: 10, fill: "#6b7280" }} />
                   <YAxis tickFormatter={fmtRatioTick} tick={{ fontSize: 10, fill: "#6b7280" }} width={40} />
-                  <Tooltip contentStyle={TT_STYLE} formatter={(v: number) => [v?.toFixed(2) + "×", ""]} />
+                  <Tooltip contentStyle={TT_STYLE} formatter={(v) => [(v as number)?.toFixed(2) + "×", ""]} />
                   <Legend wrapperStyle={{ fontSize: "0.72em" }} />
                   {LIQ_SERIES.map((s, i) => hidden.has(s) ? null : (
                     <Line key={s} dataKey={s} stroke={LIQ_COLORS[i]} strokeWidth={2} dot={{ r: 2 }} />
@@ -310,7 +310,7 @@ export default function FinancialsGraphsView({ data, extData, scale }: Props) {
                   <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                   <XAxis dataKey="col" tick={{ fontSize: 10, fill: "#6b7280" }} />
                   <YAxis tick={{ fontSize: 10, fill: "#6b7280" }} width={36} />
-                  <Tooltip contentStyle={TT_STYLE} formatter={(v: number) => [v?.toFixed(0) + "d", ""]} />
+                  <Tooltip contentStyle={TT_STYLE} formatter={(v) => [(v as number)?.toFixed(0) + "d", ""]} />
                   <Legend wrapperStyle={{ fontSize: "0.72em" }} />
                   {EFF_LABELS.map((s, i) => hidden.has(s) ? null : (
                     <Bar key={s} dataKey={s} stackId="eff" fill={EFF_COLORS[i]} radius={i === EFF_LABELS.length - 1 ? [2,2,0,0] : undefined} />
