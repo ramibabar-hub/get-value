@@ -36,6 +36,11 @@ interface LayoutState {
   toggleInsightGroup:       (title: string) => void;
   resetCustomization:       ()              => void;
 
+  // Graph series visibility — key = chartId, value = hidden series labels
+  hiddenGraphSeries: Record<string, string[]>;
+  toggleGraphSeries: (chartId: string, series: string) => void;
+  resetGraphSeries:  (chartId?: string) => void;
+
   // Per-table row visibility — key = table title, value = hidden row labels
   // undefined key  → never customized (defaults will be seeded by table component)
   // empty array [] → user explicitly chose "Show all"
@@ -83,7 +88,26 @@ export const useLayoutStore = create<LayoutState>()(
         })),
 
       resetCustomization: () =>
-        set({ hiddenFinancialsSections: [], hiddenInsightGroups: [], hiddenTableRows: {} }),
+        set({ hiddenFinancialsSections: [], hiddenInsightGroups: [], hiddenTableRows: {}, hiddenGraphSeries: {} }),
+
+      // Graph series visibility
+      hiddenGraphSeries: {},
+
+      toggleGraphSeries: (chartId, series) =>
+        set((state) => {
+          const current = state.hiddenGraphSeries[chartId] ?? [];
+          const updated = current.includes(series)
+            ? current.filter(s => s !== series)
+            : [...current, series];
+          return { hiddenGraphSeries: { ...state.hiddenGraphSeries, [chartId]: updated } };
+        }),
+
+      resetGraphSeries: (chartId?) =>
+        set((state) => {
+          if (!chartId) return { hiddenGraphSeries: {} };
+          const { [chartId]: _, ...rest } = state.hiddenGraphSeries;
+          return { hiddenGraphSeries: rest };
+        }),
 
       // Per-table row visibility
       hiddenTableRows: {},
