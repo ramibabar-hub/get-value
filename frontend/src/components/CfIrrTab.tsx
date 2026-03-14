@@ -21,6 +21,10 @@ const CLR_PASS = "var(--gv-green-bg)"; const CLR_PASS_FG = "var(--gv-green)";
 const CLR_FAIL = "var(--gv-red-bg)";  const CLR_FAIL_FG = "var(--gv-red)";
 const CLR_WARN = "var(--gv-yellow-bg)"; const CLR_WARN_FG = "#92400e";
 const CLR_NA   = "var(--gv-data-bg)"; const CLR_NA_FG   = "var(--gv-text-muted)";
+// Tricolor data-type legend
+const CLR_API_BG  = "#dbeafe"; const CLR_API_FG  = "#1e40af";   // blue  – direct FMP API data
+const CLR_CALC_BG = "var(--gv-green-bg)"; const CLR_CALC_FG = "var(--gv-green)"; // green – calculated
+const CLR_USER_BG = "var(--gv-yellow-bg)"; const CLR_USER_FG = "var(--gv-yellow-fg)"; // yellow – user input
 
 // ── Formatters ──────────────────────────────────────────────────────────────
 
@@ -71,6 +75,23 @@ function Spinner() {
       <div style={{ width: 28, height: 28, borderRadius: "50%", border: "3px solid #e5e7eb", borderTop: `3px solid ${NAVY}`, animation: "cfSpin 0.75s linear infinite", flexShrink: 0 }} />
       <span style={{ fontSize: "0.88em" }}>Computing CF + IRR model…</span>
       <style>{`@keyframes cfSpin { to { transform: rotate(360deg); } }`}</style>
+    </div>
+  );
+}
+
+function Legend() {
+  return (
+    <div style={{ display: "flex", gap: 12, marginBottom: 10 }}>
+      {([
+        ["API (fetched)", CLR_API_BG, CLR_API_FG],
+        ["Calculated",   CLR_CALC_BG, CLR_CALC_FG],
+        ["User Input",   CLR_USER_BG, CLR_USER_FG],
+      ] as const).map(([label, bg, fg]) => (
+        <span key={label} style={{
+          fontSize: "0.72em", fontWeight: 600, padding: "2px 8px",
+          borderRadius: 3, background: bg, color: fg,
+        }}>{label}</span>
+      ))}
     </div>
   );
 }
@@ -126,14 +147,13 @@ const HistTable = memo(function HistTable({
         <tbody>
           {allRows.map((row, ri) => {
             const isSpecial = row["Year"] === "TTM" || row["Year"]?.startsWith("Average") || row["Year"]?.startsWith("CAGR");
+            // Summary rows (CAGR/Avg/TTM) are calculated; regular rows are direct API data
+            const rowBg  = isSpecial ? CLR_CALC_BG : CLR_API_BG;
+            const rowFg  = isSpecial ? CLR_CALC_FG : CLR_API_FG;
             return (
-              <tr key={ri} style={{
-                background: isSpecial ? "#eff6ff" : ri % 2 === 0 ? "#fff" : "#f8fafc",
-                fontWeight: isSpecial ? 700 : 400,
-              }}>
+              <tr key={ri} style={{ background: rowBg, fontWeight: isSpecial ? 700 : 400 }}>
                 {columns.map((col, ci) => {
                   const raw = row[col];
-                  // First column: shorten "CAGR (9-yr)" → "CAGR"; round numeric data columns
                   const display = ci === 0
                     ? (raw?.startsWith("CAGR") ? "CAGR" : raw ?? "—")
                     : TWO_DP_COLS.has(col) ? round2CellVal(raw) : roundCellVal(raw);
@@ -141,7 +161,9 @@ const HistTable = memo(function HistTable({
                     <td key={col} style={{
                       padding: "4px 8px", border: "1px solid #e5e7eb",
                       textAlign: ci === 0 ? "left" : "right",
-                      ...MONO, color: NAVY, fontSize: "0.95em",
+                      ...MONO,
+                      color: ci === 0 ? NAVY : rowFg,
+                      fontSize: "0.95em",
                     }}>
                       {display}
                     </td>
@@ -176,7 +198,7 @@ function ForecastTable({
         <input
           type="number" value={globalRate} min={-50} max={200} step={0.5}
           onChange={(e) => onGlobalChange(Number(e.target.value))}
-          style={{ width: 72, padding: "2px 6px", border: "1px solid #d1d5db", borderRadius: 4, fontSize: "0.8em", fontFamily: "inherit", textAlign: "right" }}
+          style={{ width: 72, padding: "2px 6px", border: "1px solid #d1d5db", borderRadius: 4, fontSize: "0.8em", fontFamily: "inherit", textAlign: "right", background: CLR_USER_BG }}
         />
         <span style={{ fontSize: "0.74em", color: "var(--gv-text-muted)" }}>%</span>
       </div>
@@ -194,16 +216,16 @@ function ForecastTable({
           </thead>
           <tbody>
             {rows.map((row, i) => (
-              <tr key={i} style={{ background: i % 2 === 0 ? "#fff" : "#f8fafc" }}>
+              <tr key={i}>
                 <td style={{ padding: "4px 8px", border: "1px solid #e5e7eb", color: NAVY, fontWeight: 600, fontSize: "0.95em" }}>{row.Year as string}</td>
-                <td style={{ padding: "3px 6px", border: "1px solid #e5e7eb" }}>
+                <td style={{ padding: "3px 6px", border: "1px solid #e5e7eb", background: CLR_USER_BG }}>
                   <input
                     type="number" value={growthRates[i] ?? 5} step={0.5} min={-50} max={200}
                     onChange={(e) => onGrowthChange(i, Number(e.target.value))}
-                    style={{ width: "100%", padding: "2px 5px", border: "1px solid #d1d5db", borderRadius: 3, fontSize: "0.9em", fontFamily: "'Courier New', monospace", textAlign: "right" }}
+                    style={{ width: "100%", padding: "2px 5px", border: "1px solid #d1d5db", borderRadius: 3, fontSize: "0.9em", fontFamily: "'Courier New', monospace", textAlign: "right", background: CLR_USER_BG }}
                   />
                 </td>
-                <td style={{ padding: "4px 8px", border: "1px solid #e5e7eb", textAlign: "right", ...MONO, color: NAVY }}>
+                <td style={{ padding: "4px 8px", border: "1px solid #e5e7eb", textAlign: "right", ...MONO, color: CLR_CALC_FG, background: CLR_CALC_BG, fontWeight: 600 }}>
                   {typeof row[valueKey] === "number"
                     ? (row[valueKey] as number).toLocaleString("en-US", { minimumFractionDigits: 1, maximumFractionDigits: 2 })
                     : "—"}
@@ -219,18 +241,21 @@ function ForecastTable({
 
 // ── Weighting Table ─────────────────────────────────────────────────────────
 
-function WeightingTable({ ebitdaPrice, fcfPrice, avgTarget }: {
+function WeightingTable({ ebitdaPrice, fcfPrice, avgTarget, ebitdaWeight, onEbitdaWeightChange }: {
   ebitdaPrice: number | null;
   fcfPrice: number | null;
   avgTarget: number | null;
+  ebitdaWeight: number;
+  onEbitdaWeightChange: (w: number) => void;
 }) {
+  const fcfWeight = 100 - ebitdaWeight;
   const thS: React.CSSProperties = {
     background: NAVY, color: "#fff", padding: "7px 14px",
     fontSize: "0.78em", border: "1px solid #2d3f5a", fontWeight: 700,
   };
   const rows = [
-    { method: "EV/EBITDA Method", weight: "50%", price: ebitdaPrice },
-    { method: "FCF Yield Method",  weight: "50%", price: fcfPrice },
+    { method: "EV/EBITDA Method", weight: ebitdaWeight, price: ebitdaPrice, onChange: (v: number) => onEbitdaWeightChange(Math.min(100, Math.max(0, v))) },
+    { method: "FCF Yield Method",  weight: fcfWeight,   price: fcfPrice,    onChange: (v: number) => onEbitdaWeightChange(Math.min(100, Math.max(0, 100 - v))) },
   ];
   return (
     <div style={{ overflowX: "auto" }}>
@@ -243,22 +268,31 @@ function WeightingTable({ ebitdaPrice, fcfPrice, avgTarget }: {
           </tr>
         </thead>
         <tbody>
-          {rows.map(({ method, weight, price }, i) => (
+          {rows.map(({ method, weight, price, onChange }, i) => (
             <tr key={i} style={{ background: i % 2 === 0 ? "#fff" : "#f8fafc" }}>
               <td style={{ padding: "7px 14px", fontWeight: 600, color: NAVY, border: "1px solid #e5e7eb" }}>{method}</td>
-              <td style={{ padding: "7px 14px", textAlign: "center", color: "var(--gv-text-muted)", border: "1px solid #e5e7eb", ...MONO }}>{weight}</td>
-              <td style={{ padding: "7px 14px", textAlign: "right", color: NAVY, border: "1px solid #e5e7eb", ...MONO }}>{f$(price)}</td>
+              <td style={{ padding: "4px 10px", textAlign: "center", border: "1px solid #e5e7eb", background: CLR_USER_BG }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}>
+                  <input
+                    type="number" value={weight} min={0} max={100} step={1}
+                    onChange={(e) => onChange(Number(e.target.value))}
+                    style={{ width: 52, padding: "2px 5px", border: "1px solid #d1d5db", borderRadius: 3, fontSize: "0.88em", fontFamily: "'Courier New', monospace", textAlign: "right", background: CLR_USER_BG, color: CLR_USER_FG, fontWeight: 600 }}
+                  />
+                  <span style={{ fontSize: "0.85em", color: CLR_USER_FG, fontWeight: 600 }}>%</span>
+                </div>
+              </td>
+              <td style={{ padding: "7px 14px", textAlign: "right", color: CLR_CALC_FG, background: CLR_CALC_BG, border: "1px solid #e5e7eb", ...MONO }}>{f$(price)}</td>
             </tr>
           ))}
           {/* Footer row — Avg. Target */}
-          <tr style={{ background: "color-mix(in srgb, var(--gv-navy) 8%, white)" }}>
-            <td style={{ padding: "8px 14px", fontWeight: 700, color: NAVY, border: "1px solid #e5e7eb", fontSize: "1.0em" }}>
+          <tr style={{ background: CLR_CALC_BG }}>
+            <td style={{ padding: "8px 14px", fontWeight: 700, color: CLR_CALC_FG, border: "1px solid #e5e7eb", fontSize: "1.0em" }}>
               Avg. Target Price
             </td>
-            <td style={{ padding: "8px 14px", textAlign: "center", fontWeight: 700, color: NAVY, border: "1px solid #e5e7eb", ...MONO }}>
-              100%
+            <td style={{ padding: "8px 14px", textAlign: "center", fontWeight: 700, color: CLR_CALC_FG, border: "1px solid #e5e7eb", ...MONO }}>
+              {ebitdaWeight + fcfWeight}%
             </td>
-            <td style={{ padding: "8px 14px", textAlign: "right", fontWeight: 700, color: BLUE, border: "1px solid #e5e7eb", ...MONO, fontSize: "1.05em" }}>
+            <td style={{ padding: "8px 14px", textAlign: "right", fontWeight: 700, color: CLR_CALC_FG, border: "1px solid #e5e7eb", ...MONO, fontSize: "1.05em" }}>
               {f$(avgTarget)}
             </td>
           </tr>
@@ -354,8 +388,8 @@ function IrrCalculationTable({ fcfForecast, avgTarget, priceNow, irr }: {
                 ? fcfs + avgTarget
                 : fcfs;
 
-            const priceFg = isFirst ? CLR_FAIL_FG : isFinal ? BLUE : "var(--gv-text-muted)";
-            const totalFg = isFirst ? CLR_FAIL_FG : isFinal ? BLUE : NAVY;
+            const priceFg = isFirst ? CLR_API_FG  : isFinal ? CLR_CALC_FG : "var(--gv-text-muted)";
+            const priceBg = isFirst ? CLR_API_BG  : isFinal ? CLR_CALC_BG : "transparent";
             const totalDisplay = typeof totalCf === "number"
               ? totalCf < 0 ? `($${Math.abs(totalCf).toFixed(2)})` : `$${totalCf.toFixed(2)}`
               : "—";
@@ -363,20 +397,20 @@ function IrrCalculationTable({ fcfForecast, avgTarget, priceNow, irr }: {
             return (
               <tr key={i} style={{
                 background: isFinal
-                  ? "color-mix(in srgb, var(--gv-navy) 6%, white)"
+                  ? CLR_CALC_BG
                   : isFirst
-                    ? "color-mix(in srgb, var(--gv-red) 5%, white)"
+                    ? CLR_API_BG
                     : i % 2 === 0 ? "#fff" : "#f8fafc",
                 fontWeight: (isFirst || isFinal) ? 700 : 400,
               }}>
                 <td style={{ padding: "5px 12px", border: "1px solid #e5e7eb", color: NAVY, fontWeight: 600 }}>{row.Year}</td>
-                <td style={{ padding: "5px 12px", border: "1px solid #e5e7eb", textAlign: "right", ...MONO, color: priceFg }}>
+                <td style={{ padding: "5px 12px", border: "1px solid #e5e7eb", textAlign: "right", ...MONO, color: priceFg, background: priceBg }}>
                   {priceDisplay}
                 </td>
-                <td style={{ padding: "5px 12px", border: "1px solid #e5e7eb", textAlign: "right", ...MONO, color: NAVY }}>
+                <td style={{ padding: "5px 12px", border: "1px solid #e5e7eb", textAlign: "right", ...MONO, color: CLR_CALC_FG, background: CLR_CALC_BG }}>
                   {typeof fcfs === "number" ? `$${fcfs.toFixed(2)}` : "—"}
                 </td>
-                <td style={{ padding: "5px 12px", border: "1px solid #e5e7eb", textAlign: "right", ...MONO, color: totalFg, fontWeight: (isFirst || isFinal) ? 700 : 400 }}>
+                <td style={{ padding: "5px 12px", border: "1px solid #e5e7eb", textAlign: "right", ...MONO, color: CLR_CALC_FG, background: CLR_CALC_BG, fontWeight: (isFirst || isFinal) ? 700 : 400 }}>
                   {totalDisplay}
                 </td>
               </tr>
@@ -523,14 +557,15 @@ const Checklist = memo(function Checklist({ items }: { items: CfIrrData["checkli
 
 // ── Final Output ────────────────────────────────────────────────────────────
 
-function FinalOutput({ data, waccPct, mosPct }: {
+function FinalOutput({ data, waccPct, mosPct, avgTarget }: {
   data: CfIrrData;
   waccPct: number;
   mosPct: number;
+  avgTarget: number | null;
 }) {
   const waccDec = waccPct / 100;
-  const fairValue = data.avg_target != null && waccDec > 0
-    ? data.avg_target / (1 + waccDec) ** 9 : null;
+  const fairValue = avgTarget != null && waccDec > 0
+    ? avgTarget / (1 + waccDec) ** 9 : null;
   const buyPrice = fairValue != null ? fairValue * (1 - mosPct / 100) : null;
   const onSale   = fairValue != null && data.price_now != null ? fairValue > data.price_now : null;
 
@@ -540,16 +575,16 @@ function FinalOutput({ data, waccPct, mosPct }: {
     return `${pct >= 0 ? "Upside" : "Downside"}  ${pct >= 0 ? "+" : ""}${pct.toFixed(1)}%`;
   };
 
-  const rows: [string, string, boolean | null][] = [
-    ["Average Target Price",      f$(data.avg_target),   null],
-    ["WACC",                      `${waccPct.toFixed(2)}%`, null],
-    ["Fair Value per share",      f$(fairValue),          null],
-    ["Margin of Safety",          `${mosPct.toFixed(0)}%`, null],
-    ["Buy Price",                 f$(buyPrice),           null],
-    ["Current Stock Price",       f$(data.price_now),     null],
-    ["Company on-sale?",          onSale === true ? "✅ ON SALE" : onSale === false ? "❌ NOT ON SALE" : "N/A", onSale],
-    ["Upside / Downside (vs. FV)",  delta(fairValue, data.price_now), null],
-    ["Upside / Downside (vs. Buy)", delta(buyPrice,  data.price_now), null],
+  const rows: [string, string, boolean | null, "api" | "calc" | "user"][] = [
+    ["Average Target Price",        f$(avgTarget),                                                                      null, "calc"],
+    ["WACC",                        `${waccPct.toFixed(2)}%`,                                                           null, "user"],
+    ["Fair Value per share",        f$(fairValue),                                                                      null, "calc"],
+    ["Margin of Safety",            `${mosPct.toFixed(0)}%`,                                                            null, "user"],
+    ["Buy Price",                   f$(buyPrice),                                                                       null, "calc"],
+    ["Current Stock Price",         f$(data.price_now),                                                                 null, "api"],
+    ["Company on-sale?",            onSale === true ? "✅ ON SALE" : onSale === false ? "❌ NOT ON SALE" : "N/A",       onSale, "calc"],
+    ["Upside / Downside (vs. FV)",  delta(fairValue, data.price_now),                                                  null, "calc"],
+    ["Upside / Downside (vs. Buy)", delta(buyPrice,  data.price_now),                                                  null, "calc"],
   ];
 
   const thS: React.CSSProperties = {
@@ -565,13 +600,23 @@ function FinalOutput({ data, waccPct, mosPct }: {
         </tr>
       </thead>
       <tbody>
-        {rows.map(([label, val, verdict], i) => {
-          const bg = verdict === true ? CLR_PASS : verdict === false ? CLR_FAIL : i % 2 === 0 ? "#fff" : "#f8fafc";
-          const fg = verdict === true ? CLR_PASS_FG : verdict === false ? CLR_FAIL_FG : NAVY;
+        {rows.map(([label, val, verdict, colorType]) => {
+          const bg = verdict === true  ? CLR_PASS
+                   : verdict === false ? CLR_FAIL
+                   : colorType === "api"  ? CLR_API_BG
+                   : colorType === "calc" ? CLR_CALC_BG
+                   : colorType === "user" ? CLR_USER_BG
+                   : "#fff";
+          const fg = verdict === true  ? CLR_PASS_FG
+                   : verdict === false ? CLR_FAIL_FG
+                   : colorType === "api"  ? CLR_API_FG
+                   : colorType === "calc" ? CLR_CALC_FG
+                   : colorType === "user" ? CLR_USER_FG
+                   : NAVY;
           return (
-            <tr key={i} style={{ background: bg }}>
+            <tr key={label} style={{ background: bg }}>
               <td style={{ padding: "6px 12px", fontWeight: 600, color: fg, border: "1px solid #e5e7eb" }}>{label}</td>
-              <td style={{ padding: "6px 12px", textAlign: "right", fontWeight: verdict !== null ? 700 : 400, color: fg, border: "1px solid #e5e7eb", ...MONO }}>{val}</td>
+              <td style={{ padding: "6px 12px", textAlign: "right", fontWeight: 700, color: fg, border: "1px solid #e5e7eb", ...MONO }}>{val}</td>
             </tr>
           );
         })}
@@ -598,9 +643,10 @@ export default function CfIrrTab({ ticker, externalWacc, ov }: Props) {
   const [ebtGlobal, setEbtGlobal] = useState(5);
   const [fcfGrowth, setFcfGrowth] = useState<number[]>([5, 5, 5, 5, 5, 5, 5, 5, 5]);
   const [fcfGlobal, setFcfGlobal] = useState(5);
-  const [exitMult,  setExitMult]  = useState(15.0);
-  const [exitYield, setExitYield] = useState(5.0);
-  const [mosPct,    setMosPct]    = useState(10.0);
+  const [exitMult,     setExitMult]     = useState(15.0);
+  const [exitYield,    setExitYield]    = useState(5.0);
+  const [mosPct,       setMosPct]       = useState(10.0);
+  const [ebitdaWeight, setEbitdaWeight] = useState(50);
 
   // WACC: use external (from slider) if set, else use computed from backend
   const waccPct = externalWacc > 0 ? externalWacc : (data?.wacc_computed ?? 0) * 100;
@@ -612,8 +658,8 @@ export default function CfIrrTab({ ticker, externalWacc, ov }: Props) {
     setPdfLoading(true);
     try {
       const waccDec = waccPct / 100;
-      const fv  = data.avg_target != null && waccDec > 0
-        ? data.avg_target / Math.pow(1 + waccDec, 9) : null;
+      const fv  = weightedAvgTarget != null && waccDec > 0
+        ? weightedAvgTarget / Math.pow(1 + waccDec, 9) : null;
       const bp  = fv != null ? fv * (1 - mosPct / 100) : null;
       const os  = fv != null && data.price_now != null ? fv > data.price_now : null;
 
@@ -638,7 +684,7 @@ export default function CfIrrTab({ ticker, externalWacc, ov }: Props) {
         fcf_forecast: adjustedFcfForecast,   // frontend-recomputed from last hist year
         checklist:    checklistItems,         // includes frontend IRR override
         price_now:    data.price_now,
-        avg_target:   data.avg_target,
+        avg_target:   weightedAvgTarget,
         ebitda_price: data.ebitda_price,
         fcf_price:    data.fcf_price,
         fair_value:   fv,
@@ -760,6 +806,13 @@ export default function CfIrrTab({ ticker, externalWacc, ov }: Props) {
   if (error)   return <div style={{ background: "var(--gv-red-bg)", border: "1px solid #fca5a5", borderRadius: 8, padding: "12px 16px", color: "var(--gv-red)" }}><strong>Error:</strong> {error}</div>;
   if (!data)   return null;
 
+  // ── Weighted Avg. Target (user-adjustable) ────────────────────────────────
+  const fcfWeight = 100 - ebitdaWeight;
+  const weightedAvgTarget: number | null =
+    data.ebitda_price != null && data.fcf_price != null
+      ? (ebitdaWeight / 100) * data.ebitda_price + (fcfWeight / 100) * data.fcf_price
+      : data.avg_target;
+
   const ebtHistCols = data.ebt_hist.length ? Object.keys(data.ebt_hist[0]) : [];
   const fcfHistCols = data.fcf_hist.length ? Object.keys(data.fcf_hist[0]) : [];
 
@@ -786,8 +839,8 @@ export default function CfIrrTab({ ticker, externalWacc, ov }: Props) {
   const fcfForecastTyped = adjustedFcfForecast;
   const frontendIrrCfs = fcfForecastTyped.map((row, i) => {
     const fcfs = row["Est. Adj. FCF/s"];
-    if (i === 0 && data.price_now != null)                             return fcfs - data.price_now;
-    if (i === fcfForecastTyped.length - 1 && data.avg_target != null) return fcfs + data.avg_target;
+    if (i === 0 && data.price_now != null)                                  return fcfs - data.price_now;
+    if (i === fcfForecastTyped.length - 1 && weightedAvgTarget != null)    return fcfs + weightedAvgTarget;
     return fcfs;
   });
   const frontendIrr = computeIrr(frontendIrrCfs) ?? data.irr;
@@ -834,7 +887,7 @@ export default function CfIrrTab({ ticker, externalWacc, ov }: Props) {
       const terminal = fcfYear9 / exitYield;
       const cfs = fcfForecastTyped.map((r, i) => {
         const fcfs = r["Est. Adj. FCF/s"];
-        if (i === 0) return fcfs - entryPrice;
+        if (i === 0)                            return fcfs - entryPrice;
         if (i === fcfForecastTyped.length - 1) return fcfs + terminal;
         return fcfs;
       });
@@ -871,6 +924,7 @@ export default function CfIrrTab({ ticker, externalWacc, ov }: Props) {
       </div>
 
       {/* ═══ SECTION 1 — Dual-path Analysis Grid ══════════════════════════════ */}
+      <Legend />
       <div className="grid grid-cols-2 gap-6">
 
         {/* ── LEFT: EBITDA Analysis ───────────────────────────────────────────── */}
@@ -903,25 +957,27 @@ export default function CfIrrTab({ ticker, externalWacc, ov }: Props) {
             <input
               type="number" value={exitMult} min={1} max={100} step={0.5}
               onChange={(e) => handleExitMult(Number(e.target.value))}
-              style={{ width: 76, padding: "2px 6px", border: "1px solid #d1d5db", borderRadius: 4, fontSize: "0.88em", fontFamily: "inherit", textAlign: "right" }}
+              style={{ width: 76, padding: "2px 6px", border: "1px solid #d1d5db", borderRadius: 4, fontSize: "0.88em", fontFamily: "inherit", textAlign: "right", background: CLR_USER_BG }}
             />
           </div>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.81em" }}>
             <tbody>
-              {[
-                ["Est. EV/EBITDA Multiple", `${exitMult.toFixed(1)}x`],
+              {([
+                ["Est. EV/EBITDA Multiple", `${exitMult.toFixed(1)}x`,                                                           "user"],
                 [`EV in ${data.base_year + 9} ($MM)`,
-                  data.ebt_forecast.length
-                    ? fMM((data.ebt_forecast[8]?.["Est. EBITDA ($MM)"] ?? 0) * exitMult * 1e6)
-                    : "N/A"],
-                ["Less: Net Debt TTM ($MM)", fMM(data.net_debt_ttm)],
-                ["Est. Stock Price", f$(data.ebitda_price)],
-              ].map(([label, val], i) => (
-                <tr key={i} style={{ background: i % 2 === 0 ? "#fff" : "#f8fafc" }}>
-                  <td style={{ padding: "5px 10px", fontWeight: 600, color: NAVY, border: "1px solid #e5e7eb", fontSize: "0.9em" }}>{label}</td>
-                  <td style={{ padding: "5px 10px", textAlign: "right", border: "1px solid #e5e7eb", ...MONO, color: NAVY }}>{val}</td>
-                </tr>
-              ))}
+                  data.ebt_forecast.length ? fMM((data.ebt_forecast[8]?.["Est. EBITDA ($MM)"] ?? 0) * exitMult * 1e6) : "N/A",  "calc"],
+                ["Less: Net Debt TTM ($MM)", fMM(data.net_debt_ttm),                                                              "api"],
+                ["Est. Stock Price",         f$(data.ebitda_price),                                                               "calc"],
+              ] as [string, string, "user" | "calc" | "api"][]).map(([label, val, type]) => {
+                const bg = type === "user" ? CLR_USER_BG : type === "calc" ? CLR_CALC_BG : CLR_API_BG;
+                const fg = type === "user" ? CLR_USER_FG : type === "calc" ? CLR_CALC_FG : CLR_API_FG;
+                return (
+                  <tr key={label} style={{ background: bg }}>
+                    <td style={{ padding: "5px 10px", fontWeight: 600, color: NAVY, border: "1px solid #e5e7eb", fontSize: "0.9em" }}>{label}</td>
+                    <td style={{ padding: "5px 10px", textAlign: "right", border: "1px solid #e5e7eb", ...MONO, color: fg, fontWeight: type === "calc" ? 700 : 400 }}>{val}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -956,25 +1012,27 @@ export default function CfIrrTab({ ticker, externalWacc, ov }: Props) {
             <input
               type="number" value={exitYield} min={0.5} max={50} step={0.5}
               onChange={(e) => handleExitYield(Number(e.target.value))}
-              style={{ width: 68, padding: "2px 6px", border: "1px solid #d1d5db", borderRadius: 4, fontSize: "0.88em", fontFamily: "inherit", textAlign: "right" }}
+              style={{ width: 68, padding: "2px 6px", border: "1px solid #d1d5db", borderRadius: 4, fontSize: "0.88em", fontFamily: "inherit", textAlign: "right", background: CLR_USER_BG }}
             />
             <span style={{ fontSize: "0.78em", color: "var(--gv-text-muted)" }}>%</span>
           </div>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.81em" }}>
             <tbody>
-              {[
-                ["Long Term FCF/s Yield", fPctNum(exitYield)],
+              {([
+                ["Long Term FCF/s Yield",          fPctNum(exitYield),                                                                                       "user"],
                 [`Est. Adj. FCF/s in ${data.base_year + 9}`,
-                  adjustedFcfForecast.length
-                    ? `$${(adjustedFcfForecast[8]?.["Est. Adj. FCF/s"] ?? 0).toFixed(2)}`
-                    : "N/A"],
-                ["Est. Stock Price", f$(data.fcf_price)],
-              ].map(([label, val], i) => (
-                <tr key={i} style={{ background: i % 2 === 0 ? "#fff" : "#f8fafc" }}>
-                  <td style={{ padding: "5px 10px", fontWeight: 600, color: NAVY, border: "1px solid #e5e7eb", fontSize: "0.9em" }}>{label}</td>
-                  <td style={{ padding: "5px 10px", textAlign: "right", border: "1px solid #e5e7eb", ...MONO, color: NAVY }}>{val}</td>
-                </tr>
-              ))}
+                  adjustedFcfForecast.length ? `$${(adjustedFcfForecast[8]?.["Est. Adj. FCF/s"] ?? 0).toFixed(2)}` : "N/A",                                 "calc"],
+                ["Est. Stock Price",               f$(data.fcf_price),                                                                                       "calc"],
+              ] as [string, string, "user" | "calc"][]).map(([label, val, type]) => {
+                const bg = type === "user" ? CLR_USER_BG : CLR_CALC_BG;
+                const fg = type === "user" ? CLR_USER_FG : CLR_CALC_FG;
+                return (
+                  <tr key={label} style={{ background: bg }}>
+                    <td style={{ padding: "5px 10px", fontWeight: 600, color: NAVY, border: "1px solid #e5e7eb", fontSize: "0.9em" }}>{label}</td>
+                    <td style={{ padding: "5px 10px", textAlign: "right", border: "1px solid #e5e7eb", ...MONO, color: fg, fontWeight: type === "calc" ? 700 : 400 }}>{val}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -985,7 +1043,9 @@ export default function CfIrrTab({ ticker, externalWacc, ov }: Props) {
       <WeightingTable
         ebitdaPrice={data.ebitda_price}
         fcfPrice={data.fcf_price}
-        avgTarget={data.avg_target}
+        avgTarget={weightedAvgTarget}
+        ebitdaWeight={ebitdaWeight}
+        onEbitdaWeightChange={setEbitdaWeight}
       />
 
       {/* ═══ SECTION 3 — Final Output + Quality Checklist ══════════════════════ */}
@@ -997,7 +1057,7 @@ export default function CfIrrTab({ ticker, externalWacc, ov }: Props) {
           <div style={{ fontSize: "0.82em", fontWeight: 700, color: NAVY, borderLeft: `3px solid ${NAVY}`, paddingLeft: 8, marginBottom: 6 }}>
             Final Output
           </div>
-          <FinalOutput data={data} waccPct={waccPct} mosPct={mosPct} />
+          <FinalOutput data={data} waccPct={waccPct} mosPct={mosPct} avgTarget={weightedAvgTarget} />
 
           {/* WACC + MoS inputs */}
           <div style={{ display: "flex", gap: 10, marginTop: 12, flexWrap: "wrap" }}>
@@ -1012,7 +1072,7 @@ export default function CfIrrTab({ ticker, externalWacc, ov }: Props) {
               <input
                 type="number" value={mosPct} min={0} max={80} step={1}
                 onChange={(e) => handleMosPct(Number(e.target.value))}
-                style={{ width: "100%", padding: "4px 8px", border: "1px solid #d1d5db", borderRadius: 4, fontSize: "0.88em", fontFamily: "inherit" }}
+                style={{ width: "100%", padding: "4px 8px", border: "1px solid #d1d5db", borderRadius: 4, fontSize: "0.88em", fontFamily: "inherit", background: CLR_USER_BG }}
               />
             </div>
           </div>
@@ -1048,7 +1108,7 @@ export default function CfIrrTab({ ticker, externalWacc, ov }: Props) {
       <SubHeader title="IRR Cash Flow Schedule" />
       <IrrCalculationTable
         fcfForecast={adjustedFcfForecast}
-        avgTarget={data.avg_target}
+        avgTarget={weightedAvgTarget}
         priceNow={data.price_now}
         irr={data.irr}
       />

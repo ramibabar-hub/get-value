@@ -19,8 +19,11 @@ import type {
   OverviewData, FinancialsData, InsightsData, WaccData,
   FinancialsExtendedData, NormalizedPEResult, Scale, Period,
 } from "../types";
-import FinancialsTab from "./FinancialsTab";
-import InsightsTab   from "./InsightsTab";
+import FinancialsTab      from "./FinancialsTab";
+import InsightsTab        from "./InsightsTab";
+import MarketBenchmarks      from "./MarketBenchmarks";
+import MarketBenchmarksTable from "./MarketBenchmarksTable";
+import PeerAnalysisTab    from "./PeerAnalysisTab";
 import SegmentsTab              from "./SegmentsTab";
 import StockPriceChart          from "./StockPriceChart";
 import CompanyInsightsFeed      from "./CompanyInsightsFeed";
@@ -386,6 +389,7 @@ export default function StockDashboard({ ticker, onSearch }: StockDashboardProps
     const saved = sessionStorage.getItem("gv_tab") as MainTab | null;
     return saved && (MAIN_TABS as readonly string[]).includes(saved) ? saved : "Overview";
   });
+  const [vdSubTab, setVdSubTab]     = useState<"Insights" | "Market Benchmarks" | "Peer Analysis">("Insights");
   const [period,    setPeriod]      = useState<Period>("annual");
   const [scale,     setScale]       = useState<Scale>("MM");
   const [, setSearchQ] = useState("");
@@ -692,14 +696,33 @@ export default function StockDashboard({ ticker, onSearch }: StockDashboardProps
 
             {/* ══ Value Drivers ══ */}
             {activeTab === "Value Drivers" ? (
-              <InsightsTab
-                data={ins}
-                loading={insLoad}
-                error={insErr}
-                waccData={waccData}
-                manualWacc={manualWacc}
-                onWaccChange={setManualWacc}
-              />
+              <>
+                <TabBar
+                  tabs={["Insights", "Market Benchmarks", "Peer Analysis"] as const}
+                  active={vdSubTab}
+                  onSelect={(t) => setVdSubTab(t as typeof vdSubTab)}
+                  size="sm"
+                />
+                {vdSubTab === "Insights" ? (
+                  <InsightsTab
+                    data={ins}
+                    loading={insLoad}
+                    error={insErr}
+                    waccData={waccData}
+                    manualWacc={manualWacc}
+                    onWaccChange={setManualWacc}
+                  />
+                ) : vdSubTab === "Market Benchmarks" ? (
+                  <>
+                    <MarketBenchmarksTable />
+                    <div style={{ marginTop: 32 }}>
+                      <MarketBenchmarks ticker={ticker} ov={ov} />
+                    </div>
+                  </>
+                ) : (
+                  <PeerAnalysisTab ticker={ticker} ov={ov} />
+                )}
+              </>
             ) : null}
 
             {/* ══ Valueground ══ */}

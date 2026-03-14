@@ -772,7 +772,7 @@ def financials_extended(
 
     # Late import to avoid streamlit at module-load time
     try:
-        from financials_tab import FinancialExtras
+        from streamlit.financials_tab import FinancialExtras
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"FinancialExtras import failed: {exc}")
 

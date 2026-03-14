@@ -7,7 +7,6 @@ import json
 import math
 import pandas as pd
 import streamlit as st
-import streamlit.components.v1 as components
 
 # ── module-level helpers ──────────────────────────────────────────────────────
 
@@ -137,6 +136,7 @@ def _inject_df_tooltips(link_map: dict, anchor_id: str) -> None:
 
     The 600 ms hide delay lets users move from the canvas to the link and click.
     """
+    import streamlit.components.v1 as components  # lazy — not needed by backend
     if not link_map:
         return
     lm_json = json.dumps(link_map, ensure_ascii=False)

@@ -96,96 +96,6 @@ function fExtLabel(v: number, fmt: FmtType, scale: Scale, decimals = 1): string 
   return fExtCell(v, fmt, scale, decimals).text;
 }
 
-// ── Chart helpers ─────────────────────────────────────────────────────────────
-
-function ChartIcon() {
-  return (
-    <svg width="13" height="13" viewBox="0 0 13 13" fill="currentColor" style={{ display: "block", flexShrink: 0 }}>
-      <rect x="0" y="7" width="3.5" height="6" rx="0.5"/>
-      <rect x="4.75" y="3.5" width="3.5" height="9.5" rx="0.5"/>
-      <rect x="9.5" y="0.5" width="3.5" height="12.5" rx="0.5"/>
-    </svg>
-  );
-}
-
-function MiniChart({
-  cols, vals, isBar,
-}: {
-  cols: string[];
-  vals: (number | null | string)[];
-  isBar: boolean;
-}) {
-  const nums = vals.map(v => (typeof v === "number" && isFinite(v)) ? v : null);
-  const nonNull = nums.filter((v): v is number => v !== null);
-  if (nonNull.length === 0) {
-    return <div style={{ padding: "12px 16px", color: "var(--gv-text-muted)", fontSize: "0.8em" }}>No chart data</div>;
-  }
-
-  const N   = cols.length;
-  const VW  = Math.max(N * 55, 280);
-  const VH  = 110;
-  const PL = 4, PR = 4, PT = 10, PB = 26;
-  const cW  = VW - PL - PR;
-  const cH  = VH - PT - PB;
-
-  const rawMin = Math.min(...nonNull);
-  const rawMax = Math.max(...nonNull);
-  const vMin   = Math.min(0, rawMin);
-  const vMaxRaw = Math.max(0, rawMax);
-  const vMax   = vMaxRaw === vMin ? vMin + 1 : vMaxRaw;
-  const range  = vMax - vMin;
-
-  const toY    = (v: number) => PT + cH - ((v - vMin) / range) * cH;
-  const zeroY  = toY(0);
-  const bW     = cW / N;
-  const colX   = (i: number) => PL + i * bW;
-  const shortLbl = (c: string) => c === "TTM" ? "TTM" : c.length > 4 ? c.slice(-4) : c;
-
-  if (isBar) {
-    return (
-      <svg viewBox={`0 0 ${VW} ${VH}`} width="100%" style={{ display: "block" }}>
-        <line x1={PL} y1={zeroY} x2={VW - PR} y2={zeroY} stroke="var(--gv-border)" strokeWidth="1"/>
-        {nums.map((v, i) => {
-          if (v === null) return null;
-          const isTtm = cols[i] === "TTM";
-          const x  = colX(i) + bW * 0.1;
-          const w  = bW * 0.8;
-          const top = v >= 0 ? toY(v) : zeroY;
-          const h   = Math.max(Math.abs(toY(v) - zeroY), 1);
-          const fill = isTtm ? "#3b82f6" : v < 0 ? "#ef4444" : NAVY;
-          return (
-            <g key={i}>
-              <rect x={x} y={top} width={w} height={h} fill={fill} opacity={isTtm ? 1 : 0.72}/>
-              <text x={x + w / 2} y={VH - 4} textAnchor="middle" fontSize="8" fill="var(--gv-text-muted)">{shortLbl(cols[i])}</text>
-            </g>
-          );
-        })}
-      </svg>
-    );
-  }
-
-  // Line chart
-  const pts = nums
-    .map((v, i) => v !== null ? { x: PL + (i + 0.5) * bW, y: toY(v), col: cols[i] } : null)
-    .filter(Boolean) as { x: number; y: number; col: string }[];
-  const d = pts.map((p, i) => `${i === 0 ? "M" : "L"}${p.x},${p.y}`).join(" ");
-
-  return (
-    <svg viewBox={`0 0 ${VW} ${VH}`} width="100%" style={{ display: "block" }}>
-      <line x1={PL} y1={zeroY} x2={VW - PR} y2={zeroY} stroke="var(--gv-border)" strokeWidth="1"/>
-      {d && <path d={d} fill="none" stroke={NAVY} strokeWidth="1.5" opacity="0.7"/>}
-      {pts.map((p, i) => {
-        const isTtm = p.col === "TTM";
-        return (
-          <g key={i}>
-            <circle cx={p.x} cy={p.y} r={isTtm ? 4 : 2.5} fill={isTtm ? "#3b82f6" : NAVY}/>
-            <text x={p.x} y={VH - 4} textAnchor="middle" fontSize="8" fill="var(--gv-text-muted)">{shortLbl(p.col)}</text>
-          </g>
-        );
-      })}
-    </svg>
-  );
-}
 
 // ── Radio strip ───────────────────────────────────────────────────────────────
 
@@ -315,7 +225,6 @@ const FinTable = memo(function FinTable({
   decimals:       number;
   showChangePct:  boolean;
 }) {
-  const [openRow,      setOpenRow]      = useState<string | null>(null);
   const [search,       setSearch]       = useState("");
   const [searchActive, setSearchActive] = useState(false);
   const [expanded,     setExpanded]     = useState(false);
@@ -408,60 +317,50 @@ const FinTable = memo(function FinTable({
           </tr>
         </thead>
         <tbody>
-          {filteredRows.map((row, ri) => {
-            const isOpen = openRow === row.label;
-            const vals   = columns.map(col => row[col] as number | null);
-            return (
-              <Fragment key={row.label}>
-                <tr style={{ background: ri % 2 === 1 ? "#f8fafc" : "#fff" }}>
-                  <td style={{ padding: "7px 12px", border: "1px solid #e5e7eb", fontWeight: 600, color: NAVY, whiteSpace: "nowrap" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                      <button
-                        onClick={() => setOpenRow(isOpen ? null : row.label)}
-                        title="Toggle chart"
-                        style={{
-                          background: "none", border: "none", padding: 2, cursor: "pointer",
-                          color: isOpen ? "#3b82f6" : "var(--gv-text-muted)", lineHeight: 0,
-                          borderRadius: 3, flexShrink: 0,
-                        }}
-                      >
-                        <ChartIcon />
-                      </button>
-                      {row.label}
-                    </div>
+          {filteredRows.map((row, ri) => (
+            <Fragment key={row.label}>
+              <tr style={{ background: ri % 2 === 1 ? "#f8fafc" : "#fff" }}>
+                <td style={{ padding: "7px 12px", border: "1px solid #e5e7eb", fontWeight: 600, color: NAVY, whiteSpace: "nowrap" }}>
+                  {row.label}
+                </td>
+                {columns.map((col) => {
+                  const { text, negative } = fCell(row[col] as number | null, row.label, scale, decimals);
+                  return (
+                    <td key={col} style={{
+                      padding: "5px 12px", border: "1px solid #e5e7eb",
+                      textAlign: "right", fontVariantNumeric: "tabular-nums",
+                      fontFamily: "'Courier New', monospace",
+                      color: negative ? "#dc2626" : NAVY,
+                      fontWeight: col === "TTM" ? 700 : 400,
+                      background: col === "TTM" ? "#eff6ff" : undefined,
+                    }}>
+                      {text}
+                    </td>
+                  );
+                })}
+              </tr>
+              {showChangePct && (
+                <tr style={{ background: ri % 2 === 1 ? "#eef6ff" : "#f5f9ff" }}>
+                  <td style={{ padding: "1px 12px", border: "1px solid #e5e7eb", fontSize: "0.7em", color: "var(--gv-text-muted)", fontStyle: "italic" }}>
+                    Δ% vs prior
                   </td>
                   {columns.map((col) => {
-                    const { text, negative } = fCell(row[col] as number | null, row.label, scale, decimals);
-                    const chg = showChangePct ? getChangePct(row, col) : null;
+                    const chg = getChangePct(row, col);
                     return (
                       <td key={col} style={{
-                        padding: "5px 12px", border: "1px solid #e5e7eb",
-                        textAlign: "right", fontVariantNumeric: "tabular-nums",
-                        fontFamily: "'Courier New', monospace",
-                        color: negative ? "#dc2626" : NAVY,
-                        fontWeight: col === "TTM" ? 700 : 400,
-                        background: col === "TTM" ? "#eff6ff" : undefined,
+                        padding: "1px 12px", border: "1px solid #e5e7eb",
+                        textAlign: "right", fontFamily: "'Courier New', monospace",
+                        fontSize: "0.7em", fontWeight: 500,
+                        color: chg == null ? "var(--gv-text-muted)" : chg >= 0 ? "#10b981" : "#ef4444",
                       }}>
-                        <div>{text}</div>
-                        {chg != null && (
-                          <div style={{ fontSize: "0.72em", color: chg >= 0 ? "#10b981" : "#ef4444", fontWeight: 500 }}>
-                            {chg >= 0 ? "+" : ""}{chg.toFixed(1)}%
-                          </div>
-                        )}
+                        {chg == null ? "—" : `${chg >= 0 ? "+" : ""}${chg.toFixed(1)}%`}
                       </td>
                     );
                   })}
                 </tr>
-                {isOpen && (
-                  <tr>
-                    <td colSpan={columns.length + 1} style={{ padding: "8px 16px", border: "1px solid #e5e7eb", background: "#f8fafc" }}>
-                      <MiniChart cols={columns} vals={vals} isBar={true} />
-                    </td>
-                  </tr>
-                )}
-              </Fragment>
-            );
-          })}
+              )}
+            </Fragment>
+          ))}
         </tbody>
       </table>
     </div>
@@ -503,7 +402,6 @@ const ExtTable = memo(function ExtTable({
   decimals:      number;
   showChangePct: boolean;
 }) {
-  const [openRow,      setOpenRow]      = useState<number | null>(null);
   const [search,       setSearch]       = useState("");
   const [searchActive, setSearchActive] = useState(false);
   const [expanded,     setExpanded]     = useState(false);
@@ -529,9 +427,6 @@ const ExtTable = memo(function ExtTable({
     if (fmt === "money" || fmt === "int") return false;
     return lookupBenchmark(row.label) !== null;
   }), [rows]);
-
-  // Total columns for chart colSpan: label + data cols + (optional benchmark col)
-  const totalSpan = columns.length + 1 + (hasBenchmark ? 1 : 0);
 
   function getChangePct(row: ExtRow, col: string): number | null {
     const idx = allColumns.indexOf(col);
@@ -611,12 +506,7 @@ const ExtTable = memo(function ExtTable({
         </thead>
         <tbody>
           {filteredRows.map((row, ri) => {
-            const isOpen  = openRow === ri;
-            const fmt     = row.fmt as FmtType;
-            const isBar   = fmt === "money" || fmt === "int";
-            const vals    = columns.map(col => row[col] as number | string | null);
-
-            // Benchmark lookup — only for ratio / pct / days rows
+            const fmt          = row.fmt as FmtType;
             const canBenchmark = fmt !== "money" && fmt !== "int";
             const benchmark    = canBenchmark ? lookupBenchmark(row.label) : null;
             const ttmVal       = row["TTM"] as number | null | undefined;
@@ -628,20 +518,7 @@ const ExtTable = memo(function ExtTable({
               <Fragment key={ri}>
                 <tr style={{ background: ri % 2 === 1 ? "#f8fafc" : "#fff" }}>
                   <td style={{ padding: "7px 12px", border: "1px solid #e5e7eb", fontWeight: 600, color: NAVY, whiteSpace: "nowrap" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                      <button
-                        onClick={() => setOpenRow(isOpen ? null : ri)}
-                        title="Toggle chart"
-                        style={{
-                          background: "none", border: "none", padding: 2, cursor: "pointer",
-                          color: isOpen ? "#3b82f6" : "var(--gv-text-muted)", lineHeight: 0,
-                          borderRadius: 3, flexShrink: 0,
-                        }}
-                      >
-                        <ChartIcon />
-                      </button>
-                      {row.label}
-                    </div>
+                    {row.label}
                   </td>
                   {columns.map((col) => {
                     const { text, negative } = fExtCell(
@@ -650,7 +527,6 @@ const ExtTable = memo(function ExtTable({
                       scale,
                       decimals,
                     );
-                    const chg = showChangePct && fmt !== "pct" ? getChangePct(row, col) : null;
                     return (
                       <td key={col} style={{
                         padding: "5px 12px", border: "1px solid #e5e7eb",
@@ -660,12 +536,7 @@ const ExtTable = memo(function ExtTable({
                         fontWeight: col === "TTM" ? 700 : 400,
                         background: col === "TTM" ? "#eff6ff" : undefined,
                       }}>
-                        <div>{text}</div>
-                        {chg != null && (
-                          <div style={{ fontSize: "0.72em", color: chg >= 0 ? "#10b981" : "#ef4444", fontWeight: 500 }}>
-                            {chg >= 0 ? "+" : ""}{chg.toFixed(1)}%
-                          </div>
-                        )}
+                        {text}
                       </td>
                     );
                   })}
@@ -690,11 +561,27 @@ const ExtTable = memo(function ExtTable({
                     </td>
                   )}
                 </tr>
-                {isOpen && (
-                  <tr>
-                    <td colSpan={totalSpan} style={{ padding: "8px 16px", border: "1px solid #e5e7eb", background: "#f8fafc" }}>
-                      <MiniChart cols={columns} vals={vals} isBar={isBar} />
+                {showChangePct && (
+                  <tr style={{ background: ri % 2 === 1 ? "#eef6ff" : "#f5f9ff" }}>
+                    <td style={{ padding: "1px 12px", border: "1px solid #e5e7eb", fontSize: "0.7em", color: "var(--gv-text-muted)", fontStyle: "italic" }}>
+                      Δ% vs prior
                     </td>
+                    {columns.map((col) => {
+                      const chg = fmt !== "pct" ? getChangePct(row, col) : null;
+                      return (
+                        <td key={col} style={{
+                          padding: "1px 12px", border: "1px solid #e5e7eb",
+                          textAlign: "right", fontFamily: "'Courier New', monospace",
+                          fontSize: "0.7em", fontWeight: 500,
+                          color: chg == null ? "var(--gv-text-muted)" : chg >= 0 ? "#10b981" : "#ef4444",
+                        }}>
+                          {chg == null ? "—" : `${chg >= 0 ? "+" : ""}${chg.toFixed(1)}%`}
+                        </td>
+                      );
+                    })}
+                    {hasBenchmark && (
+                      <td style={{ border: "1px solid #e5e7eb", borderLeft: "2px solid #dbeafe" }} />
+                    )}
                   </tr>
                 )}
               </Fragment>

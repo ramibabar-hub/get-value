@@ -9,7 +9,7 @@
  * Each table row owns its own isExpanded state (multiple rows can be open).
  * MiniChart is React.lazy() loaded — only bundled when a row is first expanded.
  */
-import { lazy, memo, useState, Suspense, Fragment } from "react";
+import { memo, useState } from "react";
 import type { InsightsData, InsightsGroup, InsightsRow, WaccData } from "../types";
 import { IndustryComparisonCell } from "./IndustryComparisonCell";
 import { lookupBenchmark } from "../utils/industryBenchmarks";
@@ -17,49 +17,7 @@ import MetricsCatalogModal from "./MetricsCatalogModal";
 import TableRowCustomizer from "./TableRowCustomizer";
 import { useLayoutStore } from "../store/layoutStore";
 
-// ── Lazy chart import ─────────────────────────────────────────────────────────
-// MiniChart.tsx is only fetched from the server when the first row is expanded.
-
-const MiniChart = lazy(() => import("./MiniChart"));
-
 const NAVY = "var(--gv-navy)";
-
-// ── Slide-down keyframes (injected once) ──────────────────────────────────────
-
-const SLIDE_STYLE = `
-@keyframes gvInsSlideDown {
-  from { opacity: 0; transform: translateY(-4px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-.gv-ins-chart-wrap { animation: gvInsSlideDown 0.18s ease forwards; }
-`;
-
-// ── Icon helpers ──────────────────────────────────────────────────────────────
-
-function ChartBarIcon() {
-  return (
-    <svg
-      width="13" height="13" viewBox="0 0 13 13" fill="currentColor"
-      style={{ display: "block", flexShrink: 0 }}
-    >
-      <rect x="0"   y="7"   width="3.5" height="6"    rx="0.5" />
-      <rect x="4.75" y="3.5" width="3.5" height="9.5"  rx="0.5" />
-      <rect x="9.5" y="0.5" width="3.5" height="12.5" rx="0.5" />
-    </svg>
-  );
-}
-
-function XIcon() {
-  return (
-    <svg
-      width="12" height="12" viewBox="0 0 12 12" fill="none"
-      style={{ display: "block", flexShrink: 0 }}
-    >
-      <line x1="2" y1="2" x2="10" y2="10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-      <line x1="10" y1="2" x2="2"  y2="10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-    </svg>
-  );
-}
 
 // ── Chart-type detection ──────────────────────────────────────────────────────
 // CAGR / Growth groups → bar chart  (comparing compound rates across periods)
@@ -82,28 +40,17 @@ function fCell(v: number | string | null | undefined, is_pct: boolean): string {
   return v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-// ── MetricRow — owns its own expansion state ──────────────────────────────────
-// Each row instance independently tracks whether its chart is shown.
-// Multiple rows across any group can be open simultaneously.
-
 interface MetricRowProps {
   row: InsightsRow;
   cols: string[];
   is_pct: boolean;
-  isBar: boolean;
   isAlt: boolean;
-  totalCols: number; // label col + data cols (+ optional benchmark col)
-  showBenchmarkCol: boolean; // whether this group has a Vs. Industry column
+  showBenchmarkCol: boolean;
 }
 
 const MetricRow = memo(function MetricRow({
-  row, cols, is_pct, isBar, isAlt, totalCols, showBenchmarkCol,
+  row, cols, is_pct, isAlt, showBenchmarkCol,
 }: MetricRowProps) {
-  // ── Per-row independent expansion state ──────────────────────────────────
-  const [isExpanded, setIsExpanded] = useState(false);
-
-  const vals = cols.map(col => row[col] as number | string | null);
-
   // ── Benchmark lookup (TTM value vs industry avg) ──────────────────────────
   const ttmVal   = cols.includes("TTM") ? row["TTM"] as number | null : null;
   const benchmark = showBenchmarkCol ? lookupBenchmark(row.label) : null;
@@ -120,32 +67,9 @@ const MetricRow = memo(function MetricRow({
   };
 
   return (
-    <Fragment>
-      {/* ── Main data row ── */}
-      <tr style={{ background: isAlt ? "#f8fafc" : "#fff" }}>
+    <tr style={{ background: isAlt ? "#f8fafc" : "#fff" }}>
         <td style={tdLabel}>
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            {/* Label text comes FIRST, icon AFTER — per spec */}
-            <span>{row.label}</span>
-
-            <button
-              onClick={() => setIsExpanded(prev => !prev)}
-              title={isExpanded ? "Close chart" : "Show chart"}
-              style={{
-                background:  isExpanded ? "#eff6ff" : "none",
-                border:      isExpanded ? "1px solid #bfdbfe" : "none",
-                padding:     2,
-                cursor:      "pointer",
-                color:       isExpanded ? "#3b82f6" : "var(--gv-text-muted)",
-                lineHeight:  0,
-                borderRadius: 3,
-                flexShrink:  0,
-                transition:  "color 0.15s, background 0.15s",
-              }}
-            >
-              {isExpanded ? <XIcon /> : <ChartBarIcon />}
-            </button>
-          </div>
+          <span>{row.label}</span>
         </td>
 
         {cols.map((col) => {
@@ -193,56 +117,7 @@ const MetricRow = memo(function MetricRow({
             )}
           </td>
         )}
-      </tr>
-
-      {/* ── Expanded chart row (lazy-loaded) ── */}
-      {isExpanded && (
-        <tr>
-          <td
-            colSpan={totalCols}
-            style={{
-              padding:    0,
-              border:     "1px solid #e5e7eb",
-              borderTop:  "2px solid #3b82f6",
-              background: "#f8fafc",
-            }}
-          >
-            <div
-              className="gv-ins-chart-wrap"
-              style={{
-                padding:       "10px 16px 6px",
-                height:        156,          // fixed height — fits without breaking table layout
-                boxSizing:     "border-box",
-                overflow:      "hidden",
-              }}
-            >
-              {/* chart-type badge */}
-              <div style={{
-                fontSize:      "0.70em",
-                fontWeight:    600,
-                color:         "var(--gv-text-muted)",
-                letterSpacing: "0.05em",
-                textTransform: "uppercase",
-                marginBottom:  4,
-              }}>
-                {isBar ? "Bar — CAGR by period" : "Trend — with median"}
-              </div>
-
-              {/* MiniChart fetched only on first expansion (React.lazy) */}
-              <Suspense
-                fallback={
-                  <div style={{ color: "var(--gv-text-muted)", fontSize: "0.8em", paddingTop: 8 }}>
-                    Loading chart…
-                  </div>
-                }
-              >
-                <MiniChart cols={cols} vals={vals} isBar={isBar} />
-              </Suspense>
-            </div>
-          </td>
-        </tr>
-      )}
-    </Fragment>
+    </tr>
   );
 });
 
@@ -261,8 +136,6 @@ const GroupTable = memo(function GroupTable({ group }: { group: InsightsGroup })
     && group.cols.includes("TTM")
     && visibleRows.some(row => lookupBenchmark(row.label) !== null);
 
-  const totalCols = group.cols.length + 1 + (showBenchmarkCol ? 1 : 0);
-
   const thBase: React.CSSProperties = {
     background: NAVY, color: "#fff", fontWeight: 700,
     padding: "7px 12px", border: "1px solid #2d3f5a",
@@ -272,9 +145,6 @@ const GroupTable = memo(function GroupTable({ group }: { group: InsightsGroup })
 
   return (
     <div style={{ marginBottom: 28 }}>
-      {/* Keyframes injected once per GroupTable instance */}
-      <style>{SLIDE_STYLE}</style>
-
       {/* Section header */}
       <div style={{
         display: "flex", alignItems: "center", justifyContent: "space-between",
@@ -306,9 +176,7 @@ const GroupTable = memo(function GroupTable({ group }: { group: InsightsGroup })
                 row={row}
                 cols={group.cols}
                 is_pct={group.is_pct}
-                isBar={isBar}
                 isAlt={ri % 2 === 1}
-                totalCols={totalCols}
                 showBenchmarkCol={showBenchmarkCol}
               />
             ))}
