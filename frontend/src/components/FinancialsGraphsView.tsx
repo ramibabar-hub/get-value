@@ -25,15 +25,14 @@ interface Props {
   ticker:  string;
 }
 
-// Responsive CSS Grid: 4 col → 2 col → 1 col
+// Responsive CSS Grid: 2 col → 1 col
 const GRID_CSS = `
-.gv-chart-grid { display:grid; gap:16px; grid-template-columns: repeat(4,1fr); }
-@media(max-width:1400px){ .gv-chart-grid { grid-template-columns: repeat(2,1fr); } }
-@media(max-width:700px){  .gv-chart-grid { grid-template-columns: 1fr; } }
-.gv-chart-grid-3 { display:grid; gap:16px; grid-template-columns: repeat(3,1fr); }
+.gv-chart-grid { display:grid; gap:20px; grid-template-columns: repeat(2,1fr); }
+@media(max-width:800px){ .gv-chart-grid { grid-template-columns: 1fr; } }
+.gv-chart-grid-3 { display:grid; gap:20px; grid-template-columns: repeat(3,1fr); }
 @media(max-width:1100px){ .gv-chart-grid-3 { grid-template-columns: repeat(2,1fr); } }
 @media(max-width:600px){  .gv-chart-grid-3 { grid-template-columns: 1fr; } }
-.gv-chart-grid-2 { display:grid; gap:16px; grid-template-columns: repeat(2,1fr); }
+.gv-chart-grid-2 { display:grid; gap:20px; grid-template-columns: repeat(2,1fr); }
 @media(max-width:700px){ .gv-chart-grid-2 { grid-template-columns: 1fr; } }
 `;
 

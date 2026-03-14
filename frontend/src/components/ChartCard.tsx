@@ -10,11 +10,11 @@ interface ChartCardProps {
   title:    string;        // displayed in the header
   series:   string[];      // all possible series labels (for customize popover)
   colors:   string[];      // parallel to series: color for each series
-  height?:  number;        // chart height in px (default 220)
+  height?:  number;        // chart height in px (default 280)
   children: (hiddenSeries: Set<string>) => React.ReactNode;  // render prop
 }
 
-export default function ChartCard({ chartId, title, series, colors, height = 220, children }: ChartCardProps) {
+export default function ChartCard({ chartId, title, series, colors, height = 280, children }: ChartCardProps) {
   const [showCustomize, setShowCustomize] = useState(false);
   const { hiddenGraphSeries, toggleGraphSeries } = useLayoutStore();
   const hiddenArr = hiddenGraphSeries[chartId] ?? [];

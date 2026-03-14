@@ -20,9 +20,8 @@ const CHART_COLORS = [BLUE, GREEN, AMBER, PURPLE, CYAN, RED, PINK];
 const TT_STYLE = { background: "#1c2b46", border: "none", borderRadius: 6, color: "#fff", fontSize: "0.75em" };
 
 const GRID_CSS = `
-.gv-ins-grid { display:grid; gap:16px; grid-template-columns: repeat(3,1fr); }
-@media(max-width:1100px){ .gv-ins-grid { grid-template-columns: repeat(2,1fr); } }
-@media(max-width:600px){  .gv-ins-grid { grid-template-columns: 1fr; } }
+.gv-ins-grid { display:grid; gap:20px; grid-template-columns: repeat(2,1fr); }
+@media(max-width:700px){ .gv-ins-grid { grid-template-columns: 1fr; } }
 `;
 
 interface Props {
@@ -80,7 +79,7 @@ function InsightsGroupChart({ group, chartId }: { group: InsightsGroup; chartId:
   const seriesColors = isCAGR ? colors : group.cols.map((_, i) => CHART_COLORS[i % CHART_COLORS.length]);
 
   return (
-    <ChartCard chartId={chartId} title={group.title} series={series} colors={seriesColors} height={210}>
+    <ChartCard chartId={chartId} title={group.title} series={series} colors={seriesColors} height={270}>
       {(hidden) => (
         <BarChart data={data} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
